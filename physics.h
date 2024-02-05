@@ -14,8 +14,8 @@ class NeohookeanPhysics {
 
   NeohookeanPhysics(T C1, T D1) : C1(C1), D1(D1) {}
 
-  T energy(T weight, const T J[], const T grad[]) {
-    A2D::Mat<T, spatial_dim, spatial_dim> J_mat(J), grad_mat(grad);
+  T energy(T weight, const A2D::Mat<T, spatial_dim, spatial_dim>& J_mat,
+           A2D::Mat<T, dof_per_node, spatial_dim>& grad_mat) {
     A2D::Mat<T, spatial_dim, spatial_dim> Jinv_mat, F_mat, FTF_mat, I_mat;
 
     I_mat(0, 0) = 1.0;
@@ -46,13 +46,16 @@ class NeohookeanPhysics {
     return weight * detJ * energy_density;
   }
 
-  void residual(T weight, const T J[], const T grad[], T coef[]) {
+  void residual(T weight, A2D::Mat<T, spatial_dim, spatial_dim>& J,
+                A2D::Mat<T, dof_per_node, spatial_dim>& grad,
+                A2D::Mat<T, dof_per_node, spatial_dim>& coef) {
     A2D::Mat<T, spatial_dim, spatial_dim> I;
     I(0, 0) = 1.0;
     I(1, 1) = 1.0;
     I(2, 2) = 1.0;
 
-    A2D::ADObj<A2D::Mat<T, spatial_dim, spatial_dim>> J_mat(J), grad_mat(grad);
+    A2D::ADObj<A2D::Mat<T, spatial_dim, spatial_dim>> J_mat(J);
+    A2D::ADObj<A2D::Mat<T, dof_per_node, spatial_dim>&> grad_mat(grad, coef);
     A2D::ADObj<A2D::Mat<T, spatial_dim, spatial_dim>> Jinv_mat, F_mat, FTF_mat,
         I_mat(I);
 
@@ -72,22 +75,22 @@ class NeohookeanPhysics {
 
     output.bvalue() = 1.0;
     stack.reverse();
-
-    for (int i = 0; i < spatial_dim; i++) {
-      for (int j = 0; j < spatial_dim; j++) {
-        coef[spatial_dim * i + j] = grad_mat.bvalue()(i, j);
-      }
-    }
   }
 
-  void jacobian(T weight, const T J[], const T grad[], const T direct[],
-                T coef[]) {
+  void jacobian(T weight, A2D::Mat<T, spatial_dim, spatial_dim>& J,
+                A2D::Mat<T, dof_per_node, spatial_dim>& grad,
+                A2D::Mat<T, dof_per_node, spatial_dim>& direct,
+                A2D::Mat<T, dof_per_node, spatial_dim>& coef) {
     A2D::Mat<T, spatial_dim, spatial_dim> I;
     I(0, 0) = 1.0;
     I(1, 1) = 1.0;
     I(2, 2) = 1.0;
 
-    A2D::A2DObj<A2D::Mat<T, spatial_dim, spatial_dim>> J_mat(J), grad_mat(grad);
+    A2D::Mat<T, dof_per_node, spatial_dim> bgrad;
+    A2D::A2DObj<A2D::Mat<T, dof_per_node, spatial_dim>&> grad_mat(grad, bgrad,
+                                                                  direct, coef);
+
+    A2D::A2DObj<A2D::Mat<T, spatial_dim, spatial_dim>> J_mat(J);
     A2D::A2DObj<A2D::Mat<T, spatial_dim, spatial_dim>> Jinv_mat, F_mat, FTF_mat,
         I_mat(I);
 
@@ -106,21 +109,6 @@ class NeohookeanPhysics {
         A2D::Eval(0.5 * weight * energy_density * detJ, output));
 
     output.bvalue() = 1.0;
-
-    for (int i = 0; i < spatial_dim; i++) {
-      for (int j = 0; j < spatial_dim; j++) {
-        grad_mat.pvalue()(i, j) = direct[spatial_dim * i + j];
-      }
-    }
-
-    A2D::Mat<T, spatial_dim, spatial_dim> Jac;
-
     stack.hproduct();
-
-    for (int i = 0; i < spatial_dim; i++) {
-      for (int j = 0; j < spatial_dim; j++) {
-        coef[spatial_dim * i + j] = grad_mat.hvalue()(i, j);
-      }
-    }
   }
 };

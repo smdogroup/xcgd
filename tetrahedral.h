@@ -48,7 +48,8 @@ class TetrahedralBasis {
   }
 
   template <typename T, int dim>
-  static void eval_grad(const T pt[], const T dof[], T grad[]) {
+  static void eval_grad(const T pt[], const T dof[],
+                        A2D::Mat<T, dim, spatial_dim>& grad) {
     T Nxi[spatial_dim * nodes_per_element];
     eval_basis_grad(pt, Nxi);
 
@@ -58,26 +59,24 @@ class TetrahedralBasis {
 
     for (int i = 0; i < nodes_per_element; i++) {
       for (int k = 0; k < dim; k++) {
-        grad[spatial_dim * k] += Nxi[spatial_dim * i] * dof[dim * i + k];
-        grad[spatial_dim * k + 1] +=
-            Nxi[spatial_dim * i + 1] * dof[dim * i + k];
-        grad[spatial_dim * k + 2] +=
-            Nxi[spatial_dim * i + 2] * dof[dim * i + k];
+        grad(k, 0) += Nxi[spatial_dim * i] * dof[dim * i + k];
+        grad(k, 1) += Nxi[spatial_dim * i + 1] * dof[dim * i + k];
+        grad(k, 2) += Nxi[spatial_dim * i + 2] * dof[dim * i + k];
       }
     }
   }
 
   template <typename T, int dim>
-  static void add_grad(const T pt[], const T coef[], T res[]) {
+  static void add_grad(const T pt[], const A2D::Mat<T, dim, spatial_dim>& coef,
+                       T res[]) {
     T Nxi[spatial_dim * nodes_per_element];
     eval_basis_grad(pt, Nxi);
 
     for (int i = 0; i < nodes_per_element; i++) {
       for (int k = 0; k < dim; k++) {
-        res[dim * i + k] +=
-            (coef[spatial_dim * k] * Nxi[spatial_dim * i] +
-             coef[spatial_dim * k + 1] * Nxi[spatial_dim * i + 1] +
-             coef[spatial_dim * k + 2] * Nxi[spatial_dim * i + 2]);
+        res[dim * i + k] += (coef(k, 0) * Nxi[spatial_dim * i] +
+                             coef(k, 1) * Nxi[spatial_dim * i + 1] +
+                             coef(k, 2) * Nxi[spatial_dim * i + 2]);
       }
     }
   }

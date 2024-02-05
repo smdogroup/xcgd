@@ -1,3 +1,5 @@
+#include "a2dcore.h"
+
 template <typename T, class Basis, class Quadrature, class Physics>
 class FEAnalysis {
  public:
@@ -57,11 +59,11 @@ class FEAnalysis {
 
         // Evaluate the derivative of the spatial dof in the computational
         // coordinates
-        T J[spatial_dim * spatial_dim];
+        A2D::Mat<T, spatial_dim, spatial_dim> J;
         Basis::template eval_grad<T, spatial_dim>(pt, element_xloc, J);
 
         // Evaluate the derivative of the dof in the computational coordinates
-        T grad[dof_per_node * spatial_dim];
+        A2D::Mat<T, dof_per_node, spatial_dim> grad;
         Basis::template eval_grad<T, dof_per_node>(pt, element_dof, grad);
 
         // Add the energy contributions
@@ -98,15 +100,15 @@ class FEAnalysis {
 
         // Evaluate the derivative of the spatial dof in the computational
         // coordinates
-        T J[spatial_dim * spatial_dim];
+        A2D::Mat<T, spatial_dim, spatial_dim> J;
         Basis::template eval_grad<T, spatial_dim>(pt, element_xloc, J);
 
         // Evaluate the derivative of the dof in the computational coordinates
-        T grad[dof_per_node * spatial_dim];
+        A2D::Mat<T, dof_per_node, spatial_dim> grad;
         Basis::template eval_grad<T, dof_per_node>(pt, element_dof, grad);
 
         // Evaluate the residuals at the quadrature points
-        T coef[dof_per_node * spatial_dim];
+        A2D::Mat<T, dof_per_node, spatial_dim> coef;
         phys.residual(weight, J, grad, coef);
 
         // Add the contributions to the element residual
@@ -149,21 +151,21 @@ class FEAnalysis {
 
         // Evaluate the derivative of the spatial dof in the computational
         // coordinates
-        T J[spatial_dim * spatial_dim];
+        A2D::Mat<T, spatial_dim, spatial_dim> J;
         Basis::template eval_grad<T, spatial_dim>(pt, element_xloc, J);
 
         // Evaluate the derivative of the dof in the computational coordinates
-        T grad[dof_per_node * spatial_dim];
+        A2D::Mat<T, dof_per_node, spatial_dim> grad;
         Basis::template eval_grad<T, dof_per_node>(pt, element_dof, grad);
 
         // Evaluate the derivative of the direction in the computational
         // coordinates
-        T grad_direct[dof_per_node * spatial_dim];
+        A2D::Mat<T, dof_per_node, spatial_dim> grad_direct;
         Basis::template eval_grad<T, dof_per_node>(pt, element_direct,
                                                    grad_direct);
 
         // Evaluate the residuals at the quadrature points
-        T coef[dof_per_node * spatial_dim];
+        A2D::Mat<T, dof_per_node, spatial_dim> coef;
         phys.jacobian(weight, J, grad, grad_direct, coef);
 
         // Add the contributions to the element residual
