@@ -1,0 +1,6 @@
+.vscode
+*.dSYM
+
+# Executables
+derivatives_verification
+test
