@@ -38,6 +38,21 @@ inline void mat3x3MatMult(const T A[], const T B[], T C[]) {
 }
 
 template <typename T>
+inline void mat3x3MatTransMult(const T A[], const T B[], T C[]) {
+  C[0] = A[0] * B[0] + A[1] * B[1] + A[2] * B[2];
+  C[3] = A[3] * B[0] + A[4] * B[1] + A[5] * B[2];
+  C[6] = A[6] * B[0] + A[7] * B[1] + A[8] * B[2];
+
+  C[1] = A[0] * B[3] + A[1] * B[4] + A[2] * B[5];
+  C[4] = A[3] * B[3] + A[4] * B[4] + A[5] * B[5];
+  C[7] = A[6] * B[3] + A[7] * B[4] + A[8] * B[5];
+
+  C[2] = A[0] * B[6] + A[1] * B[7] + A[2] * B[8];
+  C[5] = A[3] * B[6] + A[4] * B[7] + A[5] * B[8];
+  C[8] = A[6] * B[6] + A[7] * B[7] + A[8] * B[8];
+}
+
+template <typename T>
 inline T det3x3(const T A[]) {
   return (A[8] * (A[0] * A[4] - A[3] * A[1]) -
           A[7] * (A[0] * A[5] - A[3] * A[2]) +
@@ -196,7 +211,7 @@ class NeohookeanPhysics {
   NeohookeanPhysics(T C1, T D1) : C1(C1), D1(D1) {}
 
   T energy(T weight, const T J[], const T grad[]) {
-    // Compute the determinant of the Jacobian matrix
+    // Compute the inverse and determinant of the Jacobian matrix
     T Jinv[spatial_dim * spatial_dim];
     T detJ = inv3x3(J, Jinv);
 
@@ -223,7 +238,7 @@ class NeohookeanPhysics {
   }
 
   void residual(T weight, const T J[], const T grad[], T coef[]) {
-    // Compute the determinant of the Jacobian matrix
+    // Compute the inverse and determinant of the Jacobian matrix
     T Jinv[spatial_dim * spatial_dim];
     T detJ = inv3x3(J, Jinv);
 
@@ -250,24 +265,30 @@ class NeohookeanPhysics {
     bI1 *= weight * detJ;
     bdetF *= weight * detJ;
 
+    // Derivative in the physical coordinates
+    T cphys[spatial_dim * dof_per_node];
+
     // Add dU0/dI1*dI1/dUx
-    coef[0] = 2.0 * F[0] * bI1;
-    coef[1] = 2.0 * F[1] * bI1;
-    coef[2] = 2.0 * F[2] * bI1;
-    coef[3] = 2.0 * F[3] * bI1;
-    coef[4] = 2.0 * F[4] * bI1;
-    coef[5] = 2.0 * F[5] * bI1;
-    coef[6] = 2.0 * F[6] * bI1;
-    coef[7] = 2.0 * F[7] * bI1;
-    coef[8] = 2.0 * F[8] * bI1;
+    cphys[0] = 2.0 * F[0] * bI1;
+    cphys[1] = 2.0 * F[1] * bI1;
+    cphys[2] = 2.0 * F[2] * bI1;
+    cphys[3] = 2.0 * F[3] * bI1;
+    cphys[4] = 2.0 * F[4] * bI1;
+    cphys[5] = 2.0 * F[5] * bI1;
+    cphys[6] = 2.0 * F[6] * bI1;
+    cphys[7] = 2.0 * F[7] * bI1;
+    cphys[8] = 2.0 * F[8] * bI1;
 
     // Add dU0/dJ*dJ/dUx
-    addDet3x3Sens(bdetF, F, coef);
+    addDet3x3Sens(bdetF, F, cphys);
+
+    // Transform back to derivatives in the computational coordinates
+    mat3x3MatTransMult(cphys, Jinv, coef);
   }
 
   void jacobian(T weight, const T J[], const T grad[], const T direct[],
                 T coef[]) {
-    // Compute the determinant of the Jacobian matrix
+    // Compute the inverse and determinant of the Jacobian matrix
     T Jinv[spatial_dim * spatial_dim];
     T detJ = inv3x3(J, Jinv);
 
@@ -300,6 +321,10 @@ class NeohookeanPhysics {
     bdetF *= weight * detJ;
     b2detF *= weight * detJ;
 
+    // Transform the direction from computational to physical coordinates
+    T dirphys[spatial_dim * dof_per_node];
+    mat3x3MatMult(direct, Jinv, dirphys);
+
     T Jac[9 * 9];
     det3x32ndSens(bdetF, F, Jac);
     for (int i = 0; i < 9; i++) {
@@ -313,12 +338,18 @@ class NeohookeanPhysics {
       addDet3x3Sens(b2detF * t[i], F, &Jac[9 * i]);
     }
 
+    // Derivative in the physical coordinates
+    T cphys[spatial_dim * dof_per_node];
+
     // Compute the Jacobian-vector product
     for (int i = 0; i < 9; i++) {
-      coef[i] = 0.0;
+      cphys[i] = 0.0;
       for (int j = 0; j < 9; j++) {
-        coef[i] += Jac[9 * i + j] * direct[j];
+        cphys[i] += Jac[9 * i + j] * dirphys[j];
       }
     }
+
+    // Transform back to derivatives in the computational coordinates
+    mat3x3MatTransMult(cphys, Jinv, coef);
   }
 };
