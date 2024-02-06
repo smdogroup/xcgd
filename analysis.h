@@ -166,7 +166,7 @@ class FEAnalysis {
 
         // Evaluate the residuals at the quadrature points
         A2D::Mat<T, dof_per_node, spatial_dim> coef;
-        phys.jacobian(weight, J, grad, grad_direct, coef);
+        phys.jacobian_product(weight, J, grad, grad_direct, coef);
 
         // Add the contributions to the element residual
         Basis::template add_grad<T, dof_per_node>(pt, coef, element_res);
@@ -174,6 +174,55 @@ class FEAnalysis {
 
       add_element_res<dof_per_node>(&element_nodes[nodes_per_element * i],
                                     element_res, res);
+    }
+  }
+
+  template <class MatrixType>
+  static void jacobian(Physics& phys, int num_elements,
+                       const int element_nodes[], const T xloc[], const T dof[],
+                       MatrixType& mat) {
+    for (int i = 0; i < num_elements; i++) {
+      // Get the element node locations
+      T element_xloc[spatial_dim * nodes_per_element];
+      get_element_dof<spatial_dim>(&element_nodes[nodes_per_element * i], xloc,
+                                   element_xloc);
+
+      // Get the element degrees of freedom
+      T element_dof[dof_per_element];
+      get_element_dof<dof_per_node>(&element_nodes[nodes_per_element * i], dof,
+                                    element_dof);
+
+      // Create the element Jacobian
+      T element_jac[dof_per_element * dof_per_element];
+      for (int j = 0; j < dof_per_element * dof_per_element; j++) {
+        element_jac[j] = 0.0;
+      }
+
+      for (int j = 0; j < num_quadrature_pts; j++) {
+        T pt[spatial_dim];
+        T weight = Quadrature::template get_quadrature_pt<T>(j, pt);
+
+        // Evaluate the derivative of the spatial dof in the computational
+        // coordinates
+        A2D::Mat<T, spatial_dim, spatial_dim> J;
+        Basis::template eval_grad<T, spatial_dim>(pt, element_xloc, J);
+
+        // Evaluate the derivative of the dof in the computational coordinates
+        A2D::Mat<T, dof_per_node, spatial_dim> grad;
+        Basis::template eval_grad<T, dof_per_node>(pt, element_dof, grad);
+
+        // Evaluate the residuals at the quadrature points
+        A2D::Mat<T, dof_per_node * spatial_dim, dof_per_node * spatial_dim>
+            coef;
+        phys.jacobian(weight, J, grad, coef);
+
+        // Add the contributions to the element residual
+        Basis::template add_matrix<T, dof_per_node>(pt, coef, element_jac);
+      }
+
+      MatrixType::template add_element<T>(mat, nodes_per_element,
+                                          &element_nodes[nodes_per_element * i],
+                                          element_jac);
     }
   }
 };

@@ -80,6 +80,45 @@ class TetrahedralBasis {
       }
     }
   }
+
+  template <typename T, int dim>
+  static void add_matrix(
+      const T pt[],
+      const A2D::Mat<T, dim * spatial_dim, dim * spatial_dim>& coef, T jac[]) {
+    T Nxi[spatial_dim * nodes_per_element];
+    eval_basis_grad(pt, Nxi);
+
+    constexpr int dof_per_element = dim * nodes_per_element;
+
+    for (int i = 0; i < nodes_per_element; i++) {
+      T nxi = Nxi[spatial_dim * i];
+      T nyi = Nxi[spatial_dim * i + 1];
+      T nzi = Nxi[spatial_dim * i + 2];
+
+      for (int j = 0; j < nodes_per_element; j++) {
+        T nxj = Nxi[spatial_dim * j];
+        T nyj = Nxi[spatial_dim * j + 1];
+        T nzj = Nxi[spatial_dim * j + 2];
+
+        for (int ii = 0; ii < dim; ii++) {
+          int row = dim * i + ii;
+          for (int jj = 0; jj < dim; jj++) {
+            int col = dim * j + jj;
+            jac[col + row * dof_per_element] +=
+                nxi * (coef(3 * ii, 3 * jj) * nxj +
+                       coef(3 * ii, 3 * jj + 1) * nyj +
+                       coef(3 * ii, 3 * jj + 2) * nzj) +
+                nyi * (coef(3 * ii + 1, 3 * jj) * nxj +
+                       coef(3 * ii + 1, 3 * jj + 1) * nyj +
+                       coef(3 * ii + 1, 3 * jj + 2) * nzj) +
+                nzi * (coef(3 * ii + 2, 3 * jj) * nxj +
+                       coef(3 * ii + 2, 3 * jj + 1) * nyj +
+                       coef(3 * ii + 2, 3 * jj + 2) * nzj);
+          }
+        }
+      }
+    }
+  }
 };
 
 class TetrahedralQuadrature {
