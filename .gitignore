@@ -1,6 +1,9 @@
 .vscode
 *.dSYM
 
+# build
+build/*
+
 # Executables
 derivatives_verification
 test

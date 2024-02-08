@@ -17,7 +17,7 @@ int main(int argc, char *argv[]) {
   T *xloc;
 
   // Load in the mesh
-  std::string filename("input/Tensile.inp");
+  std::string filename("../../input/Tensile.inp");
   load_mesh<T>(filename, &num_elements, &num_nodes, &element_nodes, &xloc);
 
   // Set the number of degrees of freeom
