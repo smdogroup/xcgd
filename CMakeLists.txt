@@ -1,22 +1,22 @@
 # Specify cmake version needed
-cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.12)
 
-# Set project name, language and c++ std
-project(XCGD LANGUAGES CXX)
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+project(XCGD
+  VERSION 1.0.0
+  DESCRIPTION "Numerical discretization using continuous Galerkin difference method"
+  HOMEPAGE_URL "https://github.com/smdogroup/xcgd"
+  LANGUAGES CXX)
 
-# Path variables
-set(XCGD_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR})
+set(XCGD_SPARSE_UTILS_DIR $ENV{HOME}/installs/sparse-utils)
+set(XCGD_A2D_DIR $ENV{HOME}/installs/a2d)
+option(XCGD_BUILD_TESTS "Build unit tests or not" ON)
 
 # Dependencies
-if(NOT DEFINED XCGD_A2D_DIR)
-  set(XCGD_A2D_DIR $ENV{HOME}/git/a2d)
-
-  if(NOT EXISTS ${XCGD_A2D_DIR})
-    message(FATAL_ERROR "${XCGD_A2D_DIR} does not exist, please specify the path by a2d using -DXCGD_A2D_DIR=...")
-  endif()
-endif()
+include(cmake/utils.cmake)
+check_path_and_inform(a2d ${XCGD_A2D_DIR} XCGD_A2D_DIR)
+check_path_and_inform(SparseUtils ${XCGD_SPARSE_UTILS_DIR} XCGD_SPARSE_UTILS_DIR)
+find_package(A2D REQUIRED PATHS ${XCGD_A2D_DIR})
+find_package(SparseUtils REQUIRED PATHS ${XCGD_SPARSE_UTILS_DIR})
 
 # Set warning flags
 if(CMAKE_CXX_COMPILER_ID MATCHES "AppleClang|GNU")
@@ -26,19 +26,11 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "AppleClang|GNU")
 endif()
 
 # Copy over inputs
-file(COPY ${XCGD_ROOT_DIR}/input DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
+file(COPY ${PROJECT_SOURCE_DIR}/input DESTINATION ${PROJECT_BINARY_DIR})
 
-# Build unit tests
-# Download google test (git tag needs to be updated frequently)
-include(FetchContent)
-FetchContent_Declare(
-  googletest
-  GIT_REPOSITORY https://github.com/google/googletest.git
-  GIT_TAG e2239ee6043f73722e7aa812a459f54a28552929 # release-1.10.0
-)
-FetchContent_MakeAvailable(googletest)
-enable_testing()
-add_subdirectory(${XCGD_ROOT_DIR}/tests)
+if(XCGD_BUILD_TESTS)
+  enable_testing()
+  add_subdirectory(tests)
+endif()
 
-# Build examples
-add_subdirectory(${XCGD_ROOT_DIR}/examples)
+add_subdirectory(examples)
