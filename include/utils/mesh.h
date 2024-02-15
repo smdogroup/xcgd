@@ -167,8 +167,9 @@ void load_mesh(std::string filename, int *num_elements, int *num_nodes,
 
 template <typename T>
 void create_single_element_mesh(int *num_elements, int *num_nodes,
-                                int **element_nodes, T **xloc, int *ndof_bcs,
-                                int **dof_bcs) {
+                                int **element_nodes, T **xloc,
+                                int *ndof_bcs = nullptr,
+                                int **dof_bcs = nullptr) {
   int num_elem = 1;
   int num_ns = 10;
 
@@ -235,14 +236,19 @@ void create_single_element_mesh(int *num_elements, int *num_nodes,
   *num_nodes = num_ns;
   *num_elements = num_elem;
   *xloc = x;
-  *ndof_bcs = ndof_bcs_;
-  *dof_bcs = dof_bcs_;
+  if (ndof_bcs) {
+    *ndof_bcs = ndof_bcs_;
+  }
+  if (dof_bcs) {
+    *dof_bcs = dof_bcs_;
+  }
 }
 
 template <typename T>
 void create_2d_rect_quad_mesh(int nx, int ny, T lx, T ly, int *num_elements,
                               int *num_nodes, int **element_nodes, T **xloc,
-                              int *ndof_bcs, int **dof_bcs) {
+                              int *ndof_bcs = nullptr,
+                              int **dof_bcs = nullptr) {
   int _num_elements = nx * ny;
   int _num_nodes = (nx + 1) * (ny + 1);
   int *_element_nodes = new int[_num_elements * _num_nodes];
@@ -293,8 +299,12 @@ void create_2d_rect_quad_mesh(int nx, int ny, T lx, T ly, int *num_elements,
   *num_nodes = _num_nodes;
   *element_nodes = _element_nodes;
   *xloc = _xloc;
-  *ndof_bcs = _ndof_bcs;
-  *dof_bcs = _dof_bcs;
+  if (ndof_bcs) {
+    *ndof_bcs = _ndof_bcs;
+  }
+  if (dof_bcs) {
+    *dof_bcs = _dof_bcs;
+  }
 }
 
 #endif  // XCGD_MESH_H
