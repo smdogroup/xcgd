@@ -1,10 +1,15 @@
+#ifndef XCGD_ANALYSIS_H
+#define XCGD_ANALYSIS_H
+
 #include "a2dcore.h"
+#include "elements/commons.h"
+#include "sparse_utils/sparse_matrix.h"
 
 template <typename T, class Basis, class Quadrature, class Physics>
 class FEAnalysis {
  public:
   // Static data taken from the element basis
-  static const int spatial_dim = 3;
+  static const int spatial_dim = Basis::spatial_dim;
   static const int nodes_per_element = Basis::nodes_per_element;
 
   // Static data from the qaudrature
@@ -60,11 +65,11 @@ class FEAnalysis {
         // Evaluate the derivative of the spatial dof in the computational
         // coordinates
         A2D::Mat<T, spatial_dim, spatial_dim> J;
-        Basis::template eval_grad<T, spatial_dim>(pt, element_xloc, J);
+        eval_grad<T, Basis, spatial_dim>(pt, element_xloc, J);
 
         // Evaluate the derivative of the dof in the computational coordinates
         A2D::Mat<T, dof_per_node, spatial_dim> grad;
-        Basis::template eval_grad<T, dof_per_node>(pt, element_dof, grad);
+        eval_grad<T, Basis, dof_per_node>(pt, element_dof, grad);
 
         // Add the energy contributions
         total_energy += phys.energy(weight, J, grad);
@@ -101,18 +106,18 @@ class FEAnalysis {
         // Evaluate the derivative of the spatial dof in the computational
         // coordinates
         A2D::Mat<T, spatial_dim, spatial_dim> J;
-        Basis::template eval_grad<T, spatial_dim>(pt, element_xloc, J);
+        eval_grad<T, Basis, spatial_dim>(pt, element_xloc, J);
 
         // Evaluate the derivative of the dof in the computational coordinates
         A2D::Mat<T, dof_per_node, spatial_dim> grad;
-        Basis::template eval_grad<T, dof_per_node>(pt, element_dof, grad);
+        eval_grad<T, Basis, dof_per_node>(pt, element_dof, grad);
 
         // Evaluate the residuals at the quadrature points
         A2D::Mat<T, dof_per_node, spatial_dim> coef;
         phys.residual(weight, J, grad, coef);
 
         // Add the contributions to the element residual
-        Basis::template add_grad<T, dof_per_node>(pt, coef, element_res);
+        add_grad<T, Basis, dof_per_node>(pt, coef, element_res);
       }
 
       add_element_res<dof_per_node>(&element_nodes[nodes_per_element * i],
@@ -152,24 +157,23 @@ class FEAnalysis {
         // Evaluate the derivative of the spatial dof in the computational
         // coordinates
         A2D::Mat<T, spatial_dim, spatial_dim> J;
-        Basis::template eval_grad<T, spatial_dim>(pt, element_xloc, J);
+        eval_grad<T, Basis, spatial_dim>(pt, element_xloc, J);
 
         // Evaluate the derivative of the dof in the computational coordinates
         A2D::Mat<T, dof_per_node, spatial_dim> grad;
-        Basis::template eval_grad<T, dof_per_node>(pt, element_dof, grad);
+        eval_grad<T, Basis, dof_per_node>(pt, element_dof, grad);
 
         // Evaluate the derivative of the direction in the computational
         // coordinates
         A2D::Mat<T, dof_per_node, spatial_dim> grad_direct;
-        Basis::template eval_grad<T, dof_per_node>(pt, element_direct,
-                                                   grad_direct);
+        eval_grad<T, Basis, dof_per_node>(pt, element_direct, grad_direct);
 
         // Evaluate the residuals at the quadrature points
         A2D::Mat<T, dof_per_node, spatial_dim> coef;
         phys.jacobian_product(weight, J, grad, grad_direct, coef);
 
         // Add the contributions to the element residual
-        Basis::template add_grad<T, dof_per_node>(pt, coef, element_res);
+        add_grad<T, Basis, dof_per_node>(pt, coef, element_res);
       }
 
       add_element_res<dof_per_node>(&element_nodes[nodes_per_element * i],
@@ -177,10 +181,10 @@ class FEAnalysis {
     }
   }
 
-  template <class MatrixType>
-  static void jacobian(Physics& phys, int num_elements,
-                       const int element_nodes[], const T xloc[], const T dof[],
-                       MatrixType& mat) {
+  static void jacobian(
+      Physics& phys, int num_elements, const int element_nodes[],
+      const T xloc[], const T dof[],
+      SparseUtils::BSRMat<T, dof_per_node, dof_per_node>* mat) {
     for (int i = 0; i < num_elements; i++) {
       // Get the element node locations
       T element_xloc[spatial_dim * nodes_per_element];
@@ -205,11 +209,11 @@ class FEAnalysis {
         // Evaluate the derivative of the spatial dof in the computational
         // coordinates
         A2D::Mat<T, spatial_dim, spatial_dim> J;
-        Basis::template eval_grad<T, spatial_dim>(pt, element_xloc, J);
+        eval_grad<T, Basis, spatial_dim>(pt, element_xloc, J);
 
         // Evaluate the derivative of the dof in the computational coordinates
         A2D::Mat<T, dof_per_node, spatial_dim> grad;
-        Basis::template eval_grad<T, dof_per_node>(pt, element_dof, grad);
+        eval_grad<T, Basis, dof_per_node>(pt, element_dof, grad);
 
         // Evaluate the residuals at the quadrature points
         A2D::Mat<T, dof_per_node * spatial_dim, dof_per_node * spatial_dim>
@@ -217,12 +221,15 @@ class FEAnalysis {
         phys.jacobian(weight, J, grad, coef);
 
         // Add the contributions to the element residual
-        Basis::template add_matrix<T, dof_per_node>(pt, coef, element_jac);
+        add_matrix<T, Basis, dof_per_node>(pt, coef, element_jac);
       }
 
-      MatrixType::template add_element<T>(mat, nodes_per_element,
-                                          &element_nodes[nodes_per_element * i],
-                                          element_jac);
+      mat->add_block_values(nodes_per_element,
+                            &element_nodes[nodes_per_element * i],
+                            nodes_per_element,
+                            &element_nodes[nodes_per_element * i], element_jac);
     }
   }
 };
+
+#endif  // XCGD_ANALYSIS_H

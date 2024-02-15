@@ -1,3 +1,6 @@
+#ifndef XCGD_MESH_H
+#define XCGD_MESH_H
+
 #include <algorithm>
 #include <fstream>
 #include <iostream>
@@ -62,7 +65,7 @@ void load_mesh(std::string filename, int *num_elements, int *num_nodes,
         size_t namePos = line.find("Nset=");
         if (namePos != std::string::npos) {
           currentSetName = line.substr(namePos + 5);
-          nodeSets[currentSetName] = NodeSet{currentSetName};
+          nodeSets[currentSetName] = NodeSet{currentSetName, {}};
         }
       }
 
@@ -161,3 +164,122 @@ void load_mesh(std::string filename, int *num_elements, int *num_nodes,
   *element_nodes = elem_nodes;
   *xloc = x;
 }
+
+template <typename T>
+void create_single_element_mesh(int *num_elements, int *num_nodes,
+                                int **element_nodes, T **xloc) {
+  int num_elem = 1;
+  int num_ns = 10;
+
+  int *elem_nodes = new int[10];
+  T *x = new T[3 * num_ns];
+
+  for (int i = 0; i < num_ns; i++) {
+    elem_nodes[i] = i;
+  }
+
+  x[0] = 1.0;
+  x[1] = 0.0;
+  x[2] = 0.0;
+
+  x[3] = 0.0;
+  x[4] = 1.0;
+  x[5] = 0.0;
+
+  x[6] = 0.0;
+  x[7] = 0.0;
+  x[8] = 0.0;
+
+  x[9] = 0.0;
+  x[10] = 0.0;
+  x[11] = 1.0;
+
+  x[12] = 0.5;
+  x[13] = 0.5;
+  x[14] = 0.0;
+
+  x[15] = 0.0;
+  x[16] = 0.5;
+  x[17] = 0.0;
+
+  x[18] = 0.5;
+  x[19] = 0.0;
+  x[20] = 0.0;
+
+  x[21] = 0.5;
+  x[22] = 0.0;
+  x[23] = 0.5;
+
+  x[24] = 0.0;
+  x[25] = 0.5;
+  x[26] = 0.5;
+
+  x[27] = 0.0;
+  x[28] = 0.0;
+  x[29] = 0.5;
+
+  *element_nodes = elem_nodes;
+  *num_nodes = num_ns;
+  *num_elements = num_elem;
+  *xloc = x;
+}
+
+template <typename T>
+void create_2d_rect_quad_mesh(int nx, int ny, T lx, T ly, int *num_elements,
+                              int *num_nodes, int **element_nodes, T **xloc,
+                              int *ndof_bcs, int **dof_bcs) {
+  int _num_elements = nx * ny;
+  int _num_nodes = (nx + 1) * (ny + 1);
+  int *_element_nodes = new int[_num_elements * _num_nodes];
+  T *_xloc = new T[2 * _num_nodes];
+  int _ndof_bcs = 2 * (ny + 1);
+  int *_dof_bcs = new int[_ndof_bcs];
+
+  int idx = 0;
+  for (int j = 0; j < ny + 1; j++) {
+    int node = (nx + 1) * j;
+    _dof_bcs[idx] = 2 * node;
+    idx++;
+    _dof_bcs[idx] = 2 * node + 1;
+    idx++;
+  }
+
+  // Set X
+  for (int j = 0; j < ny + 1; j++) {
+    for (int i = 0; i < nx + 1; i++) {
+      int node = i + (nx + 1) * j;
+
+      _xloc[2 * node] = lx * T(i) / T(nx);
+      _xloc[2 * node + 1] = ly * T(j) / T(ny);
+    }
+  }
+
+  // Set connectivity
+  for (int j = 0; j < ny; j++) {
+    for (int i = 0; i < nx; i++) {
+      int elem = i + nx * j;
+
+      int conn_coord[4];
+      for (int jj = 0, index = 0; jj < 2; jj++) {
+        for (int ii = 0; ii < 2; ii++, index++) {
+          conn_coord[index] = (i + ii) + (nx + 1) * (j + jj);
+        }
+      }
+
+      // Convert to the correct connectivity
+      _element_nodes[4 * elem + 0] = conn_coord[0];
+      _element_nodes[4 * elem + 1] = conn_coord[1];
+      _element_nodes[4 * elem + 2] = conn_coord[3];
+      _element_nodes[4 * elem + 3] = conn_coord[2];
+    }
+  }
+
+  *num_elements = _num_elements;
+  *num_nodes = _num_nodes;
+  *element_nodes = _element_nodes;
+  *xloc = _xloc;
+  *ndof_bcs = _ndof_bcs;
+  *dof_bcs = _dof_bcs;
+}
+
+#endif  // XCGD_MESH_H

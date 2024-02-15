@@ -2,28 +2,20 @@
 #include <string>
 
 #include "analysis.h"
-#include "mesh.h"
+#include "elements/quadrilateral.h"
+#include "elements/tetrahedral.h"
 #include "physics/neohookean.h"
 #include "test_commons.h"
-#include "tetrahedral.h"
+#include "utils/mesh.h"
 
-TEST(DerivTest, Neohookean) {
-  using T = std::complex<double>;
-  using Basis = TetrahedralBasis;
-  using Quadrature = TetrahedralQuadrature;
-  using Physics = NeohookeanPhysics<T>;
+template <typename T, int spatial_dim, class Basis, class Quadrature>
+void test_neohookean(int num_elements, int num_nodes, int *element_nodes,
+                     T *xloc) {
+  using Physics = NeohookeanPhysics<T, spatial_dim>;
   using Analysis = FEAnalysis<T, Basis, Quadrature, Physics>;
 
-  int num_elements, num_nodes;
-  int *element_nodes;
-  T *xloc;
-
-  // Load in the mesh
-  std::string filename("../../input/Tensile.inp");
-  load_mesh<T>(filename, &num_elements, &num_nodes, &element_nodes, &xloc);
-
   // Set the number of degrees of freeom
-  int ndof = 3 * num_nodes;
+  int ndof = spatial_dim * num_nodes;
 
   // Allocate space for the degrees of freeom
   T *dof = new T[ndof];
@@ -52,8 +44,6 @@ TEST(DerivTest, Neohookean) {
   Analysis::jacobian_product(physics, num_elements, element_nodes, xloc, dof,
                              direction, Jp);
 
-  std::cout << energy << std::endl;
-
   double dres_cs = energy.imag() / h;
   double dres_exact = 0.0;
   double dres_relerr = 0.0;
@@ -81,4 +71,31 @@ TEST(DerivTest, Neohookean) {
 
   EXPECT_NEAR(dres_relerr, 0.0, 1e-14);
   EXPECT_NEAR(dJp_relerr, 0.0, 1e-14);
+}
+
+TEST(Neohookean, Tet) {
+  using T = std::complex<double>;
+  int num_elements, num_nodes;
+  int *element_nodes;
+  T *xloc;
+
+  create_single_element_mesh(&num_elements, &num_nodes, &element_nodes, &xloc);
+
+  test_neohookean<T, 3, TetrahedralBasis, TetrahedralQuadrature>(
+      num_elements, num_nodes, element_nodes, xloc);
+}
+
+TEST(Neohookean, Quad) {
+  using T = std::complex<double>;
+  int num_elements, num_nodes;
+  int *element_nodes;
+  T *xloc;
+
+  int nx = 5, ny = 5;
+  T lx = 1.0, ly = 1.0;
+  create_2d_rect_quad_mesh(nx, ny, lx, ly, &num_elements, &num_nodes,
+                           &element_nodes, &xloc);
+
+  test_neohookean<T, 2, QuadrilateralBasis, QuadrilateralQuadrature>(
+      num_elements, num_nodes, element_nodes, xloc);
 }

@@ -1,14 +1,16 @@
+#ifndef XCGD_NEOHOOKEAN_H
+#define XCGD_NEOHOOKEAN_H
+
 #include <cmath>
 
 #include "a2dcore.h"
 
 /* Neohookean physics implemented using A2D, i.e. residual and Jacobian are
 automatically differentiated */
-template <typename T>
+template <typename T, int spatial_dim = 3>
 class NeohookeanPhysics {
  public:
-  static const int spatial_dim = 3;
-  static const int dof_per_node = 3;
+  static constexpr int dof_per_node = spatial_dim;
 
   T C1, D1;  // Constitutitive data
 
@@ -18,9 +20,10 @@ class NeohookeanPhysics {
            A2D::Mat<T, dof_per_node, spatial_dim>& grad_mat) {
     A2D::Mat<T, spatial_dim, spatial_dim> Jinv_mat, F_mat, FTF_mat, I_mat;
 
-    I_mat(0, 0) = 1.0;
-    I_mat(1, 1) = 1.0;
-    I_mat(2, 2) = 1.0;
+    // Identity matrix
+    for (int i = 0; i < spatial_dim; i++) {
+      I_mat(i, i) = 1.0;
+    }
 
     T detJ;
     A2D::MatDet(J_mat, detJ);
@@ -49,10 +52,11 @@ class NeohookeanPhysics {
   void residual(T weight, A2D::Mat<T, spatial_dim, spatial_dim>& J,
                 A2D::Mat<T, dof_per_node, spatial_dim>& grad,
                 A2D::Mat<T, dof_per_node, spatial_dim>& coef) {
+    // Identity matrix
     A2D::Mat<T, spatial_dim, spatial_dim> I;
-    I(0, 0) = 1.0;
-    I(1, 1) = 1.0;
-    I(2, 2) = 1.0;
+    for (int i = 0; i < spatial_dim; i++) {
+      I(i, i) = 1.0;
+    }
 
     A2D::ADObj<A2D::Mat<T, spatial_dim, spatial_dim>> J_mat(J);
     A2D::ADObj<A2D::Mat<T, dof_per_node, spatial_dim>&> grad_mat(grad, coef);
@@ -81,10 +85,11 @@ class NeohookeanPhysics {
                         A2D::Mat<T, dof_per_node, spatial_dim>& grad,
                         A2D::Mat<T, dof_per_node, spatial_dim>& direct,
                         A2D::Mat<T, dof_per_node, spatial_dim>& coef) {
+    // Identity matrix
     A2D::Mat<T, spatial_dim, spatial_dim> I;
-    I(0, 0) = 1.0;
-    I(1, 1) = 1.0;
-    I(2, 2) = 1.0;
+    for (int i = 0; i < spatial_dim; i++) {
+      I(i, i) = 1.0;
+    }
 
     A2D::Mat<T, dof_per_node, spatial_dim> bgrad;
     A2D::A2DObj<A2D::Mat<T, dof_per_node, spatial_dim>&> grad_mat(grad, bgrad,
@@ -116,10 +121,11 @@ class NeohookeanPhysics {
                 A2D::Mat<T, dof_per_node, spatial_dim>& grad,
                 A2D::Mat<T, dof_per_node * spatial_dim,
                          dof_per_node * spatial_dim>& jac) {
+    // Identity matrix
     A2D::Mat<T, spatial_dim, spatial_dim> I;
-    I(0, 0) = 1.0;
-    I(1, 1) = 1.0;
-    I(2, 2) = 1.0;
+    for (int i = 0; i < spatial_dim; i++) {
+      I(i, i) = 1.0;
+    }
 
     A2D::Mat<T, dof_per_node, spatial_dim> bgrad, direct, coef;
     A2D::A2DObj<A2D::Mat<T, dof_per_node, spatial_dim>&> grad_mat(grad, bgrad,
@@ -147,3 +153,5 @@ class NeohookeanPhysics {
     stack.hextract(direct, coef, jac);
   }
 };
+
+#endif  // XCGD_NEOHOOKEAN_H

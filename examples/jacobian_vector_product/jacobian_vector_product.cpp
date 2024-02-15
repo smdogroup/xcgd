@@ -1,9 +1,9 @@
 #include <string>
 
 #include "analysis.h"
-#include "mesh.h"
+#include "elements/tetrahedral.h"
 #include "physics/neohookean.h"
-#include "tetrahedral.h"
+#include "utils/mesh.h"
 
 int main(int argc, char *argv[]) {
   using T = double;

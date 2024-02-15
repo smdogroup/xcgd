@@ -1,3 +1,2 @@
 add_subdirectory(jacobian_vector_product)
-
-# add_subdirectory(direct_solve)
+add_subdirectory(direct_solve)
