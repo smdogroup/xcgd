@@ -12,10 +12,10 @@
 
 int main(int argc, char *argv[]) {
   using T = double;
-  // using Basis = QuadrilateralBasis;
-  // using Quadrature = QuadrilateralQuadrature;
-  using Basis = TetrahedralBasis;
-  using Quadrature = TetrahedralQuadrature;
+  using Basis = QuadrilateralBasis;
+  using Quadrature = QuadrilateralQuadrature;
+  // using Basis = TetrahedralBasis;
+  // using Quadrature = TetrahedralQuadrature;
 
   using Physics = NeohookeanPhysics<T, Basis::spatial_dim>;
   using Analysis = FEAnalysis<T, Basis, Quadrature, Physics>;
@@ -32,15 +32,16 @@ int main(int argc, char *argv[]) {
   // std::string filename("../../input/Tensile.inp");
   // load_mesh<T>(filename, &num_elements, &num_nodes, &element_nodes, &xloc);
 
-  // Create the simple mesh
-  create_single_element_mesh(&num_elements, &num_nodes, &element_nodes, &xloc,
-                             &ndof_bcs, &dof_bcs);
+  // // Create the simple mesh
+  // create_single_element_mesh(&num_elements, &num_nodes, &element_nodes,
+  // &xloc,
+  //                            &ndof_bcs, &dof_bcs);
 
-  // int nx = 5, ny = 5;
-  // T lx = 1.0, ly = 1.0;
+  int nx = 5, ny = 5;
+  T lx = 1.0, ly = 1.0;
 
-  // create_2d_rect_quad_mesh(nx, ny, lx, ly, &num_elements, &num_nodes,
-  //                          &element_nodes, &xloc, &ndof_bcs, &dof_bcs);
+  create_2d_rect_quad_mesh(nx, ny, lx, ly, &num_elements, &num_nodes,
+                           &element_nodes, &xloc, &ndof_bcs, &dof_bcs);
 
   ToVTK<T> vtk(Basis::spatial_dim, num_nodes, num_elements,
                Basis::nodes_per_element, element_nodes, xloc);
@@ -65,7 +66,8 @@ int main(int argc, char *argv[]) {
   T *Jp = new T[ndof];
 
   for (int i = 0; i < ndof; i++) {
-    dof[i] = 0.01 * rand() / RAND_MAX;
+    // dof[i] = 0.01 * rand() / RAND_MAX;
+    dof[i] = 0.0;
     p[i] = 0.0;
     Jp[i] = 0.0;
   }
