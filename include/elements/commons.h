@@ -73,10 +73,9 @@ static void add_matrix(
           T val = 0.0;
           for (int kk = 0; kk < dim; kk++) {
             for (int ll = 0; ll < dim; ll++) {
-              val +=
-                  coef(spatial_dim * ii + kk, spatial_dim * jj + ll) * nj[ll];
+              val += coef(spatial_dim * ii + kk, spatial_dim * jj + ll) *
+                     ni[kk] * nj[ll];
             }
-            val *= ni[kk];
           }
           elem_jac[col + row * dof_per_element] += val;
         }

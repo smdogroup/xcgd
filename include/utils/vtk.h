@@ -157,9 +157,9 @@ class ToVTK {
         write_real_val(fp_, 0.0);
         std::fprintf(fp_, "\n");
       } else {
-        write_real_val(fp_, xloc_[2 * i]);
-        write_real_val(fp_, xloc_[2 * i + 1]);
-        write_real_val(fp_, xloc_[2 * i + 2]);
+        write_real_val(fp_, xloc_[3 * i]);
+        write_real_val(fp_, xloc_[3 * i + 1]);
+        write_real_val(fp_, xloc_[3 * i + 2]);
         std::fprintf(fp_, "\n");
       }
     }

@@ -167,9 +167,13 @@ void load_mesh(std::string filename, int *num_elements, int *num_nodes,
 
 template <typename T>
 void create_single_element_mesh(int *num_elements, int *num_nodes,
-                                int **element_nodes, T **xloc) {
+                                int **element_nodes, T **xloc, int *ndof_bcs,
+                                int **dof_bcs) {
   int num_elem = 1;
   int num_ns = 10;
+
+  int ndof_bcs_ = 6;
+  int *dof_bcs_ = new int[3 * ndof_bcs_];
 
   int *elem_nodes = new int[10];
   T *x = new T[3 * num_ns];
@@ -194,8 +198,8 @@ void create_single_element_mesh(int *num_elements, int *num_nodes,
   x[10] = 0.0;
   x[11] = 1.0;
 
-  x[12] = 0.5;
-  x[13] = 0.5;
+  x[12] = 0.6;
+  x[13] = 0.6;
   x[14] = 0.0;
 
   x[15] = 0.0;
@@ -206,22 +210,33 @@ void create_single_element_mesh(int *num_elements, int *num_nodes,
   x[19] = 0.0;
   x[20] = 0.0;
 
-  x[21] = 0.5;
+  x[21] = 0.6;
   x[22] = 0.0;
-  x[23] = 0.5;
+  x[23] = 0.6;
 
   x[24] = 0.0;
-  x[25] = 0.5;
-  x[26] = 0.5;
+  x[25] = 0.6;
+  x[26] = 0.6;
 
   x[27] = 0.0;
   x[28] = 0.0;
   x[29] = 0.5;
 
+  std::vector<int> bc_nodes = {0, 1, 2, 4, 5, 6};
+
+  int index = 0;
+  for (int node : bc_nodes) {
+    for (int i = 0; i < 3; i++, index++) {
+      dof_bcs_[index] = 3 * node + i;
+    }
+  }
+
   *element_nodes = elem_nodes;
   *num_nodes = num_ns;
   *num_elements = num_elem;
   *xloc = x;
+  *ndof_bcs = ndof_bcs_;
+  *dof_bcs = dof_bcs_;
 }
 
 template <typename T>

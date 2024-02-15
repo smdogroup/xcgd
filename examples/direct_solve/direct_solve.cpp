@@ -12,33 +12,35 @@
 
 int main(int argc, char *argv[]) {
   using T = double;
-  using Basis = QuadrilateralBasis;
-  using Quadrature = QuadrilateralQuadrature;
+  // using Basis = QuadrilateralBasis;
+  // using Quadrature = QuadrilateralQuadrature;
+  using Basis = TetrahedralBasis;
+  using Quadrature = TetrahedralQuadrature;
+
   using Physics = NeohookeanPhysics<T, Basis::spatial_dim>;
   using Analysis = FEAnalysis<T, Basis, Quadrature, Physics>;
   using BSRMat =
       SparseUtils::BSRMat<T, Physics::dof_per_node, Physics::dof_per_node>;
-  using CSRMat = SparseUtils::CSRMat<T>;
   using CSCMat = SparseUtils::CSCMat<T>;
 
   int num_elements, num_nodes;
   int *element_nodes;
   T *xloc;
+  int ndof_bcs, *dof_bcs;
 
   // // Load in the mesh
   // std::string filename("../../input/Tensile.inp");
   // load_mesh<T>(filename, &num_elements, &num_nodes, &element_nodes, &xloc);
 
   // Create the simple mesh
-  // create_single_element_mesh(&num_elements, &num_nodes, &element_nodes,
-  // &xloc);
+  create_single_element_mesh(&num_elements, &num_nodes, &element_nodes, &xloc,
+                             &ndof_bcs, &dof_bcs);
 
-  int nx = 3, ny = 3;
-  T lx = 1.0, ly = 1.0;
+  // int nx = 5, ny = 5;
+  // T lx = 1.0, ly = 1.0;
 
-  int ndof_bcs, *dof_bcs;
-  create_2d_rect_quad_mesh(nx, ny, lx, ly, &num_elements, &num_nodes,
-                           &element_nodes, &xloc, &ndof_bcs, &dof_bcs);
+  // create_2d_rect_quad_mesh(nx, ny, lx, ly, &num_elements, &num_nodes,
+  //                          &element_nodes, &xloc, &ndof_bcs, &dof_bcs);
 
   ToVTK<T> vtk(Basis::spatial_dim, num_nodes, num_elements,
                Basis::nodes_per_element, element_nodes, xloc);
@@ -77,7 +79,9 @@ int main(int argc, char *argv[]) {
   StopWatch watch;
   Analysis::jacobian(physics, num_elements, element_nodes, xloc, dof, jac_bsr);
   double t1 = watch.lap();
-  std::printf("Jacobian assembly: %.3e s\n", t1);
+  std::printf("Jacobian assembly time: %.3e s\n", t1);
+
+  jac_bsr->write_mtx("jac_bsr_no_bcs.mtx");
 
   jac_bsr->zero_rows(ndof_bcs, dof_bcs);
   jac_csc = SparseUtils::bsr_to_csc(jac_bsr);
@@ -98,6 +102,7 @@ int main(int argc, char *argv[]) {
   }
 
   double t4 = watch.lap();
+  SparseUtils::CholOrderingType order = SparseUtils::CholOrderingType::ND;
   SparseUtils::SparseCholesky<T> *chol =
       new SparseUtils::SparseCholesky<T>(jac_csc);
   double t5 = watch.lap();
