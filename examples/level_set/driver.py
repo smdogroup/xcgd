@@ -46,10 +46,18 @@ if __name__ == "__main__":
             n_list.append(n_)
 
         axs[0].loglog(
-            np.array(h_native_list) ** 2, err_native_list, "-o", label="q=%d" % q_
+            np.array(h_native_list) ** 2,
+            err_native_list,
+            "-o",
+            label="q=%d" % q_,
+            alpha=0.5,
         )
         axs[1].loglog(
-            np.array(h_algoim_list) ** 2, err_algoim_list, "-o", label="q=%d" % q_
+            np.array(h_algoim_list) ** 2,
+            err_algoim_list,
+            "-o",
+            label="q=%d" % q_,
+            alpha=0.5,
         )
 
         axs[2].semilogx(
@@ -57,6 +65,7 @@ if __name__ == "__main__":
             np.array(nquads_algoim_list) / np.array(nquads_native_list),
             "-o",
             label="q=%d" % q_,
+            alpha=0.5,
         )
 
     axs[0].set_title("Gaussian quadratures")
