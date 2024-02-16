@@ -36,7 +36,8 @@ if __name__ == "__main__":
             nquads_algoim = int(nquads_algoim)
 
             h_native_list.append(h)
-            h_algoim_list.append(h * np.sqrt(nquads_native / nquads_algoim))
+            h_algoim_list.append(h)
+            # h_algoim_list.append(h * np.sqrt(nquads_native / nquads_algoim))
 
             err_native_list.append(err_native)
             err_algoim_list.append(err_algoim)
