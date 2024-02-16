@@ -116,7 +116,7 @@ struct Circle {
 };
 
 double compute_pi(double xmin = -1.0, double xmax = 1.0, int nelems_x = 100,
-                  int node_count = 2) {
+                  int node_count = 2, int* nquads = nullptr) {
   double pi = 0.0;
   double h = (xmax - xmin) / nelems_x;
   double detJ = h * h;
@@ -148,11 +148,20 @@ double compute_pi(double xmin = -1.0, double xmax = 1.0, int nelems_x = 100,
   }
 
   pi *= detJ;
+
+  if (nquads) {
+    *nquads = nelems_x * nelems_x * node_count * node_count;
+  }
+
   return pi;
 }
 
 double compute_pi_algoim(double xmin = -1.0, double xmax = 1.0,
-                         int nelems_x = 100, int node_count = 2) {
+                         int nelems_x = 100, int node_count = 2,
+                         int* nquads = nullptr) {
+  if (nquads) {
+    *nquads = 0;
+  }
   double pi = 0.0;
   double h = (xmax - xmin) / nelems_x;
 
@@ -167,10 +176,13 @@ double compute_pi_algoim(double xmin = -1.0, double xmax = 1.0,
     for (int j = 0; j < nelems_x; j++) {
       algoim::uvector<double, 2> xmin{X[i], X[j]};
       algoim::uvector<double, 2> xmax{X[i] + h, X[j] + h};
-      pi +=
+      auto q =
           algoim::quadGen<2>(phi, algoim::HyperRectangle<double, 2>(xmin, xmax),
-                             -1, -1, node_count)
-              .sumWeights();
+                             -1, -1, node_count);
+      pi += q.sumWeights();
+      if (nquads) {
+        *nquads += q.nodes.size();
+      }
     }
   }
 
@@ -191,7 +203,7 @@ std::vector<int> n_sequence(int start, int stop, int num) {
   return vec;
 }
 
-int main(int argc, char* argv[]) {
+void test_algoim() {
   StopWatch watch;
   int q = 5, n = 100;
 
@@ -220,6 +232,31 @@ int main(int argc, char* argv[]) {
       printf("[algoim]q: %d, n: %4d, pi: %.10f, h: %9.2e, err: %.5e (%.3f s)\n",
              q, n, pi2, h, err2, t3 - t2);
     }
+  }
+}
+
+int main(int argc, char* argv[]) {
+  if (argc == 1) {
+    test_algoim();
+  }
+
+  else {
+    int n = atoi(argv[1]);
+    int q = atoi(argv[2]);
+
+    double xmin = -1.0;
+    double xmax = 1.0;
+    double h = (xmax - xmin) / n;
+
+    double pi_exact = 3.14159265358979323846;
+
+    int nquads_native = 0, nquads_algoim = 0;
+    double err_native =
+        abs(compute_pi(xmin, xmax, n, q, &nquads_native) - pi_exact);
+    double err_algoim =
+        abs(compute_pi_algoim(xmin, xmax, n, q, &nquads_algoim) - pi_exact);
+    printf("%.2e, %.10e, %d, %.10e, %d\n", h, err_native, nquads_native,
+           err_algoim, nquads_algoim);
   }
 
   return 0;
