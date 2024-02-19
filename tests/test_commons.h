@@ -67,12 +67,24 @@ void print_mat(const MatType& mat) {
 
 #define _EXPECT_VEC_NEAR(m, vec, vals)   \
   for (I i = 0; i < m; i++) {            \
-    EXPECT_NEAR(vec(i), vals[i], 1e-15); \
+    EXPECT_NEAR(vec[i], vals[i], 1e-15); \
+  }
+
+#define _EXPECT_CPLX_VEC_NEAR(m, vec, vals)            \
+  for (I i = 0; i < m; i++) {                          \
+    EXPECT_NEAR(vec[i].real(), vals[i].real(), 1e-15); \
+    EXPECT_NEAR(vec[i].imag(), vals[i].imag(), 1e-15); \
   }
 
 #define _EXPECT_VEC_NEAR_TOL(m, vec, vals, abs_err) \
   for (I i = 0; i < m; i++) {                       \
-    EXPECT_NEAR(vec(i), vals[i], abs_err);          \
+    EXPECT_NEAR(vec[i], vals[i], abs_err);          \
+  }
+
+#define _EXPECT_CPLX_VEC_NEAR_TOL(m, vec, vals, abs_err) \
+  for (I i = 0; i < m; i++) {                            \
+    EXPECT_NEAR(vec[i].real(), vals[i].real(), abs_err); \
+    EXPECT_NEAR(vec[i].imag(), vals[i].imag(), abs_err); \
   }
 
 #define _EXPECT_MAT_NEAR(m, n, mat, vals)             \
@@ -105,6 +117,10 @@ void print_mat(const MatType& mat) {
 // - EXPECT_VEC_NEAR(m, vec, vals, abs_err)
 #define EXPECT_VEC_NEAR(...)                                                 \
   _GET_EXPECT_VEC_MACRO(__VA_ARGS__, _EXPECT_VEC_NEAR_TOL, _EXPECT_VEC_NEAR) \
+  (__VA_ARGS__)
+#define EXPECT_CPLX_VEC_NEAR(...)                               \
+  _GET_EXPECT_VEC_MACRO(__VA_ARGS__, _EXPECT_CPLX_VEC_NEAR_TOL, \
+                        _EXPECT_CPLX_VEC_NEAR)                  \
   (__VA_ARGS__)
 
 // Usage:

@@ -1,0 +1,11 @@
+add_executable(linalg linalg.cpp)
+
+target_include_directories(linalg PRIVATE
+    ${PROJECT_SOURCE_DIR}/include ${PROJECT_SOURCE_DIR}/tests)
+
+# Link to the default main from Google Test
+target_link_libraries(linalg PRIVATE gtest_main A2D::A2D SparseUtils::SparseUtils)
+
+# Make tests auto-testable with CMake ctest
+include(GoogleTest)
+gtest_discover_tests(linalg)

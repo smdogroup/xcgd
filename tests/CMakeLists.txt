@@ -7,3 +7,4 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(googletest)
 
 add_subdirectory(derivatives_verification)
+add_subdirectory(linalg)
