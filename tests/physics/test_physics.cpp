@@ -82,7 +82,6 @@ void test_physics(int num_elements, int num_nodes, int *element_nodes, T *xloc,
   BSRMat *jac_bsr = new BSRMat(num_nodes, num_nodes, nnz, rowp, cols);
   Analysis::jacobian(physics, num_elements, element_nodes, xloc, dof, jac_bsr);
   jac_bsr->axpy(direction, Jp_axpy);
-  jac_bsr->write_mtx("test.mtx");
 
   double Jp_l1 = 0.0;
   double Jp_axpy_l1 = 0.0;
@@ -96,24 +95,6 @@ void test_physics(int num_elements, int num_nodes, int *element_nodes, T *xloc,
   std::printf("Jac-vec product by axpy:  %25.15e\n", Jp_axpy_l1);
   std::printf("relative error:           %25.15e\n", Jp_relerr);
   EXPECT_NEAR(Jp_relerr, 0.0, 1e-14);
-}
-
-TEST(Neohookean, Tet) {
-  using T = std::complex<double>;
-  int num_elements, num_nodes;
-  int *element_nodes;
-  T *xloc;
-
-  create_single_element_mesh(&num_elements, &num_nodes, &element_nodes, &xloc);
-
-  constexpr static int spatial_dim = 3;
-  using Physics = NeohookeanPhysics<T, spatial_dim>;
-  T C1 = 0.01;
-  T D1 = 0.5;
-  Physics physics(C1, D1);
-  test_physics<T, spatial_dim, Physics, TetrahedralBasis,
-               TetrahedralQuadrature>(num_elements, num_nodes, element_nodes,
-                                      xloc, physics);
 }
 
 TEST(Neohookean, Quad) {
@@ -137,6 +118,24 @@ TEST(Neohookean, Quad) {
                                         xloc, physics);
 }
 
+TEST(Neohookean, Tet) {
+  using T = std::complex<double>;
+  int num_elements, num_nodes;
+  int *element_nodes;
+  T *xloc;
+
+  create_single_element_mesh(&num_elements, &num_nodes, &element_nodes, &xloc);
+
+  constexpr static int spatial_dim = 3;
+  using Physics = NeohookeanPhysics<T, spatial_dim>;
+  T C1 = 0.01;
+  T D1 = 0.5;
+  Physics physics(C1, D1);
+  test_physics<T, spatial_dim, Physics, TetrahedralBasis,
+               TetrahedralQuadrature>(num_elements, num_nodes, element_nodes,
+                                      xloc, physics);
+}
+
 TEST(Poisson, Quad) {
   using T = std::complex<double>;
   int num_elements, num_nodes;
@@ -154,4 +153,20 @@ TEST(Poisson, Quad) {
   test_physics<T, spatial_dim, Physics, QuadrilateralBasis,
                QuadrilateralQuadrature>(num_elements, num_nodes, element_nodes,
                                         xloc, physics);
+}
+
+TEST(Poisson, Tet) {
+  using T = std::complex<double>;
+  int num_elements, num_nodes;
+  int *element_nodes;
+  T *xloc;
+
+  create_single_element_mesh(&num_elements, &num_nodes, &element_nodes, &xloc);
+
+  constexpr static int spatial_dim = 3;
+  using Physics = PoissonPhysics<T, spatial_dim>;
+  Physics physics;
+  test_physics<T, spatial_dim, Physics, TetrahedralBasis,
+               TetrahedralQuadrature>(num_elements, num_nodes, element_nodes,
+                                      xloc, physics);
 }
