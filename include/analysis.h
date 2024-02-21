@@ -68,11 +68,12 @@ class FEAnalysis {
         eval_grad<T, Basis, spatial_dim>(pt, element_xloc, J);
 
         // Evaluate the derivative of the dof in the computational coordinates
+        A2D::Vec<T, dof_per_node> vals;
         A2D::Mat<T, dof_per_node, spatial_dim> grad;
-        eval_grad<T, Basis, dof_per_node>(pt, element_dof, grad);
+        eval_grad<T, Basis, dof_per_node>(pt, element_dof, vals, grad);
 
         // Add the energy contributions
-        total_energy += phys.energy(weight, J, grad);
+        total_energy += phys.energy(weight, J, vals, grad);
       }
     }
 
@@ -109,15 +110,17 @@ class FEAnalysis {
         eval_grad<T, Basis, spatial_dim>(pt, element_xloc, J);
 
         // Evaluate the derivative of the dof in the computational coordinates
+        A2D::Vec<T, dof_per_node> vals;
         A2D::Mat<T, dof_per_node, spatial_dim> grad;
-        eval_grad<T, Basis, dof_per_node>(pt, element_dof, grad);
+        eval_grad<T, Basis, dof_per_node>(pt, element_dof, vals, grad);
 
         // Evaluate the residuals at the quadrature points
-        A2D::Mat<T, dof_per_node, spatial_dim> coef;
-        phys.residual(weight, J, grad, coef);
+        A2D::Vec<T, dof_per_node> coef_vals;
+        A2D::Mat<T, dof_per_node, spatial_dim> coef_grad;
+        phys.residual(weight, J, vals, grad, coef_vals, coef_grad);
 
         // Add the contributions to the element residual
-        add_grad<T, Basis, dof_per_node>(pt, coef, element_res);
+        add_grad<T, Basis, dof_per_node>(pt, coef_vals, coef_grad, element_res);
       }
 
       add_element_res<dof_per_node>(&element_nodes[nodes_per_element * i],
@@ -160,20 +163,25 @@ class FEAnalysis {
         eval_grad<T, Basis, spatial_dim>(pt, element_xloc, J);
 
         // Evaluate the derivative of the dof in the computational coordinates
+        A2D::Vec<T, dof_per_node> vals;
         A2D::Mat<T, dof_per_node, spatial_dim> grad;
-        eval_grad<T, Basis, dof_per_node>(pt, element_dof, grad);
+        eval_grad<T, Basis, dof_per_node>(pt, element_dof, vals, grad);
 
         // Evaluate the derivative of the direction in the computational
         // coordinates
-        A2D::Mat<T, dof_per_node, spatial_dim> grad_direct;
-        eval_grad<T, Basis, dof_per_node>(pt, element_direct, grad_direct);
+        A2D::Vec<T, dof_per_node> direct_vals;
+        A2D::Mat<T, dof_per_node, spatial_dim> direct_grad;
+        eval_grad<T, Basis, dof_per_node>(pt, element_direct, direct_vals,
+                                          direct_grad);
 
         // Evaluate the residuals at the quadrature points
-        A2D::Mat<T, dof_per_node, spatial_dim> coef;
-        phys.jacobian_product(weight, J, grad, grad_direct, coef);
+        A2D::Vec<T, dof_per_node> coef_vals;
+        A2D::Mat<T, dof_per_node, spatial_dim> coef_grad;
+        phys.jacobian_product(weight, J, vals, grad, direct_vals, direct_grad,
+                              coef_vals, coef_grad);
 
         // Add the contributions to the element residual
-        add_grad<T, Basis, dof_per_node>(pt, coef, element_res);
+        add_grad<T, Basis, dof_per_node>(pt, coef_vals, coef_grad, element_res);
       }
 
       add_element_res<dof_per_node>(&element_nodes[nodes_per_element * i],
@@ -212,16 +220,19 @@ class FEAnalysis {
         eval_grad<T, Basis, spatial_dim>(pt, element_xloc, J);
 
         // Evaluate the derivative of the dof in the computational coordinates
+        A2D::Vec<T, dof_per_node> vals;
         A2D::Mat<T, dof_per_node, spatial_dim> grad;
-        eval_grad<T, Basis, dof_per_node>(pt, element_dof, grad);
+        eval_grad<T, Basis, dof_per_node>(pt, element_dof, vals, grad);
 
         // Evaluate the residuals at the quadrature points
+        A2D::Mat<T, dof_per_node, dof_per_node> coef_vals;
         A2D::Mat<T, dof_per_node * spatial_dim, dof_per_node * spatial_dim>
-            coef;
-        phys.jacobian(weight, J, grad, coef);
+            coef_grad;
+        phys.jacobian(weight, J, vals, grad, coef_vals, coef_grad);
 
         // Add the contributions to the element residual
-        add_matrix<T, Basis, dof_per_node>(pt, coef, element_jac);
+        add_matrix<T, Basis, dof_per_node>(pt, coef_vals, coef_grad,
+                                           element_jac);
       }
 
       mat->add_block_values(nodes_per_element,
