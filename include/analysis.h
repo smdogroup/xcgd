@@ -21,24 +21,24 @@ class FEAnalysis {
   // Derived static data
   static const int dof_per_element = dof_per_node * nodes_per_element;
 
-  template <int ndof>
+  template <int dim>
   static void get_element_dof(const int nodes[], const T dof[],
                               T element_dof[]) {
     for (int j = 0; j < nodes_per_element; j++) {
       int node = nodes[j];
-      for (int k = 0; k < dof_per_node; k++, element_dof++) {
-        element_dof[0] = dof[ndof * node + k];
+      for (int k = 0; k < dim; k++, element_dof++) {
+        element_dof[0] = dof[dim * node + k];
       }
     }
   }
 
-  template <int ndof>
+  template <int dim>
   static void add_element_res(const int nodes[], const T element_res[],
                               T res[]) {
     for (int j = 0; j < nodes_per_element; j++) {
       int node = nodes[j];
-      for (int k = 0; k < dof_per_node; k++, element_res++) {
-        res[ndof * node + k] += element_res[0];
+      for (int k = 0; k < dim; k++, element_res++) {
+        res[dim * node + k] += element_res[0];
       }
     }
   }
