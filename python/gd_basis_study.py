@@ -220,6 +220,20 @@ def demo_poly_fit_2d(p=3, i=0, j=0):
     return
 
 
+def test_gd_impl(Np_1d=2):
+    pts = [2.0 * i / (Np_1d - 1.0) - 1.0 for i in range(Np_1d)]
+    pts2 = [(i, j) for j in pts for i in pts]
+
+    funcs_fit, cond = polynomials_fit_2d(Np_1d - 1, pts2)
+
+    x, y = 0.39214122, -0.24213123
+    for i, f in enumerate(funcs_fit):
+        print("%.16f," % f(x, y))
+
+    return
+
+
 if __name__ == "__main__":
     # demo_poly_fit_1d()
-    demo_poly_fit_2d()
+    # demo_poly_fit_2d()
+    test_gd_impl(6)

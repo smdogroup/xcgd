@@ -25,9 +25,7 @@ TEST(linalg, direct_solve) {
                                   -0.413853131069862, 0.973190293034837,
                                   2.350996112312741};
 
-  int info = direct_solve(N, A_real.data(), b_real.data());
-
-  EXPECT_EQ(info, 0);
+  direct_solve(N, A_real.data(), b_real.data());
   EXPECT_VEC_NEAR(N, b_real, sol_real, 1e-14);
 
   std::vector<std::complex<double>> A_complex = {
@@ -71,8 +69,7 @@ TEST(linalg, direct_solve) {
       std::complex<double>(0.512987451833535, -0.00792218093855),
       std::complex<double>(0.406159086362825, -0.707435603448901)};
 
-  info = direct_solve(N, A_complex.data(), b_complex.data());
-  EXPECT_EQ(info, 0);
+  direct_solve(N, A_complex.data(), b_complex.data());
   EXPECT_CPLX_VEC_NEAR(N, b_complex, sol_complex, 1e-14);
 }
 
@@ -87,8 +84,7 @@ TEST(linalg, direct_inverse) {
       -9.277857105765234,  11.893356698881258,  6.037924322763912,
       10.061440025683329,  -7.5642404032057895, -9.356724852012928};
 
-  int info = direct_inverse(N, A_real.data());
-  EXPECT_EQ(info, 0);
+  direct_inverse(N, A_real.data());
   EXPECT_VEC_NEAR(N * N, A_real, invA_real, 1e-14);
 
   std::vector<std::complex<double>> A_complex = {
@@ -113,7 +109,6 @@ TEST(linalg, direct_inverse) {
       std::complex<double>(0.3557461759440042, +0.3764786950099526),
       std::complex<double>(0.3311290513160524, -1.667793795720977)};
 
-  info = direct_inverse(N, A_complex.data());
-  EXPECT_EQ(info, 0);
+  direct_inverse(N, A_complex.data());
   EXPECT_CPLX_VEC_NEAR(N * N, A_complex, invA_complex, 1e-14);
 }

@@ -8,3 +8,4 @@ FetchContent_MakeAvailable(googletest)
 
 add_subdirectory(physics)
 add_subdirectory(linalg)
+add_subdirectory(elements)

@@ -2,6 +2,7 @@
 #define XCGD_GALERKIN_DIFFERENCE_H
 
 #include <algorithm>
+#include <complex>
 #include <vector>
 
 #include "utils/linalg.h"
@@ -14,16 +15,17 @@ class GDGrid {};
  * Galerkin difference basis given a set of stencil nodes
  *
  * @tparam Np_1d number of nodes along one dimension, number of stencil nodes
- *               should be Np_1d^2, Np_1d >= 2
+ *               should be Np_1d^2, Np_1d >= 2, Np_1d should be even
  */
 template <int Np_1d>
 class GD2DBasis {
  public:
+  static_assert(Np_1d % 2 == 0);
   static constexpr int spatial_dim = 2;
   static constexpr int nodes_per_element = Np_1d * Np_1d;
 
   template <typename T>
-  static void eval_basis_grad(const T pt[], T Nxi[]) {
+  static void eval_basis_grad(const T* pt, T* N, T* Nxi) {
     static constexpr int Np = nodes_per_element;
     static constexpr int Nk = nodes_per_element;
 
@@ -32,56 +34,56 @@ class GD2DBasis {
     std::vector<T> ypows(Np_1d);
 
     for (int i = 0; i < Nk; i++) {
-      T x = pt[spatial_dim * i];
-      T y = pt[spatial_dim * i + 1];
+      T x = 2.0 * (i % Np_1d) / (Np_1d - 1) - 1.0;
+      T y = 2.0 * (i / Np_1d) / (Np_1d - 1) - 1.0;
 
-      std::generate(xpows.begin(), xpows.end(), []() {
-        static int __i = 0;
-        return pow(x, __i++);
-      });
-
-      std::generate(ypows.begin(), ypows.end(), []() {
-        static int __i = 0;
-        return pow(y, __i++);
-      });
+      for (int ii = 0; ii < Np_1d; ii++) {
+        xpows[ii] = pow(x, ii);
+        ypows[ii] = pow(y, ii);
+      }
 
       for (int j = 0; j < Np_1d; j++) {
         for (int k = 0; k < Np_1d; k++) {
           int idx = j * Np_1d + k;
-          Ck[i + Nk * idx] = xpows[j] * ypows[k];  // (i, idx) entry
+          Ck[i + Np * idx] = xpows[j] * ypows[k];  // (i, idx) entry
         }
       }
     }
 
     direct_inverse(Nk, Ck);
 
-    std::vector<T> xpows(Np_1d);
-    std::vector<T> ypows(Np_1d);
     std::vector<T> dxpows(Np_1d);
     std::vector<T> dypows(Np_1d);
 
+    T x = pt[0];
+    T y = pt[1];
+
+    for (int ii = 0; ii < Np_1d; ii++) {
+      xpows[ii] = pow(x, ii);
+      ypows[ii] = pow(y, ii);
+      dxpows[ii] = T(ii) * pow(x, ii - 1);
+      dypows[ii] = T(ii) * pow(y, ii - 1);
+    }
+
     for (int i = 0; i < Nk; i++) {
-      T x = pt[spatial_dim * i];
-      T y = pt[spatial_dim * i + 1];
-
-      std::generate(dxpows.begin(), dxpows.end(), []() {
-        static int __i = 0;
-        return T(__i) * pow(x, __i++ - 1);
-      });
-
-      std::generate(dypows.begin(), dypows.end(), []() {
-        static int __i = 0;
-        return T(__i) * pow(y, __i++ - 1);
-      });
-
-      Nxi[spatial_dim * i] = 0.0;
-      Nxi[spatial_dim * i + 1] = 0.0;
+      if (N) {
+        N[i] = 0.0;
+      }
+      if (Nxi) {
+        Nxi[spatial_dim * i] = 0.0;
+        Nxi[spatial_dim * i + 1] = 0.0;
+      }
 
       for (int j = 0; j < Np_1d; j++) {
         for (int k = 0; k < Np_1d; k++) {
           int idx = j * Np_1d + k;
-          Nxi[spatial_dim * i] += Ck[i + Nk * idx] = dxpows[j] * ypows[k];
-          Nxi[spatial_dim * i + 1] += Ck[i + Nk * idx] = xpows[j] * dypows[k];
+          if (N) {
+            N[i] += Ck[idx + Nk * i] * xpows[j] * ypows[k];
+          }
+          if (Nxi) {
+            Nxi[spatial_dim * i] += Ck[idx + Nk * i] * dxpows[j] * ypows[k];
+            Nxi[spatial_dim * i + 1] += Ck[idx + Nk * i] * xpows[j] * dypows[k];
+          }
         }
       }
     }
