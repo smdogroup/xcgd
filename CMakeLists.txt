@@ -7,6 +7,8 @@ project(XCGD
   HOMEPAGE_URL "https://github.com/smdogroup/xcgd"
   LANGUAGES CXX)
 
+set(CMAKE_CXX_STANDARD 17)
+
 set(XCGD_SPARSE_UTILS_DIR $ENV{HOME}/installs/sparse-utils)
 set(XCGD_A2D_DIR $ENV{HOME}/installs/a2d)
 option(XCGD_BUILD_TESTS "Build unit tests or not" ON)

@@ -5,53 +5,55 @@
 #include <cmath>
 #include <complex>
 #include <iostream>
+#include <limits>
 #include <vector>
 
 #include "utils/linalg.h"
+#include "utils/misc.h"
 
-template <typename T>
-class Grid {
-  // Get node indices given an element index, return number of nodes
-  virtual int get_elem_nodes(int elem, int* nodes) const = 0;
+// template <typename T>
+// class Grid {
+//   // Get node indices given an element index, return number of nodes
+//   virtual int get_elem_nodes(int elem, int* nodes) const = 0;
 
-  // Get nodal coordinates given a nodal index
-  virtual void get_node_xloc(int node, T* xloc) const = 0;
-};
+//   // Get nodal coordinates given a nodal index
+//   virtual void get_node_xloc(int node, T* xloc) const = 0;
+// };
 
-// The unstructured ground grid
-template <typename T, int spatial_dim>
-class UnstructuredGrid final : public Grid<T> {
- public:
-  UnstructuredGrid(int num_elements, int num_nodes, int nnodes_per_element,
-                   const int* element_nodes, const T* xloc)
-      : num_elements(num_elements),
-        num_nodes(num_nodes),
-        nnodes_per_element(nnodes_per_element),
-        element_nodes(element_nodes),
-        xloc(xloc) {}
+// // The unstructured ground grid
+// template <typename T, int spatial_dim>
+// class UnstructuredGrid final : public Grid<T> {
+//  public:
+//   UnstructuredGrid(int num_elements, int num_nodes, int nnodes_per_element,
+//                    const int* element_nodes, const T* xloc)
+//       : num_elements(num_elements),
+//         num_nodes(num_nodes),
+//         nnodes_per_element(nnodes_per_element),
+//         element_nodes(element_nodes),
+//         xloc(xloc) {}
 
-  int get_elem_nodes(int elem, int* nodes) const {
-    if (nodes) {
-      for (int n = 0; n < nnodes_per_element; n++) {
-        nodes[n] = element_nodes[nnodes_per_element * elem + n];
-      }
-    }
-    return nnodes_per_element;
-  }
+//   int get_elem_nodes(int elem, int* nodes) const {
+//     if (nodes) {
+//       for (int n = 0; n < nnodes_per_element; n++) {
+//         nodes[n] = element_nodes[nnodes_per_element * elem + n];
+//       }
+//     }
+//     return nnodes_per_element;
+//   }
 
-  void get_node_xloc(int node, T* xloc) const {
-    if (xloc) {
-      for (int d = 0; d < spatial_dim; d++) {
-        xloc[d] = xloc[spatial_dim * node + d];
-      }
-    }
-  }
+//   void get_node_xloc(int node, T* xloc) const {
+//     if (xloc) {
+//       for (int d = 0; d < spatial_dim; d++) {
+//         xloc[d] = xloc[spatial_dim * node + d];
+//       }
+//     }
+//   }
 
- private:
-  int num_elements, num_nodes, nnodes_per_element;
-  const int* element_nodes;
-  const T* xloc;
-};
+//  private:
+//   int num_elements, num_nodes, nnodes_per_element;
+//   const int* element_nodes;
+//   const T* xloc;
+// };
 
 // The structured ground grid
 template <typename T>
@@ -115,14 +117,20 @@ class StructuredGrid2D final {
 };
 
 template <typename T, int Np_1d>
-class GDMesh2D {
+class GDMesh2D final {
  public:
+  using Grid = StructuredGrid2D<T>;
   static_assert(Np_1d % 2 == 0);
   static constexpr int nodes_per_element = Np_1d * Np_1d;
 
-  GDMesh2D(StructuredGrid2D<T>& grid) : grid(grid) {
+  static constexpr int get_spatial_dim() { return Grid::spatial_dim; }
+
+  Grid& get_grid() { return grid; }
+
+  GDMesh2D(Grid& grid) : grid(grid) {
+    constexpr int spatial_dim = get_spatial_dim();
     const int* nxy = grid.get_nxy();
-    for (int d = 0; d < grid.spatial_dim; d++) {
+    for (int d = 0; d < spatial_dim; d++) {
       if (nxy[d] < Np_1d - 1) {
         char msg[256];
         std::snprintf(
@@ -136,11 +144,12 @@ class GDMesh2D {
 
   // Get the stencil nodes given a gd element (i.e. a grid cell)
   void get_elem_dof_nodes(int elem, int* nodes) {
+    constexpr int spatial_dim = get_spatial_dim();
     constexpr int q = Np_1d / 2;
-    int eij[grid.spatial_dim];
+    int eij[spatial_dim];
     grid.get_elem_coords(elem, eij);
     const int* nxy = grid.get_nxy();
-    for (int d = 0; d < grid.spatial_dim; d++) {
+    for (int d = 0; d < spatial_dim; d++) {
       if (eij[d] < q - 1) {
         eij[d] = q - 1;
       } else if (eij[d] > nxy[d] - q) {
@@ -158,7 +167,7 @@ class GDMesh2D {
   };
 
  private:
-  StructuredGrid2D<T>& grid;
+  Grid& grid;
 };
 
 /**
@@ -168,26 +177,45 @@ class GDMesh2D {
  *               should be Np_1d^2, Np_1d >= 2, Np_1d should be even
  */
 template <typename T, int Np_1d>
-class GDBasis2D {
+class GDBasis2D final {
  public:
-  static_assert(Np_1d % 2 == 0);
-  static constexpr int spatial_dim = 2;
-  static constexpr int nodes_per_element = Np_1d * Np_1d;
+  using Mesh = GDMesh2D<T, Np_1d>;
+  static constexpr int get_spatial_dim() { return Mesh::get_spatial_dim(); }
+  static constexpr int Np = Mesh::nodes_per_element;
+  static constexpr int Nk = Mesh::nodes_per_element;
 
-  GDBasis2D(GDMesh2D<T, Np_1d>& mesh) : mesh(mesh) {}
+  GDBasis2D(Mesh& mesh) : mesh(mesh) {}
 
   // TODO: make pt contain all quadrature points
-  static void eval_basis_grad(int elem, const T* pt, T* N, T* Nxi) {
-    static constexpr int Np = nodes_per_element;
-    static constexpr int Nk = nodes_per_element;
+  void eval_basis_grad(int elem, const T* pt, T* N, T* Nxi) {
+    constexpr int spatial_dim = get_spatial_dim();
 
     T Ck[Nk * Np];
     std::vector<T> xpows(Np_1d);
     std::vector<T> ypows(Np_1d);
 
+    int nodes[Nk];
+    mesh.get_elem_dof_nodes(elem, nodes);
+
+    std::vector<double> xloc_min(spatial_dim,
+                                 std::numeric_limits<double>::max());
+    std::vector<double> xloc_max(spatial_dim,
+                                 std::numeric_limits<double>::min());
     for (int i = 0; i < Nk; i++) {
-      T x = 2.0 * (i % Np_1d) / (Np_1d - 1) - 1.0;
-      T y = 2.0 * (i / Np_1d) / (Np_1d - 1) - 1.0;
+      T xloc[spatial_dim];
+      mesh.get_grid().get_node_xloc(nodes[i], xloc);
+      for (int d = 0; d < spatial_dim; d++) {
+        xloc_min[d] = std::min(xloc_min[d], freal(xloc[d]));
+        xloc_max[d] = std::max(xloc_max[d], freal(xloc[d]));
+      }
+    }
+
+    for (int i = 0; i < Nk; i++) {
+      T xloc[spatial_dim];
+      mesh.get_grid().get_node_xloc(nodes[i], xloc);
+
+      T x = -1.0 + 2.0 * (xloc[0] - xloc_min[0]) / (xloc_max[0] - xloc_min[0]);
+      T y = -1.0 + 2.0 * (xloc[1] - xloc_min[1]) / (xloc_max[1] - xloc_min[1]);
 
       for (int ii = 0; ii < Np_1d; ii++) {
         xpows[ii] = pow(x, ii);
@@ -242,7 +270,7 @@ class GDBasis2D {
   }
 
  private:
-  GDMesh2D<T, Np_1d>& mesh;
+  Mesh& mesh;
 };
 
 template <int q>
