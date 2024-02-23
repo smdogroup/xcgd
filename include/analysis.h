@@ -22,10 +22,21 @@ class FEAnalysis {
   static const int dof_per_element = dof_per_node * nodes_per_element;
 
   template <int dim>
-  static void get_element_dof(const int nodes[], const T dof[],
+  static void get_element_dof(const int element_nodes[], const T dof[],
                               T element_dof[]) {
     for (int j = 0; j < nodes_per_element; j++) {
-      int node = nodes[j];
+      int node = element_nodes[j];
+      for (int k = 0; k < dim; k++, element_dof++) {
+        element_dof[0] = dof[dim * node + k];
+      }
+    }
+  }
+
+  template <int dim, class Func>
+  static void get_element_dof_new(const Func& get_element_nodes, int e,
+                                  const T dof[], T element_dof[]) {
+    for (int j = 0; j < nodes_per_element; j++) {
+      int node = get_element_nodes(e, j);
       for (int k = 0; k < dim; k++, element_dof++) {
         element_dof[0] = dof[dim * node + k];
       }
@@ -41,6 +52,44 @@ class FEAnalysis {
         res[dim * node + k] += element_res[0];
       }
     }
+  }
+
+  template <class Func>
+  static T energy_new(Physics& phys, int num_elements,
+                      const Func& get_element_nodes, const T xloc[],
+                      const T dof[]) {
+    T total_energy = 0.0;
+
+    for (int i = 0; i < num_elements; i++) {
+      // Get the element node locations
+      T element_xloc[spatial_dim * nodes_per_element];
+      get_element_dof_new<spatial_dim>(get_element_nodes, i, xloc,
+                                       element_xloc);
+
+      // Get the element degrees of freedom
+      T element_dof[dof_per_element];
+      get_element_dof_new<dof_per_node>(get_element_nodes, i, dof, element_dof);
+
+      for (int j = 0; j < num_quadrature_pts; j++) {
+        T pt[spatial_dim];
+        T weight = Quadrature::template get_quadrature_pt<T>(j, pt);
+
+        // Evaluate the derivative of the spatial dof in the computational
+        // coordinates
+        A2D::Mat<T, spatial_dim, spatial_dim> J;
+        eval_grad<T, Basis, spatial_dim>(pt, element_xloc, J);
+
+        // Evaluate the derivative of the dof in the computational coordinates
+        A2D::Vec<T, dof_per_node> vals;
+        A2D::Mat<T, dof_per_node, spatial_dim> grad;
+        eval_grad<T, Basis, dof_per_node>(pt, element_dof, vals, grad);
+
+        // Add the energy contributions
+        total_energy += phys.energy(weight, J, vals, grad);
+      }
+    }
+
+    return total_energy;
   }
 
   static T energy(Physics& phys, int num_elements, const int element_nodes[],

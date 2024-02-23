@@ -380,4 +380,17 @@ void create_2d_galerkin_diff_mesh(int nx, int ny, T lx, T ly, int *num_elements,
     *dof_bcs = _dof_bcs;
   }
 }
+
+template <int nodes_per_element>
+struct GetElementNodes {
+  GetElementNodes(const int *element_nodes) : element_nodes(element_nodes) {}
+
+  int operator()(int e, int i) const {
+    return element_nodes[e * nodes_per_element + i];
+  }
+
+ private:
+  const int *element_nodes;
+};
+
 #endif  // XCGD_MESH_H
