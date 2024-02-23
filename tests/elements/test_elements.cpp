@@ -23,7 +23,7 @@ TEST(ElementTest, GalerkinDiff2D) {
     pt[i] += T(0.0, h * p[i]);
   }
 
-  GD2DBasis<Np_1d>::eval_basis_grad(pt.data(), N.data(), Nxi.data());
+  GDBasis2D<T, Np_1d>::eval_basis_grad(0, pt.data(), N.data(), Nxi.data());
 
   for (int i = 0; i < Nk; i++) {
     double nxi_cs = N[i].imag() / h;
