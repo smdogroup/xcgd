@@ -30,6 +30,7 @@ class QuadrilateralBasis {
 class QuadrilateralQuadrature {
  public:
   static constexpr int num_quadrature_pts = 4;
+
   template <typename T>
   static T get_quadrature_pt(int k, T pt[]) {
     switch (k) {

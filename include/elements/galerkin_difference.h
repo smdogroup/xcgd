@@ -121,14 +121,21 @@ class GDMesh2D final {
  public:
   using Grid = StructuredGrid2D<T>;
   static_assert(Np_1d % 2 == 0);
+  static constexpr int spatial_dim = Grid::spatial_dim;
   static constexpr int nodes_per_element = Np_1d * Np_1d;
 
-  static constexpr int get_spatial_dim() { return Grid::spatial_dim; }
+  int get_num_elements() {
+    const int* nxy = grid.get_nxy();
+    int nelems = 1;
+    for (int d = 0; d < spatial_dim; d++) {
+      nelems *= nxy[d];
+    }
+    return nelems;
+  }
 
   Grid& get_grid() { return grid; }
 
   GDMesh2D(Grid& grid) : grid(grid) {
-    constexpr int spatial_dim = get_spatial_dim();
     const int* nxy = grid.get_nxy();
     for (int d = 0; d < spatial_dim; d++) {
       if (nxy[d] < Np_1d - 1) {
@@ -142,9 +149,13 @@ class GDMesh2D final {
     }
   }
 
-  // Get the stencil nodes given a gd element (i.e. a grid cell)
+  /**
+   * @brief Get the stencil nodes given a gd element (i.e. a grid cell)
+   *
+   * @param elem element index
+   * @param nodes dof node indices, length: nodes_per_element
+   */
   void get_elem_dof_nodes(int elem, int* nodes) {
-    constexpr int spatial_dim = get_spatial_dim();
     constexpr int q = Np_1d / 2;
     int eij[spatial_dim];
     grid.get_elem_coords(elem, eij);
@@ -180,16 +191,20 @@ template <typename T, int Np_1d>
 class GDBasis2D final {
  public:
   using Mesh = GDMesh2D<T, Np_1d>;
-  static constexpr int get_spatial_dim() { return Mesh::get_spatial_dim(); }
+  static constexpr int spatial_dim = Mesh::spatial_dim;
+  static constexpr int nodes_per_element = Mesh::nodes_per_element;
+
+ private:
   static constexpr int Np = Mesh::nodes_per_element;
   static constexpr int Nk = Mesh::nodes_per_element;
 
+ public:
   GDBasis2D(Mesh& mesh) : mesh(mesh) {}
+
+  Mesh& get_mesh() { return mesh; }
 
   // TODO: make pt contain all quadrature points
   void eval_basis_grad(int elem, const T* pt, T* N, T* Nxi) {
-    constexpr int spatial_dim = get_spatial_dim();
-
     T Ck[Nk * Np];
     std::vector<T> xpows(Np_1d);
     std::vector<T> ypows(Np_1d);
@@ -273,7 +288,17 @@ class GDBasis2D final {
   Mesh& mesh;
 };
 
-template <int q>
-class GD2DQuadrature {};
+template <int Np_1d>
+class GDQuadrature2D {
+ public:
+  static constexpr int num_quadrature_pts = Np_1d * Np_1d;
+
+  template <typename T>
+  static T get_quadrature_pt(int k, T pt[]) {
+    pt[0] = 0.1;
+    pt[1] = 0.1;
+    return 1.0;
+  }
+};
 
 #endif  // XCGD_GALERKIN_DIFFERENCE_H

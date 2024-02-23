@@ -1,30 +1,26 @@
+#include "elements/galerkin_difference.h"
+
 #include <string>
 
 #include "analysis.h"
 #include "elements/tetrahedral.h"
-#include "physics/neohookean.h"
+#include "physics/poisson.h"
 #include "utils/mesh.h"
 
 int main(int argc, char *argv[]) {
   using T = double;
-  using Basis = TetrahedralBasis;
-  using Quadrature = TetrahedralQuadrature;
-  using Physics = NeohookeanPhysics<T>;
+  constexpr int spatial_dim = 2;
+  int constexpr Np_1d = 4;
+  int constexpr nx = 5, ny = 5;  // number of elements along x and y directions
+  using Grid = StructuredGrid2D<T>;
+  using Mesh = GDMesh2D<T, Np_1d>;
+  using Basis = GDBasis2D<T, Np_1d>;
+  using Quadrature = GDQuadrature2D<Np_1d>;
+  using Physics = PoissonPhysics<T, spatial_dim>;
   using Analysis = FEAnalysis<T, Basis, Quadrature, Physics>;
 
-  int num_elements, num_nodes;
-  int *element_nodes;
-  T *xloc;
-
-  // Load in the mesh
-  std::string filename("../../input/Tensile.inp");
-  load_mesh<T>(filename, &num_elements, &num_nodes, &element_nodes, &xloc);
-
-  // Createa connectivity functor
-  GetElementNodes<Basis::nodes_per_element> get_element_nodes(element_nodes);
-
   // Set the number of degrees of freedom
-  int ndof = 3 * num_nodes;
+  int ndof = spatial_dim * (nx + 1) * (ny + 1);
 
   // Allocate space for the degrees of freedom
   T *dof = new T[ndof];
@@ -39,21 +35,18 @@ int main(int argc, char *argv[]) {
   }
 
   // Allocate the physics
-  T C1 = 0.01;
-  T D1 = 0.5;
-  Physics physics(C1, D1);
+  Physics physics;
+
+  int nxy[2] = {nx, ny};
+  T lxy[2] = {1.0, 1.0};
+  Grid grid(nxy, lxy);
+  Mesh mesh(grid);
+  Basis basis(mesh);
+
+  Analysis analysis(basis);
 
   // Allocate space for the residual
-  T energy = Analysis::energy(physics, num_elements, element_nodes, xloc, dof);
-  T energy2 =
-      Analysis::energy_new(physics, num_elements, get_element_nodes, xloc, dof);
-
-  std::printf("energy:  %.10f\n", energy);
-  std::printf("energy2: %.10f\n", energy2);
-
-  Analysis::residual(physics, num_elements, element_nodes, xloc, dof, res);
-  Analysis::jacobian_product(physics, num_elements, element_nodes, xloc, dof,
-                             direction, Jp);
+  T energy = analysis.energy_new(physics, dof);
 
   std::cout << energy << std::endl;
 
