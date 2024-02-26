@@ -1,13 +1,21 @@
 #ifndef XCGD_QUADRILATERAL_H
 #define XCGD_QUADRILATERAL_H
 
-class QuadrilateralBasis {
- public:
-  static constexpr int spatial_dim = 2;
-  static constexpr int nodes_per_element = 4;
+#include "galerkin_difference.h"
 
-  template <typename T>
-  static void eval_basis_grad(const T* pt, T* N, T* Nxi) {
+template <typename T>
+class QuadrilateralBasis final : public BasisBase<T, FEMesh<T, 2, 4>> {
+ private:
+  using BasisBase = BasisBase<T, FEMesh<T, 2, 4>>;
+
+ public:
+  using BasisBase::nodes_per_element;
+  using BasisBase::spatial_dim;
+  using typename BasisBase::Mesh;
+
+  QuadrilateralBasis(Mesh& mesh) : BasisBase(mesh) {}
+
+  void eval_basis_grad(int _, const T* pt, T* N, T* Nxi) {
     if (N) {
       N[0] = 0.25 * (1.0 - pt[0]) * (1.0 - pt[1]);
       N[1] = 0.25 * (1.0 + pt[0]) * (1.0 - pt[1]);

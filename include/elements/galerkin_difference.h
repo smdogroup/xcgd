@@ -116,24 +116,61 @@ class StructuredGrid2D final {
   T lxy[spatial_dim];
 };
 
-template <typename T, int Np_1d>
-class GDMesh2D final {
+template <typename T, int spatial_dim_, int nodes_per_element_>
+class MeshBase {
  public:
-  using Grid = StructuredGrid2D<T>;
-  static_assert(Np_1d % 2 == 0);
-  static constexpr int spatial_dim = Grid::spatial_dim;
-  static constexpr int nodes_per_element = Np_1d * Np_1d;
+  static constexpr int spatial_dim = spatial_dim_;
+  static constexpr int nodes_per_element = nodes_per_element_;
 
-  int get_num_elements() {
-    const int* nxy = grid.get_nxy();
-    int nelems = 1;
+  virtual int get_num_elements() const = 0;
+  virtual void get_node_xloc(int node, T* xloc) const = 0;
+  virtual void get_elem_dof_nodes(int elem, int* nodes) const = 0;
+};
+
+template <typename T, int spatial_dim, int nodes_per_element_>
+class FEMesh final : public MeshBase<T, spatial_dim, nodes_per_element_> {
+ private:
+  using MeshBase = MeshBase<T, spatial_dim, nodes_per_element_>;
+
+ public:
+  using MeshBase::nodes_per_element;
+  using MeshBase::spatial_dim;
+
+  FEMesh(int num_elements, int num_nodes, int* element_nodes, T* xloc)
+      : num_elements(num_elements),
+        num_nodes(num_nodes),
+        element_nodes(element_nodes),
+        xloc(xloc) {}
+
+  inline int get_num_elements() const { return num_elements; }
+  inline void get_node_xloc(int node, T* xloc_) const {
     for (int d = 0; d < spatial_dim; d++) {
-      nelems *= nxy[d];
+      xloc_[d] = xloc[spatial_dim * node + d];
     }
-    return nelems;
   }
 
-  Grid& get_grid() { return grid; }
+  inline void get_elem_dof_nodes(int elem, int* nodes) const {
+    for (int i = 0; i < nodes_per_element; i++) {
+      nodes[i] = element_nodes[elem * nodes_per_element + i];
+    }
+  }
+
+ private:
+  int num_elements, num_nodes;
+  int* element_nodes;
+  T* xloc;
+};
+
+template <typename T, int Np_1d>
+class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d> {
+ private:
+  using MeshBase = MeshBase<T, 2, Np_1d * Np_1d>;
+  static_assert(Np_1d % 2 == 0);
+  using Grid = StructuredGrid2D<T>;
+
+ public:
+  using MeshBase::nodes_per_element;
+  using MeshBase::spatial_dim;
 
   GDMesh2D(Grid& grid) : grid(grid) {
     const int* nxy = grid.get_nxy();
@@ -149,13 +186,26 @@ class GDMesh2D final {
     }
   }
 
+  int get_num_elements() const {
+    const int* nxy = grid.get_nxy();
+    int nelems = 1;
+    for (int d = 0; d < spatial_dim; d++) {
+      nelems *= nxy[d];
+    }
+    return nelems;
+  }
+
+  inline void get_node_xloc(int node, T* xloc) const {
+    grid.get_node_xloc(node, xloc);
+  }
+
   /**
    * @brief Get the stencil nodes given a gd element (i.e. a grid cell)
    *
    * @param elem element index
    * @param nodes dof node indices, length: nodes_per_element
    */
-  void get_elem_dof_nodes(int elem, int* nodes) {
+  void get_elem_dof_nodes(int elem, int* nodes) const {
     constexpr int q = Np_1d / 2;
     int eij[spatial_dim];
     grid.get_elem_coords(elem, eij);
@@ -181,6 +231,29 @@ class GDMesh2D final {
   Grid& grid;
 };
 
+template <typename T, class Mesh_>
+class BasisBase {
+ public:
+  using Mesh = Mesh_;
+  static constexpr int spatial_dim = Mesh::spatial_dim;
+  static constexpr int nodes_per_element = Mesh::nodes_per_element;
+
+  BasisBase(Mesh& mesh) : mesh(mesh) {}
+
+  virtual void eval_basis_grad(int elem, const T* pt, T* N, T* Nxi) = 0;
+
+  inline int get_num_elements() const { return mesh.get_num_elements(); };
+  inline void get_node_xloc(int node, T* xloc) const {
+    mesh.get_node_xloc(node, xloc);
+  };
+  inline void get_elem_dof_nodes(int elem, int* nodes) const {
+    mesh.get_elem_dof_nodes(elem, nodes);
+  };
+
+ protected:
+  Mesh& mesh;
+};
+
 /**
  * Galerkin difference basis given a set of stencil nodes
  *
@@ -188,20 +261,21 @@ class GDMesh2D final {
  *               should be Np_1d^2, Np_1d >= 2, Np_1d should be even
  */
 template <typename T, int Np_1d>
-class GDBasis2D final {
+class GDBasis2D final : public BasisBase<T, GDMesh2D<T, Np_1d>> {
+ private:
+  using BasisBase = BasisBase<T, GDMesh2D<T, Np_1d>>;
+
  public:
-  using Mesh = GDMesh2D<T, Np_1d>;
-  static constexpr int spatial_dim = Mesh::spatial_dim;
-  static constexpr int nodes_per_element = Mesh::nodes_per_element;
+  using BasisBase::nodes_per_element;
+  using BasisBase::spatial_dim;
+  using typename BasisBase::Mesh;
 
  private:
   static constexpr int Np = Mesh::nodes_per_element;
   static constexpr int Nk = Mesh::nodes_per_element;
 
  public:
-  GDBasis2D(Mesh& mesh) : mesh(mesh) {}
-
-  Mesh& get_mesh() { return mesh; }
+  GDBasis2D(Mesh& mesh) : BasisBase(mesh) {}
 
   // TODO: make pt contain all quadrature points
   void eval_basis_grad(int elem, const T* pt, T* N, T* Nxi) {
@@ -210,7 +284,7 @@ class GDBasis2D final {
     std::vector<T> ypows(Np_1d);
 
     int nodes[Nk];
-    mesh.get_elem_dof_nodes(elem, nodes);
+    this->mesh.get_elem_dof_nodes(elem, nodes);
 
     std::vector<double> xloc_min(spatial_dim,
                                  std::numeric_limits<double>::max());
@@ -218,7 +292,7 @@ class GDBasis2D final {
                                  std::numeric_limits<double>::min());
     for (int i = 0; i < Nk; i++) {
       T xloc[spatial_dim];
-      mesh.get_grid().get_node_xloc(nodes[i], xloc);
+      this->mesh.get_node_xloc(nodes[i], xloc);
       for (int d = 0; d < spatial_dim; d++) {
         xloc_min[d] = std::min(xloc_min[d], freal(xloc[d]));
         xloc_max[d] = std::max(xloc_max[d], freal(xloc[d]));
@@ -227,7 +301,7 @@ class GDBasis2D final {
 
     for (int i = 0; i < Nk; i++) {
       T xloc[spatial_dim];
-      mesh.get_grid().get_node_xloc(nodes[i], xloc);
+      this->mesh.get_node_xloc(nodes[i], xloc);
 
       T x = -1.0 + 2.0 * (xloc[0] - xloc_min[0]) / (xloc_max[0] - xloc_min[0]);
       T y = -1.0 + 2.0 * (xloc[1] - xloc_min[1]) / (xloc_max[1] - xloc_min[1]);
@@ -283,9 +357,6 @@ class GDBasis2D final {
       }
     }
   }
-
- private:
-  Mesh& mesh;
 };
 
 template <int Np_1d>

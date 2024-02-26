@@ -55,7 +55,7 @@ static void eval_grad(Basis& basis, int elem, const T pt[], const T dof[],
 }
 
 template <typename T, class Basis, int dim>
-static void add_grad(Basis& basis, const T pt[],
+static void add_grad(Basis& basis, int elem, const T pt[],
                      const A2D::Vec<T, dim>& coef_vals,
                      const A2D::Mat<T, dim, Basis::spatial_dim>& coef_grad,
                      T elem_res[]) {
@@ -64,7 +64,7 @@ static void add_grad(Basis& basis, const T pt[],
 
   T N[nodes_per_element];
   T Nxi[spatial_dim * nodes_per_element];
-  basis.eval_basis_grad(pt, N, Nxi);
+  basis.eval_basis_grad(elem, pt, N, Nxi);
 
   for (int i = 0; i < nodes_per_element; i++) {
     for (int k = 0; k < dim; k++) {
@@ -77,7 +77,7 @@ static void add_grad(Basis& basis, const T pt[],
 }
 
 template <typename T, class Basis, int dim>
-static void add_matrix(Basis& basis, const T pt[],
+static void add_matrix(Basis& basis, int elem, const T pt[],
                        const A2D::Mat<T, dim, dim>& coef_vals,
                        const A2D::Mat<T, dim * Basis::spatial_dim,
                                       dim * Basis::spatial_dim>& coef_grad,
@@ -87,7 +87,7 @@ static void add_matrix(Basis& basis, const T pt[],
 
   T N[nodes_per_element];
   T Nxi[spatial_dim * nodes_per_element];
-  basis.eval_basis_grad(pt, N, Nxi);
+  basis.eval_basis_grad(elem, pt, N, Nxi);
 
   constexpr int dof_per_element = dim * nodes_per_element;
 

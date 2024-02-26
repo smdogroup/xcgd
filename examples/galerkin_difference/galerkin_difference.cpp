@@ -43,10 +43,11 @@ int main(int argc, char *argv[]) {
   Mesh mesh(grid);
   Basis basis(mesh);
 
-  Analysis analysis(basis);
+  Analysis analysis(basis, physics);
 
   // Allocate space for the residual
-  T energy = analysis.energy_new(physics, dof);
+  T energy = analysis.energy_new(dof);
+  analysis.residual_new(dof, res);
 
   std::cout << energy << std::endl;
 

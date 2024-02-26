@@ -3,13 +3,21 @@
 
 #include <vector>
 
-class TetrahedralBasis {
- public:
-  static constexpr int spatial_dim = 3;
-  static constexpr int nodes_per_element = 10;
+#include "galerkin_difference.h"
 
-  template <typename T>
-  static void eval_basis_grad(const T* pt, T* N, T* Nxi) {
+template <typename T>
+class TetrahedralBasis final : public BasisBase<T, FEMesh<T, 3, 10>> {
+ private:
+  using BasisBase = BasisBase<T, FEMesh<T, 3, 10>>;
+
+ public:
+  using BasisBase::nodes_per_element;
+  using BasisBase::spatial_dim;
+  using typename BasisBase::Mesh;
+
+  TetrahedralBasis(Mesh& mesh) : BasisBase(mesh) {}
+
+  void eval_basis_grad(int _, const T* pt, T* N, T* Nxi) {
     if (N) {
       N[0] = 2.0 * (pt[0] + pt[1] + pt[2]) * (pt[0] + pt[1] + pt[2]) -
              3.0 * (pt[0] + pt[1] + pt[2]) + 1.0;

@@ -6,19 +6,21 @@
 #include "elements/tetrahedral.h"
 #include "physics/neohookean.h"
 #include "sparse_utils/sparse_utils.h"
+#include "utils/linalg.h"
 #include "utils/mesh.h"
 #include "utils/timer.h"
 #include "utils/vtk.h"
 
 int main(int argc, char *argv[]) {
   using T = double;
-  using Basis = TetrahedralBasis;
+
+  using Basis = TetrahedralBasis<T>;
+  using Mesh = Basis::Mesh;
   using Quadrature = TetrahedralQuadrature;
 
   using Physics = NeohookeanPhysics<T, Basis::spatial_dim>;
   using Analysis = FEAnalysis<T, Basis, Quadrature, Physics>;
-  using BSRMat =
-      SparseUtils::BSRMat<T, Physics::dof_per_node, Physics::dof_per_node>;
+  using BSRMat = GalerkinBSRMat<T, Physics::dof_per_node>;
   using CSCMat = SparseUtils::CSCMat<T>;
 
   int num_elements, num_nodes;
@@ -26,13 +28,11 @@ int main(int argc, char *argv[]) {
   T *xloc;
   int ndof_bcs, *dof_bcs;
 
-  // // Load in the mesh
-  // std::string filename("../../input/Tensile.inp");
-  // load_mesh<T>(filename, &num_elements, &num_nodes, &element_nodes, &xloc);
-
   // Create the simple mesh
   create_single_element_mesh(&num_elements, &num_nodes, &element_nodes, &xloc,
                              &ndof_bcs, &dof_bcs);
+
+  Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
 
   ToVTK<T> vtk(Basis::spatial_dim, num_nodes, num_elements,
                Basis::nodes_per_element, element_nodes, xloc);
@@ -45,7 +45,7 @@ int main(int argc, char *argv[]) {
                                    &rowp, &cols);
 
   int nnz = rowp[num_nodes];
-  BSRMat *jac_bsr = new BSRMat(num_nodes, num_nodes, nnz, rowp, cols);
+  BSRMat *jac_bsr = new BSRMat(num_nodes, nnz, rowp, cols);
   CSCMat *jac_csc = nullptr;
 
   // Set the number of degrees of freedom
@@ -69,7 +69,9 @@ int main(int argc, char *argv[]) {
   Physics physics(C1, D1);
 
   StopWatch watch;
-  Analysis::jacobian(physics, num_elements, element_nodes, xloc, dof, jac_bsr);
+  Basis basis(mesh);
+  Analysis analysis(basis, physics);
+  analysis.jacobian_new(dof, jac_bsr);
   double t1 = watch.lap();
   std::printf("Jacobian assembly time: %.3e s\n", t1);
 
