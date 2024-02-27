@@ -16,7 +16,7 @@ int main(int argc, char *argv[]) {
 
   using Basis = TetrahedralBasis<T>;
   using Mesh = Basis::Mesh;
-  using Quadrature = TetrahedralQuadrature;
+  using Quadrature = TetrahedralQuadrature<T>;
 
   using Physics = NeohookeanPhysics<T, Basis::spatial_dim>;
   using Analysis = FEAnalysis<T, Basis, Quadrature, Physics>;

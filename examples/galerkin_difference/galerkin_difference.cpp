@@ -2,7 +2,6 @@
 
 #include "analysis.h"
 #include "elements/gd_vandermonde.h"
-#include "elements/tetrahedral.h"
 #include "physics/poisson.h"
 #include "utils/mesh.h"
 
@@ -14,7 +13,7 @@ int main(int argc, char *argv[]) {
   using Grid = StructuredGrid2D<T>;
   using Mesh = GDMesh2D<T, Np_1d>;
   using Basis = GDBasis2D<T, Np_1d>;
-  using Quadrature = GDQuadrature2D<Np_1d>;
+  using Quadrature = GDQuadrature2D<T, Np_1d>;
   using Physics = PoissonPhysics<T, spatial_dim>;
   using Analysis = FEAnalysis<T, Basis, Quadrature, Physics>;
 

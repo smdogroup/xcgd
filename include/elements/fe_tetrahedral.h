@@ -76,11 +76,15 @@ class TetrahedralBasis final : public BasisBase<T, FEMesh<T, 3, 10>> {
   }
 };
 
-class TetrahedralQuadrature {
- public:
-  static constexpr int num_quadrature_pts = 5;
+template <typename T>
+class TetrahedralQuadrature final : public QuadratureBase<T, 3, 5> {
+ private:
+  using QuadratureBase = QuadratureBase<T, 3, 5>;
 
-  template <typename T>
+ public:
+  using QuadratureBase::num_quadrature_pts;
+  using QuadratureBase::spatial_dim;
+
   static T get_quadrature_pt(int k, T pt[]) {
     if (k == 0) {
       pt[0] = 0.25;

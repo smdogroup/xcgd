@@ -120,7 +120,7 @@ TEST(Neohookean, Quad) {
   T C1 = 0.01;
   T D1 = 0.5;
   Physics physics(C1, D1);
-  test_physics<T, spatial_dim, Physics, Basis, QuadrilateralQuadrature>(
+  test_physics<T, spatial_dim, Physics, Basis, QuadrilateralQuadrature<T>>(
       basis, physics);
 }
 
@@ -140,8 +140,8 @@ TEST(Neohookean, Tet) {
   T C1 = 0.01;
   T D1 = 0.5;
   Physics physics(C1, D1);
-  test_physics<T, spatial_dim, Physics, Basis, TetrahedralQuadrature>(basis,
-                                                                      physics);
+  test_physics<T, spatial_dim, Physics, Basis, TetrahedralQuadrature<T>>(
+      basis, physics);
 }
 
 TEST(Neohookean, GD) {
@@ -151,7 +151,7 @@ TEST(Neohookean, GD) {
   using Grid = StructuredGrid2D<T>;
   using Mesh = GDMesh2D<T, Np_1d>;
   using Basis = GDBasis2D<T, Np_1d>;
-  using Quadrature = GDQuadrature2D<Np_1d>;
+  using Quadrature = GDQuadrature2D<T, Np_1d>;
 
   int nxy[2] = {nx, ny};
   T lxy[2] = {1.0, 1.4};
@@ -186,7 +186,7 @@ TEST(Poisson, Quad) {
   constexpr int spatial_dim = 2;
   using Physics = PoissonPhysics<T, spatial_dim>;
   Physics physics;
-  test_physics<T, spatial_dim, Physics, Basis, QuadrilateralQuadrature>(
+  test_physics<T, spatial_dim, Physics, Basis, QuadrilateralQuadrature<T>>(
       basis, physics);
 }
 
@@ -204,8 +204,8 @@ TEST(Poisson, Tet) {
   constexpr static int spatial_dim = 3;
   using Physics = PoissonPhysics<T, spatial_dim>;
   Physics physics;
-  test_physics<T, spatial_dim, Physics, Basis, TetrahedralQuadrature>(basis,
-                                                                      physics);
+  test_physics<T, spatial_dim, Physics, Basis, TetrahedralQuadrature<T>>(
+      basis, physics);
 }
 
 TEST(Poisson, GD) {
@@ -215,7 +215,7 @@ TEST(Poisson, GD) {
   using Grid = StructuredGrid2D<T>;
   using Mesh = GDMesh2D<T, Np_1d>;
   using Basis = GDBasis2D<T, Np_1d>;
-  using Quadrature = GDQuadrature2D<Np_1d>;
+  using Quadrature = GDQuadrature2D<T, Np_1d>;
 
   int nxy[2] = {nx, ny};
   T lxy[2] = {1.0, 1.4};

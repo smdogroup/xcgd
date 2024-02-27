@@ -90,7 +90,7 @@ class FEAnalysis final {
 
       for (int j = 0; j < num_quadrature_pts; j++) {
         T pt[spatial_dim];
-        T weight = Quadrature::template get_quadrature_pt<T>(j, pt);
+        T weight = Quadrature::get_quadrature_pt(j, pt);
 
         // Evaluate the derivative of the spatial dof in the computational
         // coordinates
@@ -128,7 +128,7 @@ class FEAnalysis final {
 
       for (int j = 0; j < num_quadrature_pts; j++) {
         T pt[spatial_dim];
-        T weight = Quadrature::template get_quadrature_pt<T>(j, pt);
+        T weight = Quadrature::get_quadrature_pt(j, pt);
 
         // Evaluate the derivative of the spatial dof in the computational
         // coordinates
@@ -167,7 +167,7 @@ class FEAnalysis final {
 
       for (int j = 0; j < num_quadrature_pts; j++) {
         T pt[spatial_dim];
-        T weight = Quadrature::template get_quadrature_pt<T>(j, pt);
+        T weight = Quadrature::get_quadrature_pt(j, pt);
 
         // Evaluate the derivative of the spatial dof in the computational
         // coordinates
@@ -215,7 +215,7 @@ class FEAnalysis final {
 
       for (int j = 0; j < num_quadrature_pts; j++) {
         T pt[spatial_dim];
-        T weight = Quadrature::template get_quadrature_pt<T>(j, pt);
+        T weight = Quadrature::get_quadrature_pt(j, pt);
 
         // Evaluate the derivative of the spatial dof in the computational
         // coordinates
@@ -265,7 +265,7 @@ class FEAnalysis final {
 
       for (int j = 0; j < num_quadrature_pts; j++) {
         T pt[spatial_dim];
-        T weight = Quadrature::template get_quadrature_pt<T>(j, pt);
+        T weight = Quadrature::get_quadrature_pt(j, pt);
 
         // Evaluate the derivative of the spatial dof in the computational
         // coordinates
@@ -327,7 +327,7 @@ class FEAnalysis final {
 
       for (int j = 0; j < num_quadrature_pts; j++) {
         T pt[spatial_dim];
-        T weight = Quadrature::template get_quadrature_pt<T>(j, pt);
+        T weight = Quadrature::get_quadrature_pt(j, pt);
 
         // Evaluate the derivative of the spatial dof in the computational
         // coordinates
@@ -381,7 +381,7 @@ class FEAnalysis final {
 
       for (int j = 0; j < num_quadrature_pts; j++) {
         T pt[spatial_dim];
-        T weight = Quadrature::template get_quadrature_pt<T>(j, pt);
+        T weight = Quadrature::get_quadrature_pt(j, pt);
 
         // Evaluate the derivative of the spatial dof in the computational
         // coordinates
@@ -431,7 +431,7 @@ class FEAnalysis final {
 
       for (int j = 0; j < num_quadrature_pts; j++) {
         T pt[spatial_dim];
-        T weight = Quadrature::template get_quadrature_pt<T>(j, pt);
+        T weight = Quadrature::get_quadrature_pt(j, pt);
 
         // Evaluate the derivative of the spatial dof in the computational
         // coordinates

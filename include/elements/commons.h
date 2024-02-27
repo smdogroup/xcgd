@@ -47,6 +47,13 @@ class BasisBase {
   Mesh& mesh;
 };
 
+template <typename T, int spatial_dim_, int num_quadrature_pts_>
+class QuadratureBase {
+ public:
+  static constexpr int spatial_dim = spatial_dim_;
+  static constexpr int num_quadrature_pts = num_quadrature_pts_;
+};
+
 template <typename T, class Basis, int dim>
 static void eval_grad(Basis& basis, int elem, const T pt[], const T dof[],
                       A2D::Mat<T, dim, Basis::spatial_dim>& grad) {

@@ -1,6 +1,6 @@
 add_executable(level_set level_set.cpp)
 target_include_directories(level_set PRIVATE
-    ${PROJECT_SOURCE_DIR}/include $ENV{HOME}/git/algoim/algoim)
+    ${PROJECT_SOURCE_DIR}/include ${XCGD_ALGOIM_DIR}/algoim)
 
 find_package(LAPACKE REQUIRED PATHS /opt/homebrew/opt/lapack)
 find_package(OpenMP REQUIRED)

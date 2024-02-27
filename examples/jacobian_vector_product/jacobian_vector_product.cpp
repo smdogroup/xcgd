@@ -1,7 +1,7 @@
 #include <string>
 
 #include "analysis.h"
-#include "elements/tetrahedral.h"
+#include "elements/fe_tetrahedral.h"
 #include "physics/neohookean.h"
 #include "utils/mesh.h"
 
@@ -9,7 +9,7 @@ int main(int argc, char *argv[]) {
   using T = double;
   using Basis = TetrahedralBasis<T>;
   using Mesh = Basis::Mesh;
-  using Quadrature = TetrahedralQuadrature;
+  using Quadrature = TetrahedralQuadrature<T>;
   using Physics = NeohookeanPhysics<T>;
   using Analysis = FEAnalysis<T, Basis, Quadrature, Physics>;
 
