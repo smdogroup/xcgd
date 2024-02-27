@@ -1,7 +1,7 @@
-#ifndef XCGD_QUADRILATERAL_H
-#define XCGD_QUADRILATERAL_H
+#ifndef XCGD_FE_QUADRILATERAL_H
+#define XCGD_FE_QUADRILATERAL_H
 
-#include "gd_vandermonde.h"
+#include "fe_commons.h"
 
 template <typename T>
 class QuadrilateralBasis final : public BasisBase<T, FEMesh<T, 2, 4>> {
@@ -63,4 +63,4 @@ class QuadrilateralQuadrature {
   }
 };
 
-#endif  // XCGD_QUADRILATERAL_H
+#endif  // XCGD_FE_QUADRILATERAL_H

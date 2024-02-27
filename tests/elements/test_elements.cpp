@@ -2,7 +2,9 @@
 #include <iostream>
 #include <vector>
 
-#include "elements/galerkin_difference.h"
+#include "elements/fe_quadrilateral.h"
+#include "elements/fe_tetrahedral.h"
+#include "elements/gd_vandermonde.h"
 #include "test_commons.h"
 
 TEST(ElementTest, GalerkinDiff2D) {

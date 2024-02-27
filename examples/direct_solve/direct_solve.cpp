@@ -2,8 +2,8 @@
 #include <string>
 
 #include "analysis.h"
-#include "elements/quadrilateral.h"
-#include "elements/tetrahedral.h"
+#include "elements/fe_quadrilateral.h"
+#include "elements/fe_tetrahedral.h"
 #include "physics/neohookean.h"
 #include "sparse_utils/sparse_utils.h"
 #include "utils/linalg.h"

@@ -4,8 +4,9 @@
 #include <string>
 
 #include "analysis.h"
-#include "elements/quadrilateral.h"
-#include "elements/tetrahedral.h"
+#include "elements/fe_quadrilateral.h"
+#include "elements/fe_tetrahedral.h"
+#include "elements/gd_vandermonde.h"
 #include "physics/neohookean.h"
 #include "physics/poisson.h"
 #include "sparse_utils/sparse_utils.h"
@@ -14,8 +15,11 @@
 
 template <typename T, int spatial_dim, class Physics, class Basis,
           class Quadrature>
-void test_physics(int num_elements, int num_nodes, int *element_nodes, T *xloc,
-                  Physics &physics) {
+void test_physics(Basis &basis, Physics &physics, double h = 1e-30,
+                  double tol = 1e-14) {
+  int num_nodes = basis.get_num_nodes();
+  int num_elements = basis.get_num_elements();
+
   // Set the number of degrees of freeom
   int ndof = Physics::dof_per_node * num_nodes;
 
@@ -26,7 +30,6 @@ void test_physics(int num_elements, int num_nodes, int *element_nodes, T *xloc,
   T *Jp_axpy = new T[ndof];
   T *direction = new T[ndof];
   double *p = new double[ndof];
-  double h = 1e-30;
   for (int i = 0; i < ndof; i++) {
     direction[i] = (double)rand() / RAND_MAX;
     p[i] = (double)rand() / RAND_MAX;
@@ -39,10 +42,11 @@ void test_physics(int num_elements, int num_nodes, int *element_nodes, T *xloc,
 
   // Allocate space for the residual
   using Analysis = FEAnalysis<T, Basis, Quadrature, Physics>;
-  T energy = Analysis::energy(physics, num_elements, element_nodes, xloc, dof);
-  Analysis::residual(physics, num_elements, element_nodes, xloc, dof, res);
-  Analysis::jacobian_product(physics, num_elements, element_nodes, xloc, dof,
-                             direction, Jp);
+  Analysis analysis(basis, physics);
+
+  T energy = analysis.energy_new(dof);
+  analysis.residual_new(dof, res);
+  analysis.jacobian_product_new(dof, direction, Jp);
 
   double dres_cs = energy.imag() / h;
   double dres_exact = 0.0;
@@ -69,18 +73,18 @@ void test_physics(int num_elements, int num_nodes, int *element_nodes, T *xloc,
   std::printf("exact derivatives:        %25.15e\n", dJp_exact);
   std::printf("relative error:           %25.15e\n", dJp_relerr);
 
-  EXPECT_NEAR(dres_relerr, 0.0, 1e-14);
-  EXPECT_NEAR(dJp_relerr, 0.0, 1e-14);
+  EXPECT_NEAR(dres_relerr, 0.0, tol);
+  EXPECT_NEAR(dJp_relerr, 0.0, tol);
 
   int *rowp = nullptr, *cols = nullptr;
-  SparseUtils::CSRFromConnectivity(num_nodes, num_elements,
-                                   Basis::nodes_per_element, element_nodes,
-                                   &rowp, &cols);
+  SparseUtils::CSRFromConnectivityFunctor(
+      num_nodes, num_elements, Basis::nodes_per_element,
+      [&basis](int elem, int *nodes) { basis.get_elem_dof_nodes(elem, nodes); },
+      &rowp, &cols);
   int nnz = rowp[num_nodes];
-  using BSRMat =
-      SparseUtils::BSRMat<T, Physics::dof_per_node, Physics::dof_per_node>;
-  BSRMat *jac_bsr = new BSRMat(num_nodes, num_nodes, nnz, rowp, cols);
-  Analysis::jacobian(physics, num_elements, element_nodes, xloc, dof, jac_bsr);
+  using BSRMat = GalerkinBSRMat<T, Physics::dof_per_node>;
+  BSRMat *jac_bsr = new BSRMat(num_nodes, nnz, rowp, cols);
+  analysis.jacobian_new(dof, jac_bsr);
   jac_bsr->axpy(direction, Jp_axpy);
 
   double Jp_l1 = 0.0;
@@ -94,7 +98,7 @@ void test_physics(int num_elements, int num_nodes, int *element_nodes, T *xloc,
   std::printf("Jac-vec product:          %25.15e\n", Jp_l1);
   std::printf("Jac-vec product by axpy:  %25.15e\n", Jp_axpy_l1);
   std::printf("relative error:           %25.15e\n", Jp_relerr);
-  EXPECT_NEAR(Jp_relerr, 0.0, 1e-14);
+  EXPECT_NEAR(Jp_relerr, 0.0, tol);
 }
 
 TEST(Neohookean, Quad) {
@@ -107,15 +111,17 @@ TEST(Neohookean, Quad) {
   T lx = 1.0, ly = 1.0;
   create_2d_rect_quad_mesh(nx, ny, lx, ly, &num_elements, &num_nodes,
                            &element_nodes, &xloc);
+  using Basis = QuadrilateralBasis<T>;
+  typename Basis::Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
+  Basis basis(mesh);
 
-  constexpr static int spatial_dim = 2;
+  constexpr int spatial_dim = 2;
   using Physics = NeohookeanPhysics<T, spatial_dim>;
   T C1 = 0.01;
   T D1 = 0.5;
   Physics physics(C1, D1);
-  test_physics<T, spatial_dim, Physics, QuadrilateralBasis,
-               QuadrilateralQuadrature>(num_elements, num_nodes, element_nodes,
-                                        xloc, physics);
+  test_physics<T, spatial_dim, Physics, Basis, QuadrilateralQuadrature>(
+      basis, physics);
 }
 
 TEST(Neohookean, Tet) {
@@ -125,15 +131,42 @@ TEST(Neohookean, Tet) {
   T *xloc;
 
   create_single_element_mesh(&num_elements, &num_nodes, &element_nodes, &xloc);
+  using Basis = TetrahedralBasis<T>;
+  typename Basis::Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
+  Basis basis(mesh);
 
-  constexpr static int spatial_dim = 3;
+  constexpr int spatial_dim = 3;
   using Physics = NeohookeanPhysics<T, spatial_dim>;
   T C1 = 0.01;
   T D1 = 0.5;
   Physics physics(C1, D1);
-  test_physics<T, spatial_dim, Physics, TetrahedralBasis,
-               TetrahedralQuadrature>(num_elements, num_nodes, element_nodes,
-                                      xloc, physics);
+  test_physics<T, spatial_dim, Physics, Basis, TetrahedralQuadrature>(basis,
+                                                                      physics);
+}
+
+TEST(Neohookean, GD) {
+  using T = std::complex<double>;
+  int constexpr Np_1d = 4;
+  int constexpr nx = 5, ny = 7;
+  using Grid = StructuredGrid2D<T>;
+  using Mesh = GDMesh2D<T, Np_1d>;
+  using Basis = GDBasis2D<T, Np_1d>;
+  using Quadrature = GDQuadrature2D<Np_1d>;
+
+  int nxy[2] = {nx, ny};
+  T lxy[2] = {1.0, 1.4};
+  Grid grid(nxy, lxy);
+  Mesh mesh(grid);
+  Basis basis(mesh);
+
+  constexpr int spatial_dim = 2;
+  using Physics = NeohookeanPhysics<T, spatial_dim>;
+  T C1 = 0.01;
+  T D1 = 0.5;
+  Physics physics(C1, D1);
+  double h = 1e-8, tol = 1e-6;
+  test_physics<T, spatial_dim, Physics, Basis, Quadrature>(basis, physics, h,
+                                                           tol);
 }
 
 TEST(Poisson, Quad) {
@@ -146,13 +179,15 @@ TEST(Poisson, Quad) {
   T lx = 1.0, ly = 1.0;
   create_2d_rect_quad_mesh(nx, ny, lx, ly, &num_elements, &num_nodes,
                            &element_nodes, &xloc);
+  using Basis = QuadrilateralBasis<T>;
+  typename Basis::Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
+  Basis basis(mesh);
 
-  constexpr static int spatial_dim = 2;
+  constexpr int spatial_dim = 2;
   using Physics = PoissonPhysics<T, spatial_dim>;
   Physics physics;
-  test_physics<T, spatial_dim, Physics, QuadrilateralBasis,
-               QuadrilateralQuadrature>(num_elements, num_nodes, element_nodes,
-                                        xloc, physics);
+  test_physics<T, spatial_dim, Physics, Basis, QuadrilateralQuadrature>(
+      basis, physics);
 }
 
 TEST(Poisson, Tet) {
@@ -162,11 +197,36 @@ TEST(Poisson, Tet) {
   T *xloc;
 
   create_single_element_mesh(&num_elements, &num_nodes, &element_nodes, &xloc);
+  using Basis = TetrahedralBasis<T>;
+  typename Basis::Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
+  Basis basis(mesh);
 
   constexpr static int spatial_dim = 3;
   using Physics = PoissonPhysics<T, spatial_dim>;
   Physics physics;
-  test_physics<T, spatial_dim, Physics, TetrahedralBasis,
-               TetrahedralQuadrature>(num_elements, num_nodes, element_nodes,
-                                      xloc, physics);
+  test_physics<T, spatial_dim, Physics, Basis, TetrahedralQuadrature>(basis,
+                                                                      physics);
+}
+
+TEST(Poisson, GD) {
+  using T = std::complex<double>;
+  int constexpr Np_1d = 4;
+  int constexpr nx = 5, ny = 7;
+  using Grid = StructuredGrid2D<T>;
+  using Mesh = GDMesh2D<T, Np_1d>;
+  using Basis = GDBasis2D<T, Np_1d>;
+  using Quadrature = GDQuadrature2D<Np_1d>;
+
+  int nxy[2] = {nx, ny};
+  T lxy[2] = {1.0, 1.4};
+  Grid grid(nxy, lxy);
+  Mesh mesh(grid);
+  Basis basis(mesh);
+
+  constexpr int spatial_dim = 2;
+  using Physics = PoissonPhysics<T, spatial_dim>;
+  Physics physics;
+  double h = 1e-8, tol = 1e-6;
+  test_physics<T, spatial_dim, Physics, Basis, Quadrature>(basis, physics, h,
+                                                           tol);
 }

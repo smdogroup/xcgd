@@ -1,9 +1,9 @@
-#ifndef XCGD_TETRAHEDRAL_H
-#define XCGD_TETRAHEDRAL_H
+#ifndef XCGD_FE_TETRAHEDRAL_H
+#define XCGD_FE_TETRAHEDRAL_H
 
 #include <vector>
 
-#include "gd_vandermonde.h"
+#include "fe_commons.h"
 
 template <typename T>
 class TetrahedralBasis final : public BasisBase<T, FEMesh<T, 3, 10>> {
@@ -112,4 +112,4 @@ class TetrahedralQuadrature {
   }
 };
 
-#endif  // XCGD_TETRAHEDRAL_H
+#endif  // XCGD_FE_TETRAHEDRAL_H

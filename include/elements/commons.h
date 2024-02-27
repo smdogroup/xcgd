@@ -3,6 +3,50 @@
 
 #include "a2dcore.h"
 
+/**
+ * @brief The abstract base class for a Galerkin (finite element or Galerkin
+ * difference) mesh
+ */
+template <typename T, int spatial_dim_, int nodes_per_element_>
+class MeshBase {
+ public:
+  static constexpr int spatial_dim = spatial_dim_;
+  static constexpr int nodes_per_element = nodes_per_element_;
+
+  virtual int get_num_nodes() const = 0;
+  virtual int get_num_elements() const = 0;
+  virtual void get_node_xloc(int node, T* xloc) const = 0;
+  virtual void get_elem_dof_nodes(int elem, int* nodes) const = 0;
+};
+
+/**
+ * @brief The abstract base class for a Galerkin (finite element or Galerkin
+ * difference) basis
+ */
+template <typename T, class Mesh_>
+class BasisBase {
+ public:
+  using Mesh = Mesh_;
+  static constexpr int spatial_dim = Mesh::spatial_dim;
+  static constexpr int nodes_per_element = Mesh::nodes_per_element;
+
+  BasisBase(Mesh& mesh) : mesh(mesh) {}
+
+  virtual void eval_basis_grad(int elem, const T* pt, T* N, T* Nxi) = 0;
+
+  inline int get_num_nodes() const { return mesh.get_num_nodes(); };
+  inline int get_num_elements() const { return mesh.get_num_elements(); };
+  inline void get_node_xloc(int node, T* xloc) const {
+    mesh.get_node_xloc(node, xloc);
+  };
+  inline void get_elem_dof_nodes(int elem, int* nodes) const {
+    mesh.get_elem_dof_nodes(elem, nodes);
+  };
+
+ protected:
+  Mesh& mesh;
+};
+
 template <typename T, class Basis, int dim>
 static void eval_grad(Basis& basis, int elem, const T pt[], const T dof[],
                       A2D::Mat<T, dim, Basis::spatial_dim>& grad) {

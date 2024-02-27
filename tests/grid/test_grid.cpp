@@ -1,6 +1,6 @@
 #include <vector>
 
-#include "elements/galerkin_difference.h"
+#include "elements/gd_vandermonde.h"
 #include "test_commons.h"
 
 TEST(GridTest, GalerkinDiff2D) {

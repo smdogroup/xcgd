@@ -3,7 +3,6 @@
 
 #include <vector>
 
-#include "elements/galerkin_difference.h"
 #include "sparse_utils/lapack.h"
 #include "sparse_utils/sparse_matrix.h"
 #include "utils/misc.h"
@@ -55,8 +54,8 @@ void direct_inverse(int n, T A[]) {
   }
 }
 
-// A specialization of the general block sparse row matrix tailored for the
-// Galerkin method applications (i.e. finite element method and Galerkin
+// A squared specialization of the general block sparse row matrix tailored for
+// the Galerkin method applications (i.e. finite element method and Galerkin
 // difference method)
 template <typename T, int M>
 class GalerkinBSRMat final : public SparseUtils::BSRMat<T, M, M> {

@@ -1,8 +1,7 @@
-#include "elements/galerkin_difference.h"
-
 #include <string>
 
 #include "analysis.h"
+#include "elements/gd_vandermonde.h"
 #include "elements/tetrahedral.h"
 #include "physics/poisson.h"
 #include "utils/mesh.h"
