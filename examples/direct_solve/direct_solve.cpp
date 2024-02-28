@@ -15,11 +15,8 @@ int main(int argc, char *argv[]) {
   using T = double;
 
   using Basis = TetrahedralBasis<T>;
-  using Mesh = Basis::Mesh;
-  using Quadrature = TetrahedralQuadrature<T>;
-
   using Physics = NeohookeanPhysics<T, Basis::spatial_dim>;
-  using Analysis = FEAnalysis<T, Basis, Quadrature, Physics>;
+  using Analysis = FEAnalysis<T, Basis, Physics>;
   using BSRMat = GalerkinBSRMat<T, Physics::dof_per_node>;
   using CSCMat = SparseUtils::CSCMat<T>;
 
@@ -32,7 +29,7 @@ int main(int argc, char *argv[]) {
   create_single_element_mesh(&num_elements, &num_nodes, &element_nodes, &xloc,
                              &ndof_bcs, &dof_bcs);
 
-  Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
+  Basis::Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
 
   ToVTK<T> vtk(Basis::spatial_dim, num_nodes, num_elements,
                Basis::nodes_per_element, element_nodes, xloc);
@@ -69,7 +66,7 @@ int main(int argc, char *argv[]) {
   Physics physics(C1, D1);
 
   StopWatch watch;
-  Quadrature quadrature;
+  Basis::Quadrature quadrature;
   Basis basis(mesh, quadrature);
   Analysis analysis(basis, physics);
   analysis.jacobian(dof, jac_bsr);

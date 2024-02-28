@@ -6,9 +6,11 @@
 #include "sparse_utils/sparse_matrix.h"
 #include "utils/linalg.h"
 
-template <typename T, class Basis, class Quadrature, class Physics>
+template <typename T, class Basis, class Physics>
 class FEAnalysis final {
  public:
+  using Quadrature = typename Basis::Quadrature;
+
   // Static data taken from the element basis
   static const int spatial_dim = Basis::spatial_dim;
   static const int nodes_per_element = Basis::nodes_per_element;

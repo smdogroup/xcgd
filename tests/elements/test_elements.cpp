@@ -6,6 +6,7 @@
 #include "elements/fe_tetrahedral.h"
 #include "elements/gd_vandermonde.h"
 #include "test_commons.h"
+#include "utils/mesh.h"
 
 TEST(ElementTest, GalerkinDiff2D) {
   int constexpr Np_1d = 6;
@@ -13,7 +14,8 @@ TEST(ElementTest, GalerkinDiff2D) {
   using T = std::complex<double>;
   using Grid = StructuredGrid2D<T>;
   using Mesh = GDMesh2D<T, Np_1d>;
-  using Quadrature = GDQuadrature2D<T, Np_1d>;
+  using Basis = GDBasis2D<T, Np_1d>;
+  using Quadrature = typename Basis::Quadrature;
 
   int constexpr nx = 10, ny = 10;
   int nxy[2] = {nx, ny};
@@ -50,7 +52,7 @@ TEST(ElementTest, GalerkinDiff2D) {
       -0.0029116801030750, -0.0013457544763187, 0.0000920367996092};
 
   Quadrature quadrature;
-  GDBasis2D<T, Np_1d> basis(mesh, quadrature);
+  Basis basis(mesh, quadrature);
 
   for (int elem = 0; elem < nx * ny; elem++) {
     basis.eval_basis_grad(elem, pts.data(), N.data(), Nxi.data());
@@ -68,4 +70,16 @@ TEST(ElementTest, GalerkinDiff2D) {
       EXPECT_NEAR(Nvals[i], N[i].real(), 1e-13);
     }
   }
+}
+
+TEST(IntegrationTest, Quad) {
+  using T = double;
+  int num_elements, num_nodes;
+  int *element_nodes;
+  T *xloc;
+
+  int nx = 64, ny = 64;
+  T lx = 3.0, ly = 3.0;
+  create_2d_rect_quad_mesh(nx, ny, lx, ly, &num_elements, &num_nodes,
+                           &element_nodes, &xloc);
 }

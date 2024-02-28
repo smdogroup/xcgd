@@ -11,11 +11,9 @@ int main(int argc, char *argv[]) {
   int constexpr Np_1d = 4;
   int constexpr nx = 5, ny = 5;  // number of elements along x and y directions
   using Grid = StructuredGrid2D<T>;
-  using Mesh = GDMesh2D<T, Np_1d>;
   using Basis = GDBasis2D<T, Np_1d>;
-  using Quadrature = GDQuadrature2D<T, Np_1d>;
   using Physics = PoissonPhysics<T, spatial_dim>;
-  using Analysis = FEAnalysis<T, Basis, Quadrature, Physics>;
+  using Analysis = FEAnalysis<T, Basis, Physics>;
 
   // Set the number of degrees of freedom
   int ndof = spatial_dim * (nx + 1) * (ny + 1);
@@ -38,8 +36,8 @@ int main(int argc, char *argv[]) {
   int nxy[2] = {nx, ny};
   T lxy[2] = {1.0, 1.0};
   Grid grid(nxy, lxy);
-  Mesh mesh(grid);
-  Quadrature quadrature;
+  Basis::Mesh mesh(grid);
+  Basis::Quadrature quadrature;
   Basis basis(mesh, quadrature);
 
   Analysis analysis(basis, physics);

@@ -13,8 +13,7 @@
 #include "test_commons.h"
 #include "utils/mesh.h"
 
-template <typename T, int spatial_dim, class Physics, class Basis,
-          class Quadrature>
+template <typename T, int spatial_dim, class Physics, class Basis>
 void test_physics(Basis &basis, Physics &physics, double h = 1e-30,
                   double tol = 1e-14) {
   int num_nodes = basis.mesh.get_num_nodes();
@@ -41,7 +40,7 @@ void test_physics(Basis &basis, Physics &physics, double h = 1e-30,
   }
 
   // Allocate space for the residual
-  using Analysis = FEAnalysis<T, Basis, Quadrature, Physics>;
+  using Analysis = FEAnalysis<T, Basis, Physics>;
   Analysis analysis(basis, physics);
 
   T energy = analysis.energy(dof);
@@ -114,9 +113,8 @@ TEST(Neohookean, Quad) {
   create_2d_rect_quad_mesh(nx, ny, lx, ly, &num_elements, &num_nodes,
                            &element_nodes, &xloc);
   using Basis = QuadrilateralBasis<T>;
-  using Quadrature = QuadrilateralQuadrature<T>;
   typename Basis::Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
-  Quadrature quadrature;
+  typename Basis::Quadrature quadrature;
   Basis basis(mesh, quadrature);
 
   constexpr int spatial_dim = 2;
@@ -124,7 +122,7 @@ TEST(Neohookean, Quad) {
   T C1 = 0.01;
   T D1 = 0.5;
   Physics physics(C1, D1);
-  test_physics<T, spatial_dim, Physics, Basis, Quadrature>(basis, physics);
+  test_physics<T, spatial_dim, Physics, Basis>(basis, physics);
 }
 
 TEST(Neohookean, Tet) {
@@ -135,9 +133,8 @@ TEST(Neohookean, Tet) {
 
   create_single_element_mesh(&num_elements, &num_nodes, &element_nodes, &xloc);
   using Basis = TetrahedralBasis<T>;
-  using Quadrature = TetrahedralQuadrature<T>;
   typename Basis::Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
-  Quadrature quadrature;
+  typename Basis::Quadrature quadrature;
   Basis basis(mesh, quadrature);
 
   constexpr int spatial_dim = 3;
@@ -145,7 +142,7 @@ TEST(Neohookean, Tet) {
   T C1 = 0.01;
   T D1 = 0.5;
   Physics physics(C1, D1);
-  test_physics<T, spatial_dim, Physics, Basis, Quadrature>(basis, physics);
+  test_physics<T, spatial_dim, Physics, Basis>(basis, physics);
 }
 
 TEST(Neohookean, GD) {
@@ -153,15 +150,13 @@ TEST(Neohookean, GD) {
   int constexpr Np_1d = 4;
   int constexpr nx = 5, ny = 7;
   using Grid = StructuredGrid2D<T>;
-  using Mesh = GDMesh2D<T, Np_1d>;
   using Basis = GDBasis2D<T, Np_1d>;
-  using Quadrature = GDQuadrature2D<T, Np_1d>;
 
   int nxy[2] = {nx, ny};
   T lxy[2] = {1.0, 1.4};
   Grid grid(nxy, lxy);
-  Mesh mesh(grid);
-  Quadrature quadrature;
+  typename Basis::Mesh mesh(grid);
+  typename Basis::Quadrature quadrature;
   Basis basis(mesh, quadrature);
 
   constexpr int spatial_dim = 2;
@@ -170,8 +165,7 @@ TEST(Neohookean, GD) {
   T D1 = 0.5;
   Physics physics(C1, D1);
   double h = 1e-8, tol = 1e-6;
-  test_physics<T, spatial_dim, Physics, Basis, Quadrature>(basis, physics, h,
-                                                           tol);
+  test_physics<T, spatial_dim, Physics, Basis>(basis, physics, h, tol);
 }
 
 TEST(Poisson, Quad) {
@@ -185,15 +179,14 @@ TEST(Poisson, Quad) {
   create_2d_rect_quad_mesh(nx, ny, lx, ly, &num_elements, &num_nodes,
                            &element_nodes, &xloc);
   using Basis = QuadrilateralBasis<T>;
-  using Quadrature = QuadrilateralQuadrature<T>;
   typename Basis::Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
-  Quadrature quadrature;
+  typename Basis::Quadrature quadrature;
   Basis basis(mesh, quadrature);
 
   constexpr int spatial_dim = 2;
   using Physics = PoissonPhysics<T, spatial_dim>;
   Physics physics;
-  test_physics<T, spatial_dim, Physics, Basis, Quadrature>(basis, physics);
+  test_physics<T, spatial_dim, Physics, Basis>(basis, physics);
 }
 
 TEST(Poisson, Tet) {
@@ -204,15 +197,14 @@ TEST(Poisson, Tet) {
 
   create_single_element_mesh(&num_elements, &num_nodes, &element_nodes, &xloc);
   using Basis = TetrahedralBasis<T>;
-  using Quadrature = TetrahedralQuadrature<T>;
   typename Basis::Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
-  Quadrature quadrature;
+  typename Basis::Quadrature quadrature;
   Basis basis(mesh, quadrature);
 
   constexpr static int spatial_dim = 3;
   using Physics = PoissonPhysics<T, spatial_dim>;
   Physics physics;
-  test_physics<T, spatial_dim, Physics, Basis, Quadrature>(basis, physics);
+  test_physics<T, spatial_dim, Physics, Basis>(basis, physics);
 }
 
 TEST(Poisson, GD) {
@@ -220,21 +212,18 @@ TEST(Poisson, GD) {
   int constexpr Np_1d = 4;
   int constexpr nx = 5, ny = 7;
   using Grid = StructuredGrid2D<T>;
-  using Mesh = GDMesh2D<T, Np_1d>;
   using Basis = GDBasis2D<T, Np_1d>;
-  using Quadrature = GDQuadrature2D<T, Np_1d>;
 
   int nxy[2] = {nx, ny};
   T lxy[2] = {1.0, 1.4};
   Grid grid(nxy, lxy);
-  Mesh mesh(grid);
-  Quadrature quadrature;
+  typename Basis::Mesh mesh(grid);
+  typename Basis::Quadrature quadrature;
   Basis basis(mesh, quadrature);
 
   constexpr int spatial_dim = 2;
   using Physics = PoissonPhysics<T, spatial_dim>;
   Physics physics;
   double h = 1e-8, tol = 1e-6;
-  test_physics<T, spatial_dim, Physics, Basis, Quadrature>(basis, physics, h,
-                                                           tol);
+  test_physics<T, spatial_dim, Physics, Basis>(basis, physics, h, tol);
 }

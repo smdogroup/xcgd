@@ -8,10 +8,8 @@
 int main(int argc, char *argv[]) {
   using T = double;
   using Basis = TetrahedralBasis<T>;
-  using Mesh = Basis::Mesh;
-  using Quadrature = TetrahedralQuadrature<T>;
   using Physics = NeohookeanPhysics<T>;
-  using Analysis = FEAnalysis<T, Basis, Quadrature, Physics>;
+  using Analysis = FEAnalysis<T, Basis, Physics>;
 
   int num_elements, num_nodes;
   int *element_nodes;
@@ -21,8 +19,8 @@ int main(int argc, char *argv[]) {
   std::string filename("../../input/Tensile.inp");
   load_mesh<T>(filename, &num_elements, &num_nodes, &element_nodes, &xloc);
 
-  Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
-  Quadrature quadrature;
+  Basis::Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
+  Basis::Quadrature quadrature;
   Basis basis(mesh, quadrature);
 
   // Set the number of degrees of freeom
