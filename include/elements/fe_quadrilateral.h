@@ -4,38 +4,6 @@
 #include "fe_commons.h"
 
 template <typename T>
-class QuadrilateralBasis final : public BasisBase<T, FEMesh<T, 2, 4>> {
- private:
-  using BasisBase = BasisBase<T, FEMesh<T, 2, 4>>;
-
- public:
-  using BasisBase::nodes_per_element;
-  using BasisBase::spatial_dim;
-  using typename BasisBase::Mesh;
-
-  QuadrilateralBasis(Mesh& mesh) : BasisBase(mesh) {}
-
-  void eval_basis_grad(int _, const T* pt, T* N, T* Nxi) {
-    if (N) {
-      N[0] = 0.25 * (1.0 - pt[0]) * (1.0 - pt[1]);
-      N[1] = 0.25 * (1.0 + pt[0]) * (1.0 - pt[1]);
-      N[2] = 0.25 * (1.0 - pt[0]) * (1.0 + pt[1]);
-      N[3] = 0.25 * (1.0 + pt[0]) * (1.0 + pt[1]);
-    }
-    if (Nxi) {
-      Nxi[0] = -0.25 * (1.0 - pt[1]);
-      Nxi[1] = -0.25 * (1.0 - pt[0]);
-      Nxi[2] = 0.25 * (1.0 - pt[1]);
-      Nxi[3] = -0.25 * (1.0 + pt[0]);
-      Nxi[4] = -0.25 * (1.0 + pt[1]);
-      Nxi[5] = 0.25 * (1.0 - pt[0]);
-      Nxi[6] = 0.25 * (1.0 + pt[1]);
-      Nxi[7] = 0.25 * (1.0 + pt[0]);
-    }
-  }
-};
-
-template <typename T>
 class QuadrilateralQuadrature final : public QuadratureBase<T, 2, 4> {
  private:
   using QuadratureBase = QuadratureBase<T, 2, 4>;
@@ -44,26 +12,60 @@ class QuadrilateralQuadrature final : public QuadratureBase<T, 2, 4> {
   using QuadratureBase::num_quadrature_pts;
   using QuadratureBase::spatial_dim;
 
-  static T get_quadrature_pt(int k, T pt[]) {
-    switch (k) {
-      case 0:
-        pt[0] = -0.5773502692;
-        pt[1] = -0.5773502692;
-        break;
-      case 1:
-        pt[0] = 0.5773502692;
-        pt[1] = -0.5773502692;
-        break;
-      case 2:
-        pt[0] = -0.5773502692;
-        pt[1] = 0.5773502692;
-        break;
-      case 3:
-        pt[0] = 0.5773502692;
-        pt[1] = 0.5773502692;
-        break;
+  void get_quadrature_pts(T pts[], T wts[]) const {
+    pts[0] = -0.5773502692;
+    pts[1] = -0.5773502692;
+    pts[2] = 0.5773502692;
+    pts[3] = -0.5773502692;
+    pts[4] = -0.5773502692;
+    pts[5] = 0.5773502692;
+    pts[6] = 0.5773502692;
+    pts[7] = 0.5773502692;
+
+    wts[0] = 1.0;
+    wts[1] = 1.0;
+    wts[2] = 1.0;
+    wts[3] = 1.0;
+  }
+};
+
+template <typename T>
+class QuadrilateralBasis final
+    : public BasisBase<T, FEMesh<T, 2, 4>, QuadrilateralQuadrature<T>> {
+ private:
+  using BasisBase = BasisBase<T, FEMesh<T, 2, 4>, QuadrilateralQuadrature<T>>;
+
+ public:
+  using BasisBase::nodes_per_element;
+  using BasisBase::spatial_dim;
+  using typename BasisBase::Mesh;
+  using typename BasisBase::Quadrature;
+
+  QuadrilateralBasis(Mesh& mesh, Quadrature& quadrature)
+      : BasisBase(mesh, quadrature) {}
+
+  void eval_basis_grad(int _, const T* pts, T* N, T* Nxi) const {
+    constexpr int num_quadrature_pts = Quadrature::num_quadrature_pts;
+    for (int q = 0; q < num_quadrature_pts; q++) {
+      int offset_n = q * nodes_per_element;
+      int offset_nxi = q * nodes_per_element * spatial_dim;
+      if (N) {
+        N[offset_n] = 0.25 * (1.0 - pts[0]) * (1.0 - pts[1]);
+        N[offset_n + 1] = 0.25 * (1.0 + pts[0]) * (1.0 - pts[1]);
+        N[offset_n + 2] = 0.25 * (1.0 - pts[0]) * (1.0 + pts[1]);
+        N[offset_n + 3] = 0.25 * (1.0 + pts[0]) * (1.0 + pts[1]);
+      }
+      if (Nxi) {
+        Nxi[offset_nxi] = -0.25 * (1.0 - pts[1]);
+        Nxi[offset_nxi + 1] = -0.25 * (1.0 - pts[0]);
+        Nxi[offset_nxi + 2] = 0.25 * (1.0 - pts[1]);
+        Nxi[offset_nxi + 3] = -0.25 * (1.0 + pts[0]);
+        Nxi[offset_nxi + 4] = -0.25 * (1.0 + pts[1]);
+        Nxi[offset_nxi + 5] = 0.25 * (1.0 - pts[0]);
+        Nxi[offset_nxi + 6] = 0.25 * (1.0 + pts[1]);
+        Nxi[offset_nxi + 7] = 0.25 * (1.0 + pts[0]);
+      }
     }
-    return 1.0;  // quadrature weight
   }
 };
 

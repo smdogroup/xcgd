@@ -22,7 +22,8 @@ int main(int argc, char *argv[]) {
   load_mesh<T>(filename, &num_elements, &num_nodes, &element_nodes, &xloc);
 
   Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
-  Basis basis(mesh);
+  Quadrature quadrature;
+  Basis basis(mesh, quadrature);
 
   // Set the number of degrees of freeom
   int ndof = 3 * num_nodes;
@@ -30,16 +31,12 @@ int main(int argc, char *argv[]) {
   // Allocate space for the degrees of freeom
   T *dof = new T[ndof];
   T *res = new T[ndof];
-  T *res_new = new T[ndof];
   T *Jp = new T[ndof];
-  T *Jp_new = new T[ndof];
   T *direction = new T[ndof];
   for (int i = 0; i < ndof; i++) {
     dof[i] = 0.01 * rand() / RAND_MAX;
     res[i] = 0.0;
-    res_new[i] = 0.0;
     Jp[i] = 0.0;
-    Jp_new[i] = 0.0;
     direction[i] = (T)rand() / RAND_MAX;
   }
 
@@ -50,31 +47,19 @@ int main(int argc, char *argv[]) {
   Analysis analysis(basis, physics);
 
   // Allocate space for the residual
-  T energy = analysis.energy(physics, num_elements, element_nodes, xloc, dof);
-  T energy_new = analysis.energy_new(dof);
-  analysis.residual(physics, num_elements, element_nodes, xloc, dof, res);
-  analysis.residual_new(dof, res_new);
-  analysis.jacobian_product(physics, num_elements, element_nodes, xloc, dof,
-                            direction, Jp);
-  analysis.jacobian_product_new(dof, direction, Jp_new);
+  T energy = analysis.energy(dof);
+  analysis.residual(dof, res);
+  analysis.jacobian_product(dof, direction, Jp);
 
-  T pres = 0.0, pres_new = 0.0, pJp = 0.0, pJp_new = 0.0;
+  T pres = 0.0, pJp = 0.0;
   for (int i = 0; i < ndof; i++) {
     pres += res[i] * direction[i];
-    pres_new += res_new[i] * direction[i];
     pJp += Jp[i] * direction[i];
-    pJp_new += Jp_new[i] * direction[i];
   }
 
-  T energy_err = (energy - energy_new) / energy;
-  T pres_err = (pres - pres_new) / pres;
-  T pJp_err = (pJp - pJp_new) / pJp;
-  std::printf("energy: %20.10e, energy_new: %20.10e, err: %20.10e\n", energy,
-              energy_new, energy_err);
-  std::printf("res   : %20.10e, res_new   : %20.10e, err: %20.10e\n", pres,
-              pres_new, pres_err);
-  std::printf("Jp    : %20.10e, Jp_new    : %20.10e, err: %20.10e\n", pJp,
-              pJp_new, pJp_err);
+  std::printf("energy: %20.10e\n", energy);
+  std::printf("res   : %20.10e\n", pres);
+  std::printf("Jp    : %20.10e\n", pJp);
 
   return 0;
 }

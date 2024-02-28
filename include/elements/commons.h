@@ -23,28 +23,21 @@ class MeshBase {
  * @brief The abstract base class for a Galerkin (finite element or Galerkin
  * difference) basis
  */
-template <typename T, class Mesh_>
+template <typename T, class Mesh_, class Quadrature_>
 class BasisBase {
  public:
   using Mesh = Mesh_;
+  using Quadrature = Quadrature_;
   static constexpr int spatial_dim = Mesh::spatial_dim;
   static constexpr int nodes_per_element = Mesh::nodes_per_element;
 
-  BasisBase(Mesh& mesh) : mesh(mesh) {}
+  BasisBase(const Mesh& mesh, const Quadrature& quadrature)
+      : mesh(mesh), quadrature(quadrature) {}
 
-  virtual void eval_basis_grad(int elem, const T* pt, T* N, T* Nxi) = 0;
+  virtual void eval_basis_grad(int elem, const T* pts, T* N, T* Nxi) const = 0;
 
-  inline int get_num_nodes() const { return mesh.get_num_nodes(); };
-  inline int get_num_elements() const { return mesh.get_num_elements(); };
-  inline void get_node_xloc(int node, T* xloc) const {
-    mesh.get_node_xloc(node, xloc);
-  };
-  inline void get_elem_dof_nodes(int elem, int* nodes) const {
-    mesh.get_elem_dof_nodes(elem, nodes);
-  };
-
- protected:
-  Mesh& mesh;
+  const Mesh& mesh;
+  const Quadrature& quadrature;
 };
 
 template <typename T, int spatial_dim_, int num_quadrature_pts_>
@@ -52,16 +45,15 @@ class QuadratureBase {
  public:
   static constexpr int spatial_dim = spatial_dim_;
   static constexpr int num_quadrature_pts = num_quadrature_pts_;
+
+  virtual void get_quadrature_pts(T pts[], T wts[]) const = 0;
 };
 
 template <typename T, class Basis, int dim>
-static void eval_grad(Basis& basis, int elem, const T pt[], const T dof[],
+static void eval_grad(int elem, const T pts[], const T dof[], const T Nxi[],
                       A2D::Mat<T, dim, Basis::spatial_dim>& grad) {
   static constexpr int spatial_dim = Basis::spatial_dim;
   static constexpr int nodes_per_element = Basis::nodes_per_element;
-
-  T Nxi[spatial_dim * nodes_per_element];
-  basis.eval_basis_grad(elem, pt, (T*)nullptr, Nxi);
 
   for (int k = 0; k < spatial_dim * dim; k++) {
     grad[k] = 0.0;
@@ -77,15 +69,11 @@ static void eval_grad(Basis& basis, int elem, const T pt[], const T dof[],
 }
 
 template <typename T, class Basis, int dim>
-static void eval_grad(Basis& basis, int elem, const T pt[], const T dof[],
-                      A2D::Vec<T, dim>& vals,
-                      A2D::Mat<T, dim, Basis::spatial_dim>& grad) {
+static void eval_val_grad(int elem, const T pts[], const T dof[], const T N[],
+                          const T Nxi[], A2D::Vec<T, dim>& vals,
+                          A2D::Mat<T, dim, Basis::spatial_dim>& grad) {
   static constexpr int spatial_dim = Basis::spatial_dim;
   static constexpr int nodes_per_element = Basis::nodes_per_element;
-
-  T N[nodes_per_element];
-  T Nxi[spatial_dim * nodes_per_element];
-  basis.eval_basis_grad(elem, pt, N, Nxi);
 
   for (int k = 0; k < dim; k++) {
     vals(k) = 0.0;
@@ -106,16 +94,12 @@ static void eval_grad(Basis& basis, int elem, const T pt[], const T dof[],
 }
 
 template <typename T, class Basis, int dim>
-static void add_grad(Basis& basis, int elem, const T pt[],
+static void add_grad(int elem, const T pts[], const T N[], const T Nxi[],
                      const A2D::Vec<T, dim>& coef_vals,
                      const A2D::Mat<T, dim, Basis::spatial_dim>& coef_grad,
                      T elem_res[]) {
   static constexpr int spatial_dim = Basis::spatial_dim;
   static constexpr int nodes_per_element = Basis::nodes_per_element;
-
-  T N[nodes_per_element];
-  T Nxi[spatial_dim * nodes_per_element];
-  basis.eval_basis_grad(elem, pt, N, Nxi);
 
   for (int i = 0; i < nodes_per_element; i++) {
     for (int k = 0; k < dim; k++) {
@@ -128,17 +112,13 @@ static void add_grad(Basis& basis, int elem, const T pt[],
 }
 
 template <typename T, class Basis, int dim>
-static void add_matrix(Basis& basis, int elem, const T pt[],
+static void add_matrix(int elem, const T pts[], const T N[], const T Nxi[],
                        const A2D::Mat<T, dim, dim>& coef_vals,
                        const A2D::Mat<T, dim * Basis::spatial_dim,
                                       dim * Basis::spatial_dim>& coef_grad,
                        T elem_jac[]) {
   static constexpr int spatial_dim = Basis::spatial_dim;
   static constexpr int nodes_per_element = Basis::nodes_per_element;
-
-  T N[nodes_per_element];
-  T Nxi[spatial_dim * nodes_per_element];
-  basis.eval_basis_grad(elem, pt, N, Nxi);
 
   constexpr int dof_per_element = dim * nodes_per_element;
 

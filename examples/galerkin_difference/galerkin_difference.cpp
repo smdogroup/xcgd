@@ -39,13 +39,14 @@ int main(int argc, char *argv[]) {
   T lxy[2] = {1.0, 1.0};
   Grid grid(nxy, lxy);
   Mesh mesh(grid);
-  Basis basis(mesh);
+  Quadrature quadrature;
+  Basis basis(mesh, quadrature);
 
   Analysis analysis(basis, physics);
 
   // Allocate space for the residual
-  T energy = analysis.energy_new(dof);
-  analysis.residual_new(dof, res);
+  T energy = analysis.energy(dof);
+  analysis.residual(dof, res);
 
   std::cout << energy << std::endl;
 

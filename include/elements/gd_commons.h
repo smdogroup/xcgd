@@ -73,7 +73,7 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d> {
   using MeshBase::nodes_per_element;
   using MeshBase::spatial_dim;
 
-  GDMesh2D(Grid& grid) : grid(grid) {
+  GDMesh2D(const Grid& grid) : grid(grid) {
     const int* nxy = grid.get_nxy();
     for (int d = 0; d < spatial_dim; d++) {
       if (nxy[d] < Np_1d - 1) {
@@ -138,7 +138,7 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d> {
   };
 
  private:
-  Grid& grid;
+  const Grid& grid;
 };
 
 #endif  // XCGD_GD_COMMONS_H

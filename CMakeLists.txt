@@ -7,6 +7,7 @@ project(XCGD
   HOMEPAGE_URL "https://github.com/smdogroup/xcgd"
   LANGUAGES CXX)
 
+# C++ 17 is required for XCGD
 set(CMAKE_CXX_STANDARD 17)
 
 set(XCGD_SPARSE_UTILS_DIR $ENV{HOME}/installs/sparse-utils)

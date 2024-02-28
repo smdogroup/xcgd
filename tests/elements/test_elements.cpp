@@ -13,6 +13,7 @@ TEST(ElementTest, GalerkinDiff2D) {
   using T = std::complex<double>;
   using Grid = StructuredGrid2D<T>;
   using Mesh = GDMesh2D<T, Np_1d>;
+  using Quadrature = GDQuadrature2D<T, Np_1d>;
 
   int constexpr nx = 10, ny = 10;
   int nxy[2] = {nx, ny};
@@ -20,15 +21,18 @@ TEST(ElementTest, GalerkinDiff2D) {
   Grid grid(nxy, lxy);
   Mesh mesh(grid);
 
-  std::vector<T> N(Nk);
-  std::vector<T> Nxi(grid.spatial_dim * Nk);
+  std::vector<T> N(Nk * Quadrature::num_quadrature_pts);
+  std::vector<T> Nxi(grid.spatial_dim * Nk * Quadrature::num_quadrature_pts);
 
   double h = 1e-7;
   std::vector<double> p = {0.4385123, 0.742383};
+  std::vector<double> pt = {0.39214122, -0.24213123};
 
-  std::vector<T> pt = {0.39214122, -0.24213123};
-  for (int i = 0; i < grid.spatial_dim; i++) {
-    pt[i] += T(0.0, h * p[i]);
+  std::vector<T> pts(Quadrature::num_quadrature_pts * Grid::spatial_dim);
+
+  for (int q = 0; q < Quadrature::num_quadrature_pts; q++) {
+    pts[Grid::spatial_dim * q] = T(pt[0], h * p[0]);
+    pts[Grid::spatial_dim * q + 1] = T(pt[1], h * p[1]);
   }
 
   std::vector<double> Nvals = {
@@ -45,9 +49,11 @@ TEST(ElementTest, GalerkinDiff2D) {
       0.0000401865672262,  -0.0002819426085606, 0.0009447978765173,
       -0.0029116801030750, -0.0013457544763187, 0.0000920367996092};
 
-  GDBasis2D<T, Np_1d> basis(mesh);
+  Quadrature quadrature;
+  GDBasis2D<T, Np_1d> basis(mesh, quadrature);
+
   for (int elem = 0; elem < nx * ny; elem++) {
-    basis.eval_basis_grad(elem, pt.data(), N.data(), Nxi.data());
+    basis.eval_basis_grad(elem, pts.data(), N.data(), Nxi.data());
 
     for (int i = 0; i < Nk; i++) {
       double nxi_cs = N[i].imag() / h;

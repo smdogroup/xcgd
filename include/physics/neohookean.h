@@ -18,7 +18,7 @@ class NeohookeanPhysics {
 
   T energy(T weight, const A2D::Mat<T, spatial_dim, spatial_dim>& J_mat,
            A2D::Vec<T, dof_per_node>& vals,
-           A2D::Mat<T, dof_per_node, spatial_dim>& grad_mat) {
+           A2D::Mat<T, dof_per_node, spatial_dim>& grad_mat) const {
     A2D::Mat<T, spatial_dim, spatial_dim> Jinv_mat, F_mat, FTF_mat, I_mat;
 
     // Identity matrix
@@ -54,7 +54,7 @@ class NeohookeanPhysics {
                 A2D::Vec<T, dof_per_node>& vals,
                 A2D::Mat<T, dof_per_node, spatial_dim>& grad,
                 A2D::Vec<T, dof_per_node>& coef_vals,
-                A2D::Mat<T, dof_per_node, spatial_dim>& coef_grad) {
+                A2D::Mat<T, dof_per_node, spatial_dim>& coef_grad) const {
     // Identity matrix
     A2D::Mat<T, spatial_dim, spatial_dim> I;
     for (int i = 0; i < spatial_dim; i++) {
@@ -85,13 +85,14 @@ class NeohookeanPhysics {
     stack.reverse();
   }
 
-  void jacobian_product(T weight, A2D::Mat<T, spatial_dim, spatial_dim>& J,
-                        A2D::Vec<T, dof_per_node>& vals,
-                        A2D::Mat<T, dof_per_node, spatial_dim>& grad,
-                        A2D::Vec<T, dof_per_node>& direct_vals,
-                        A2D::Mat<T, dof_per_node, spatial_dim>& direct_grad,
-                        A2D::Vec<T, dof_per_node>& coef_vals,
-                        A2D::Mat<T, dof_per_node, spatial_dim>& coef_grad) {
+  void jacobian_product(
+      T weight, A2D::Mat<T, spatial_dim, spatial_dim>& J,
+      A2D::Vec<T, dof_per_node>& vals,
+      A2D::Mat<T, dof_per_node, spatial_dim>& grad,
+      A2D::Vec<T, dof_per_node>& direct_vals,
+      A2D::Mat<T, dof_per_node, spatial_dim>& direct_grad,
+      A2D::Vec<T, dof_per_node>& coef_vals,
+      A2D::Mat<T, dof_per_node, spatial_dim>& coef_grad) const {
     // Identity matrix
     A2D::Mat<T, spatial_dim, spatial_dim> I;
     for (int i = 0; i < spatial_dim; i++) {
@@ -129,7 +130,7 @@ class NeohookeanPhysics {
                 A2D::Mat<T, dof_per_node, spatial_dim>& grad,
                 A2D::Mat<T, dof_per_node, dof_per_node>& jac_vals,
                 A2D::Mat<T, dof_per_node * spatial_dim,
-                         dof_per_node * spatial_dim>& jac_grad) {
+                         dof_per_node * spatial_dim>& jac_grad) const {
     // Identity matrix
     A2D::Mat<T, spatial_dim, spatial_dim> I;
     for (int i = 0; i < spatial_dim; i++) {

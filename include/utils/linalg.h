@@ -70,7 +70,7 @@ class GalerkinBSRMat final : public SparseUtils::BSRMat<T, M, M> {
     int n = m;
     constexpr int N = M;
     int nodes[m];
-    basis.get_elem_dof_nodes(elem, nodes);
+    basis.mesh.get_elem_dof_nodes(elem, nodes);
     for (int ii = 0; ii < m; ii++) {
       int block_row = nodes[ii];
 
