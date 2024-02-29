@@ -23,30 +23,20 @@ class MeshBase {
  * @brief The abstract base class for a Galerkin (finite element or Galerkin
  * difference) basis
  */
-template <typename T, class Mesh_, class Quadrature_>
+template <typename T, int num_quadrature_pts_, class Mesh_>
 class BasisBase {
  public:
   using Mesh = Mesh_;
-  using Quadrature = Quadrature_;
   static constexpr int spatial_dim = Mesh::spatial_dim;
   static constexpr int nodes_per_element = Mesh::nodes_per_element;
+  static constexpr int num_quadrature_pts = num_quadrature_pts_;
 
-  BasisBase(const Mesh& mesh, const Quadrature& quadrature)
-      : mesh(mesh), quadrature(quadrature) {}
+  BasisBase(const Mesh& mesh) : mesh(mesh) {}
 
+  virtual void get_quadrature_pts(T pts[], T wts[]) const = 0;
   virtual void eval_basis_grad(int elem, const T* pts, T* N, T* Nxi) const = 0;
 
   const Mesh& mesh;
-  const Quadrature& quadrature;
-};
-
-template <typename T, int spatial_dim_, int num_quadrature_pts_>
-class QuadratureBase {
- public:
-  static constexpr int spatial_dim = spatial_dim_;
-  static constexpr int num_quadrature_pts = num_quadrature_pts_;
-
-  virtual void get_quadrature_pts(T pts[], T wts[]) const = 0;
 };
 
 template <typename T, class Basis, int dim>

@@ -6,13 +6,17 @@
 #include "fe_commons.h"
 
 template <typename T>
-class TetrahedralQuadrature final : public QuadratureBase<T, 3, 5> {
+class TetrahedralBasis final : public BasisBase<T, 5, FEMesh<T, 3, 10>> {
  private:
-  using QuadratureBase = QuadratureBase<T, 3, 5>;
+  using BasisBase = BasisBase<T, 5, FEMesh<T, 3, 10>>;
 
  public:
-  using QuadratureBase::num_quadrature_pts;
-  using QuadratureBase::spatial_dim;
+  using BasisBase::nodes_per_element;
+  using BasisBase::num_quadrature_pts;
+  using BasisBase::spatial_dim;
+  using typename BasisBase::Mesh;
+
+  TetrahedralBasis(Mesh& mesh) : BasisBase(mesh) {}
 
   void get_quadrature_pts(T pts[], T wts[]) const {
     pts[0] = 0.25;
@@ -37,25 +41,8 @@ class TetrahedralQuadrature final : public QuadratureBase<T, 3, 5> {
     wts[3] = 3.0 / 40;
     wts[4] = 3.0 / 40;
   }
-};
-
-template <typename T>
-class TetrahedralBasis final
-    : public BasisBase<T, FEMesh<T, 3, 10>, TetrahedralQuadrature<T>> {
- private:
-  using BasisBase = BasisBase<T, FEMesh<T, 3, 10>, TetrahedralQuadrature<T>>;
-
- public:
-  using BasisBase::nodes_per_element;
-  using BasisBase::spatial_dim;
-  using typename BasisBase::Mesh;
-  using typename BasisBase::Quadrature;
-
-  TetrahedralBasis(Mesh& mesh, Quadrature& quadrature)
-      : BasisBase(mesh, quadrature) {}
 
   void eval_basis_grad(int _, const T* pts, T* N, T* Nxi) const {
-    constexpr int num_quadrature_pts = Quadrature::num_quadrature_pts;
     for (int q = 0; q < num_quadrature_pts; q++) {
       int offset_n = q * nodes_per_element;
       int offset_nxi = q * nodes_per_element * spatial_dim;

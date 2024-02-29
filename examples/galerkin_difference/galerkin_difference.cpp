@@ -37,8 +37,7 @@ int main(int argc, char *argv[]) {
   T lxy[2] = {1.0, 1.0};
   Grid grid(nxy, lxy);
   Basis::Mesh mesh(grid);
-  Basis::Quadrature quadrature;
-  Basis basis(mesh, quadrature);
+  Basis basis(mesh);
 
   Analysis analysis(basis, physics);
 

@@ -114,8 +114,7 @@ TEST(Neohookean, Quad) {
                            &element_nodes, &xloc);
   using Basis = QuadrilateralBasis<T>;
   typename Basis::Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
-  typename Basis::Quadrature quadrature;
-  Basis basis(mesh, quadrature);
+  Basis basis(mesh);
 
   constexpr int spatial_dim = 2;
   using Physics = NeohookeanPhysics<T, spatial_dim>;
@@ -134,8 +133,7 @@ TEST(Neohookean, Tet) {
   create_single_element_mesh(&num_elements, &num_nodes, &element_nodes, &xloc);
   using Basis = TetrahedralBasis<T>;
   typename Basis::Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
-  typename Basis::Quadrature quadrature;
-  Basis basis(mesh, quadrature);
+  Basis basis(mesh);
 
   constexpr int spatial_dim = 3;
   using Physics = NeohookeanPhysics<T, spatial_dim>;
@@ -156,8 +154,7 @@ TEST(Neohookean, GD) {
   T lxy[2] = {1.0, 1.4};
   Grid grid(nxy, lxy);
   typename Basis::Mesh mesh(grid);
-  typename Basis::Quadrature quadrature;
-  Basis basis(mesh, quadrature);
+  Basis basis(mesh);
 
   constexpr int spatial_dim = 2;
   using Physics = NeohookeanPhysics<T, spatial_dim>;
@@ -180,8 +177,7 @@ TEST(Poisson, Quad) {
                            &element_nodes, &xloc);
   using Basis = QuadrilateralBasis<T>;
   typename Basis::Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
-  typename Basis::Quadrature quadrature;
-  Basis basis(mesh, quadrature);
+  Basis basis(mesh);
 
   constexpr int spatial_dim = 2;
   using Physics = PoissonPhysics<T, spatial_dim>;
@@ -198,8 +194,7 @@ TEST(Poisson, Tet) {
   create_single_element_mesh(&num_elements, &num_nodes, &element_nodes, &xloc);
   using Basis = TetrahedralBasis<T>;
   typename Basis::Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
-  typename Basis::Quadrature quadrature;
-  Basis basis(mesh, quadrature);
+  Basis basis(mesh);
 
   constexpr static int spatial_dim = 3;
   using Physics = PoissonPhysics<T, spatial_dim>;
@@ -218,8 +213,7 @@ TEST(Poisson, GD) {
   T lxy[2] = {1.0, 1.4};
   Grid grid(nxy, lxy);
   typename Basis::Mesh mesh(grid);
-  typename Basis::Quadrature quadrature;
-  Basis basis(mesh, quadrature);
+  Basis basis(mesh);
 
   constexpr int spatial_dim = 2;
   using Physics = PoissonPhysics<T, spatial_dim>;

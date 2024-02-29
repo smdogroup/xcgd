@@ -66,8 +66,7 @@ int main(int argc, char *argv[]) {
   Physics physics(C1, D1);
 
   StopWatch watch;
-  Basis::Quadrature quadrature;
-  Basis basis(mesh, quadrature);
+  Basis basis(mesh);
   Analysis analysis(basis, physics);
   analysis.jacobian(dof, jac_bsr);
   double t1 = watch.lap();

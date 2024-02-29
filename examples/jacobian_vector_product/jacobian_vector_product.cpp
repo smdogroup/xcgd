@@ -20,8 +20,7 @@ int main(int argc, char *argv[]) {
   load_mesh<T>(filename, &num_elements, &num_nodes, &element_nodes, &xloc);
 
   Basis::Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
-  Basis::Quadrature quadrature;
-  Basis basis(mesh, quadrature);
+  Basis basis(mesh);
 
   // Set the number of degrees of freeom
   int ndof = 3 * num_nodes;

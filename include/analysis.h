@@ -9,14 +9,12 @@
 template <typename T, class Basis, class Physics>
 class GalerkinAnalysis final {
  public:
-  using Quadrature = typename Basis::Quadrature;
-
   // Static data taken from the element basis
   static const int spatial_dim = Basis::spatial_dim;
   static const int nodes_per_element = Basis::nodes_per_element;
 
   // Static data from the quadrature
-  static const int num_quadrature_pts = Quadrature::num_quadrature_pts;
+  static const int num_quadrature_pts = Basis::num_quadrature_pts;
 
   // Static data taken from the physics
   static const int dof_per_node = Physics::dof_per_node;
@@ -81,9 +79,9 @@ class GalerkinAnalysis final {
       T element_dof[dof_per_element];
       get_element_dof<dof_per_node>(i, dof, element_dof);
 
-      T pts[spatial_dim * Quadrature::num_quadrature_pts];
-      T wts[Quadrature::num_quadrature_pts];
-      basis.quadrature.get_quadrature_pts(pts, wts);
+      T pts[spatial_dim * num_quadrature_pts];
+      T wts[num_quadrature_pts];
+      basis.get_quadrature_pts(pts, wts);
 
       T N[nodes_per_element * num_quadrature_pts];
       T Nxi[spatial_dim * nodes_per_element * num_quadrature_pts];
@@ -128,9 +126,9 @@ class GalerkinAnalysis final {
         element_res[j] = 0.0;
       }
 
-      T pts[spatial_dim * Quadrature::num_quadrature_pts];
-      T wts[Quadrature::num_quadrature_pts];
-      basis.quadrature.get_quadrature_pts(pts, wts);
+      T pts[spatial_dim * num_quadrature_pts];
+      T wts[num_quadrature_pts];
+      basis.get_quadrature_pts(pts, wts);
 
       T N[nodes_per_element * num_quadrature_pts];
       T Nxi[spatial_dim * nodes_per_element * num_quadrature_pts];
@@ -185,9 +183,9 @@ class GalerkinAnalysis final {
         element_res[j] = 0.0;
       }
 
-      T pts[spatial_dim * Quadrature::num_quadrature_pts];
-      T wts[Quadrature::num_quadrature_pts];
-      basis.quadrature.get_quadrature_pts(pts, wts);
+      T pts[spatial_dim * num_quadrature_pts];
+      T wts[num_quadrature_pts];
+      basis.get_quadrature_pts(pts, wts);
 
       T N[nodes_per_element * num_quadrature_pts];
       T Nxi[spatial_dim * nodes_per_element * num_quadrature_pts];
@@ -247,9 +245,9 @@ class GalerkinAnalysis final {
         element_jac[j] = 0.0;
       }
 
-      T pts[spatial_dim * Quadrature::num_quadrature_pts];
-      T wts[Quadrature::num_quadrature_pts];
-      basis.quadrature.get_quadrature_pts(pts, wts);
+      T pts[spatial_dim * num_quadrature_pts];
+      T wts[num_quadrature_pts];
+      basis.get_quadrature_pts(pts, wts);
 
       T N[nodes_per_element * num_quadrature_pts];
       T Nxi[spatial_dim * nodes_per_element * num_quadrature_pts];

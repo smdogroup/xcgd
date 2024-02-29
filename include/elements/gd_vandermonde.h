@@ -15,26 +15,37 @@
 #include "utils/linalg.h"
 #include "utils/misc.h"
 
+/**
+ * Galerkin difference basis given a set of stencil nodes
+ *
+ * @tparam Np_1d number of nodes along one dimension, number of stencil nodes
+ *               should be Np_1d^2, Np_1d >= 2, Np_1d should be even
+ */
 template <typename T, int Np_1d>
-class GDQuadrature2D final : public QuadratureBase<T, 2, Np_1d * Np_1d> {
+class GDBasis2D final : public BasisBase<T, Np_1d * Np_1d, GDMesh2D<T, Np_1d>> {
  private:
   // algoim limit, see gaussquad.hpp
   static_assert(Np_1d <= algoim::GaussQuad::p_max);  // algoim limit
-  using QuadratureBase = QuadratureBase<T, 2, Np_1d * Np_1d>;
+  using BasisBase = BasisBase<T, Np_1d * Np_1d, GDMesh2D<T, Np_1d>>;
 
  public:
-  using QuadratureBase::num_quadrature_pts;
-  using QuadratureBase::spatial_dim;
+  using BasisBase::nodes_per_element;
+  using BasisBase::num_quadrature_pts;
+  using BasisBase::spatial_dim;
+  using typename BasisBase::Mesh;
 
-  GDQuadrature2D() {
+ private:
+  static constexpr int Np = Mesh::nodes_per_element;
+  static constexpr int Nk = Mesh::nodes_per_element;
+
+ public:
+  GDBasis2D(Mesh& mesh) : BasisBase(mesh) {
     for (int i = 0; i < Np_1d; i++) {
       pts_1d[i] = algoim::GaussQuad::x(Np_1d, i) * 2.0 - 1.0;
       wts_1d[i] = algoim::GaussQuad::w(Np_1d, i) * 2.0;
     }
   }
 
-  // TODO: save pre-computed values somewhere so don't need to call
-  // algoim::GaussQuad::x and algoim::GaussQuad::w for each element
   void get_quadrature_pts(T pts[], T wts[]) const {
     for (int q = 0; q < num_quadrature_pts; q++) {  // q = i * Np_1d + j
       int i = q / Np_1d;
@@ -44,35 +55,6 @@ class GDQuadrature2D final : public QuadratureBase<T, 2, Np_1d * Np_1d> {
       wts[q] = wts_1d[i] * wts_1d[j];
     }
   }
-
- private:
-  std::array<T, Np_1d> pts_1d, wts_1d;
-};
-
-/**
- * Galerkin difference basis given a set of stencil nodes
- *
- * @tparam Np_1d number of nodes along one dimension, number of stencil nodes
- *               should be Np_1d^2, Np_1d >= 2, Np_1d should be even
- */
-template <typename T, int Np_1d>
-class GDBasis2D final
-    : public BasisBase<T, GDMesh2D<T, Np_1d>, GDQuadrature2D<T, Np_1d>> {
- private:
-  using BasisBase = BasisBase<T, GDMesh2D<T, Np_1d>, GDQuadrature2D<T, Np_1d>>;
-
- public:
-  using BasisBase::nodes_per_element;
-  using BasisBase::spatial_dim;
-  using typename BasisBase::Mesh;
-  using typename BasisBase::Quadrature;
-
- private:
-  static constexpr int Np = Mesh::nodes_per_element;
-  static constexpr int Nk = Mesh::nodes_per_element;
-
- public:
-  GDBasis2D(Mesh& mesh, Quadrature& quadrature) : BasisBase(mesh, quadrature) {}
 
   void eval_basis_grad(int elem, const T* pts, T* N, T* Nxi) const {
     if (!N and !Nxi) return;
@@ -114,7 +96,6 @@ class GDBasis2D final
     std::vector<T> dxpows(Np_1d);
     std::vector<T> dypows(Np_1d);
 
-    static int num_quadrature_pts = Quadrature::num_quadrature_pts;
     for (int q = 0; q < num_quadrature_pts; q++) {
       int offset_n = q * nodes_per_element;
       int offset_nxi = q * nodes_per_element * spatial_dim;
@@ -155,6 +136,9 @@ class GDBasis2D final
       }
     }
   }
+
+ private:
+  std::array<T, Np_1d> pts_1d, wts_1d;
 };
 
 #endif  // XCGD_GALERKIN_DIFFERENCE_H
