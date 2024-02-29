@@ -31,8 +31,7 @@ int main(int argc, char *argv[]) {
 
   Basis::Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
 
-  ToVTK<T> vtk(Basis::spatial_dim, num_nodes, num_elements,
-               Basis::nodes_per_element, element_nodes, xloc);
+  ToVTK<T, typename Basis::Mesh> vtk(mesh);
 
   vtk.write_mesh();
 

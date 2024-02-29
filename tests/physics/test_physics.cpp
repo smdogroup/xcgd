@@ -14,8 +14,8 @@
 #include "utils/mesh.h"
 
 template <typename T, int spatial_dim, class Physics, class Basis>
-void test_physics(Basis &basis, Physics &physics, double h = 1e-30,
-                  double tol = 1e-14) {
+void test_physics(Basis &basis, Physics &physics, std::string name,
+                  double h = 1e-30, double tol = 1e-14) {
   int num_nodes = basis.mesh.get_num_nodes();
   int num_elements = basis.mesh.get_num_elements();
 
@@ -88,6 +88,8 @@ void test_physics(Basis &basis, Physics &physics, double h = 1e-30,
   analysis.jacobian(dof, jac_bsr);
   jac_bsr->axpy(direction, Jp_axpy);
 
+  jac_bsr->write_mtx("Jacobian_" + name + ".mtx");
+
   double Jp_l1 = 0.0;
   double Jp_axpy_l1 = 0.0;
   for (int i = 0; i < ndof; i++) {
@@ -121,7 +123,8 @@ TEST(Neohookean, Quad) {
   T C1 = 0.01;
   T D1 = 0.5;
   Physics physics(C1, D1);
-  test_physics<T, spatial_dim, Physics, Basis>(basis, physics);
+  test_physics<T, spatial_dim, Physics, Basis>(basis, physics,
+                                               "neohookean_quad");
 }
 
 TEST(Neohookean, Tet) {
@@ -140,7 +143,8 @@ TEST(Neohookean, Tet) {
   T C1 = 0.01;
   T D1 = 0.5;
   Physics physics(C1, D1);
-  test_physics<T, spatial_dim, Physics, Basis>(basis, physics);
+  test_physics<T, spatial_dim, Physics, Basis>(basis, physics,
+                                               "neohookean_tet");
 }
 
 TEST(Neohookean, GD) {
@@ -162,7 +166,8 @@ TEST(Neohookean, GD) {
   T D1 = 0.5;
   Physics physics(C1, D1);
   double h = 1e-8, tol = 1e-6;
-  test_physics<T, spatial_dim, Physics, Basis>(basis, physics, h, tol);
+  test_physics<T, spatial_dim, Physics, Basis>(basis, physics, "neohookean_gd",
+                                               h, tol);
 }
 
 TEST(Poisson, Quad) {
@@ -182,7 +187,7 @@ TEST(Poisson, Quad) {
   constexpr int spatial_dim = 2;
   using Physics = PoissonPhysics<T, spatial_dim>;
   Physics physics;
-  test_physics<T, spatial_dim, Physics, Basis>(basis, physics);
+  test_physics<T, spatial_dim, Physics, Basis>(basis, physics, "poisson_quad");
 }
 
 TEST(Poisson, Tet) {
@@ -199,7 +204,7 @@ TEST(Poisson, Tet) {
   constexpr static int spatial_dim = 3;
   using Physics = PoissonPhysics<T, spatial_dim>;
   Physics physics;
-  test_physics<T, spatial_dim, Physics, Basis>(basis, physics);
+  test_physics<T, spatial_dim, Physics, Basis>(basis, physics, "poisson_tet");
 }
 
 TEST(Poisson, GD) {
@@ -219,5 +224,6 @@ TEST(Poisson, GD) {
   using Physics = PoissonPhysics<T, spatial_dim>;
   Physics physics;
   double h = 1e-8, tol = 1e-6;
-  test_physics<T, spatial_dim, Physics, Basis>(basis, physics, h, tol);
+  test_physics<T, spatial_dim, Physics, Basis>(basis, physics, "poisson_gd", h,
+                                               tol);
 }

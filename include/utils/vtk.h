@@ -53,161 +53,156 @@ struct VTK_NVERTS {
   static constexpr int QUADRATIC_HEXAHEDRON = 20;
 };
 
-void write_real_val(std::FILE* fp_, double val) {
-  std::fprintf(fp_, "%-20.15f", val);
+void write_real_val(std::FILE* fp, double val) {
+  std::fprintf(fp, "%-20.15f", val);
 }
 
-void write_real_val(std::FILE* fp_, std::complex<double> val) {
-  std::fprintf(fp_, "%-20.15f", val.real());
+void write_real_val(std::FILE* fp, std::complex<double> val) {
+  std::fprintf(fp, "%-20.15f", val.real());
 }
 
 // VTK writer for 2d and 3d mesh
-template <typename T>
+template <typename T, class Mesh>
 class ToVTK {
- public:
-  ToVTK(const int spatial_dim, const int num_nodes, const int num_elements,
-        const int nnodes_per_elem, const int* element_nodes, const T* xloc,
-        const int vtk_elem_type = -1, const std::string vtk_name = "result.vtk")
-      : spatial_dim_(spatial_dim),
-        num_nodes_(num_nodes),
-        num_elements_(num_elements),
-        nnodes_per_elem_(nnodes_per_elem),
-        element_nodes_(element_nodes),
-        xloc_(xloc),
-        vtk_elem_type_(vtk_elem_type) {
-    // Open file and destroy old contents
-    fp_ = std::fopen(vtk_name.c_str(), "w+");
+ private:
+  static constexpr int spatial_dim = Mesh::spatial_dim;
 
-    if (spatial_dim_ != 2 and spatial_dim_ != 3) {
+ public:
+  ToVTK(const Mesh& mesh, const std::string vtk_name = "result.vtk",
+        int vtk_elem_type_ = -1)
+      : mesh(mesh), vtk_elem_type(vtk_elem_type_) {
+    // Open file and destroy old contents
+    fp = std::fopen(vtk_name.c_str(), "w+");
+
+    if (spatial_dim != 2 and spatial_dim != 3) {
       char msg[256];
       std::snprintf(msg, sizeof(msg),
-                    "Invalid spatial_dim, got %d, expect 2 or 3", spatial_dim_);
+                    "Invalid spatial_dim, got %d, expect 2 or 3", spatial_dim);
       throw std::runtime_error(msg);
     }
 
-    // If not provided, infer vtk type id from nnodes_per_elem
-    if (vtk_elem_type_ == -1) {
-      if (spatial_dim_ == 2) {
-        switch (nnodes_per_elem_) {
+    // If not provided, infer vtk type id from mesh.verts_per_element
+    if (vtk_elem_type == -1) {
+      if constexpr (spatial_dim == 2) {
+        switch (mesh.verts_per_element) {
           case 3:
-            vtk_elem_type_ = VTKID::TRIANGLE;
+            vtk_elem_type = VTKID::TRIANGLE;
             break;
           case 4:
-            vtk_elem_type_ = VTKID::QUAD;
+            vtk_elem_type = VTKID::QUAD;
             break;
           case 6:
-            vtk_elem_type_ = VTKID::QUADRATIC_TRIANGLE;
+            vtk_elem_type = VTKID::QUADRATIC_TRIANGLE;
             break;
           case 8:
-            vtk_elem_type_ = VTKID::QUADRATIC_QUAD;
+            vtk_elem_type = VTKID::QUADRATIC_QUAD;
             break;
         }
       } else {  // spatial_dim == 3
-        switch (nnodes_per_elem_) {
+        switch (mesh.verts_per_element) {
           case 4:
-            vtk_elem_type_ = VTKID::TETRA;
+            vtk_elem_type = VTKID::TETRA;
             break;
           case 5:
-            vtk_elem_type_ = VTKID::PYRAMID;
+            vtk_elem_type = VTKID::PYRAMID;
             break;
           case 6:
-            vtk_elem_type_ = VTKID::WEDGE;
+            vtk_elem_type = VTKID::WEDGE;
             break;
           case 8:
-            vtk_elem_type_ = VTKID::HEXAHEDRON;
+            vtk_elem_type = VTKID::HEXAHEDRON;
             break;
           case 10:
-            vtk_elem_type_ = VTKID::QUADRATIC_TETRA;
+            vtk_elem_type = VTKID::QUADRATIC_TETRA;
             break;
           case 20:
-            vtk_elem_type_ = VTKID::QUADRATIC_HEXAHEDRON;
+            vtk_elem_type = VTKID::QUADRATIC_HEXAHEDRON;
             break;
         }
       }
     }
 
-    if (vtk_elem_type_ == -1) {
+    if (vtk_elem_type == -1) {
       char msg[256];
       snprintf(msg, 256,
-               "Cannot infer element type from nnodes_per_elem(%d) for a "
+               "Cannot infer element type from verts_per_element(%d) for a "
                "%d-dimensional mesh",
-               nnodes_per_elem_, spatial_dim_);
+               mesh.verts_per_element, spatial_dim);
       throw std::runtime_error(msg);
     }
   }
 
   ~ToVTK() {
     // Close file
-    std::fclose(fp_);
+    std::fclose(fp);
   }
 
-  void write_mesh() {
+  void write_mesh() const {
     // Write header
-    std::fprintf(fp_, "# vtk DataFile Version 3.0\n");
-    std::fprintf(fp_, "my example\n");
-    std::fprintf(fp_, "ASCII\n");
-    std::fprintf(fp_, "DATASET UNSTRUCTURED_GRID\n");
+    std::fprintf(fp, "# vtk DataFile Version 3.0\n");
+    std::fprintf(fp, "my example\n");
+    std::fprintf(fp, "ASCII\n");
+    std::fprintf(fp, "DATASET UNSTRUCTURED_GRID\n");
 
     // Write nodes
-    std::fprintf(fp_, "POINTS %d double\n", num_nodes_);
-    for (int i = 0; i < num_nodes_; i++) {
-      if (spatial_dim_ == 2) {
-        write_real_val(fp_, xloc_[2 * i]);
-        write_real_val(fp_, xloc_[2 * i + 1]);
-        write_real_val(fp_, 0.0);
-        std::fprintf(fp_, "\n");
+    std::fprintf(fp, "POINTS %d double\n", mesh.get_num_nodes());
+    for (int i = 0; i < mesh.get_num_nodes(); i++) {
+      T xloc[spatial_dim];
+      mesh.get_node_xloc(i, xloc);
+      if constexpr (spatial_dim == 2) {
+        write_real_val(fp, xloc[0]);
+        write_real_val(fp, xloc[1]);
+        write_real_val(fp, 0.0);
+        std::fprintf(fp, "\n");
       } else {
-        write_real_val(fp_, xloc_[3 * i]);
-        write_real_val(fp_, xloc_[3 * i + 1]);
-        write_real_val(fp_, xloc_[3 * i + 2]);
-        std::fprintf(fp_, "\n");
+        write_real_val(fp, xloc[0]);
+        write_real_val(fp, xloc[1]);
+        write_real_val(fp, xloc[2]);
+        std::fprintf(fp, "\n");
       }
     }
 
     // Write connectivity
-    std::fprintf(fp_, "CELLS %d %d\n", num_elements_,
-                 num_elements_ * (1 + nnodes_per_elem_));
-    for (int i = 0; i < num_elements_; i++) {
-      std::fprintf(fp_, "%d ", nnodes_per_elem_);
-      for (int j = 0; j < nnodes_per_elem_; j++) {
-        std::fprintf(fp_, "%d ", element_nodes_[nnodes_per_elem_ * i + j]);
+    std::fprintf(fp, "CELLS %d %d\n", mesh.get_num_elements(),
+                 mesh.get_num_elements() * (1 + mesh.verts_per_element));
+    for (int i = 0; i < mesh.get_num_elements(); i++) {
+      std::fprintf(fp, "%d ", mesh.verts_per_element);
+      int verts[mesh.verts_per_element];
+      mesh.get_elem_dof_verts(i, verts);
+      for (int j = 0; j < mesh.verts_per_element; j++) {
+        std::fprintf(fp, "%d ", verts[j]);
       }
-      std::fprintf(fp_, "\n");
+      std::fprintf(fp, "\n");
     }
 
     // Write cell type
-    std::fprintf(fp_, "CELL_TYPES %d\n", num_elements_);
-    for (int i = 0; i < num_elements_; i++) {
-      std::fprintf(fp_, "%d\n", vtk_elem_type_);
+    std::fprintf(fp, "CELL_TYPES %d\n", mesh.get_num_elements());
+    for (int i = 0; i < mesh.get_num_elements(); i++) {
+      std::fprintf(fp, "%d\n", vtk_elem_type);
     }
   }
 
   void write_sol(const std::string sol_name, const T* sol_vec) {
     // Write header
-    if (!vtk_has_sol_header_) {
-      std::fprintf(fp_, "POINT_DATA %d\n", num_nodes_);
-      vtk_has_sol_header_ = true;
+    if (!vtk_has_sol_header) {
+      std::fprintf(fp, "POINT_DATA %d\n", mesh.get_num_nodes());
+      vtk_has_sol_header = true;
     }
-    std::fprintf(fp_, "SCALARS %s double 1\n", sol_name.c_str());
-    std::fprintf(fp_, "LOOKUP_TABLE default\n");
+    std::fprintf(fp, "SCALARS %s double 1\n", sol_name.c_str());
+    std::fprintf(fp, "LOOKUP_TABLE default\n");
 
     // Write data
-    for (int i = 0; i < num_nodes_; i++) {
-      write_real_val(fp_, sol_vec[i]);
-      std::fprintf(fp_, "\n");
+    for (int i = 0; i < mesh.get_num_nodes(); i++) {
+      write_real_val(fp, sol_vec[i]);
+      std::fprintf(fp, "\n");
     }
   }
 
  private:
-  int spatial_dim_;
-  int num_nodes_;
-  int num_elements_;
-  int nnodes_per_elem_;
-  const int* element_nodes_;
-  const T* xloc_;
-  int vtk_elem_type_;
-  std::FILE* fp_ = nullptr;
-  bool vtk_has_sol_header_ = false;
+  const Mesh& mesh;
+  int vtk_elem_type;
+  std::FILE* fp = nullptr;
+  bool vtk_has_sol_header = false;
 };
 
 #endif  // XCGD_VTK_H

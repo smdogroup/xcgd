@@ -4,9 +4,11 @@
 #include "element_commons.h"
 
 template <typename T, int spatial_dim, int nodes_per_element_>
-class FEMesh final : public MeshBase<T, spatial_dim, nodes_per_element_> {
+class FEMesh final
+    : public MeshBase<T, spatial_dim, nodes_per_element_, nodes_per_element_> {
  private:
-  using MeshBase = MeshBase<T, spatial_dim, nodes_per_element_>;
+  using MeshBase =
+      MeshBase<T, spatial_dim, nodes_per_element_, nodes_per_element_>;
 
  public:
   using MeshBase::nodes_per_element;
@@ -30,6 +32,10 @@ class FEMesh final : public MeshBase<T, spatial_dim, nodes_per_element_> {
     for (int i = 0; i < nodes_per_element; i++) {
       nodes[i] = element_nodes[elem * nodes_per_element + i];
     }
+  }
+
+  inline void get_elem_dof_verts(int elem, int* verts) const {
+    get_elem_dof_nodes(elem, verts);
   }
 
  private:

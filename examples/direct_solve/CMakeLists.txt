@@ -4,4 +4,4 @@ target_include_directories(direct_solve PRIVATE
 target_link_libraries(direct_solve PRIVATE A2D::A2D SparseUtils::SparseUtils)
 
 # Copy over file
-configure_file(${CMAKE_SOURCE_DIR}/examples/direct_solve/visualize_mtx.py visualize_mtx.py COPYONLY)
+configure_file(${CMAKE_SOURCE_DIR}/python/visualize_mtx.py visualize_mtx.py COPYONLY)

@@ -7,16 +7,19 @@
  * @brief The abstract base class for a Galerkin (finite element or Galerkin
  * difference) mesh
  */
-template <typename T, int spatial_dim_, int nodes_per_element_>
+template <typename T, int spatial_dim_, int nodes_per_element_,
+          int verts_per_element_>
 class MeshBase {
  public:
   static constexpr int spatial_dim = spatial_dim_;
   static constexpr int nodes_per_element = nodes_per_element_;
+  static constexpr int verts_per_element = verts_per_element_;
 
   virtual int get_num_nodes() const = 0;
   virtual int get_num_elements() const = 0;
   virtual void get_node_xloc(int node, T* xloc) const = 0;
   virtual void get_elem_dof_nodes(int elem, int* nodes) const = 0;
+  virtual void get_elem_dof_verts(int elem, int* verts) const = 0;
 };
 
 /**

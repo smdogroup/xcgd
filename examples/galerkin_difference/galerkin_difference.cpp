@@ -7,9 +7,10 @@
 #include "physics/poisson.h"
 #include "sparse_utils/sparse_utils.h"
 #include "utils/mesh.h"
+#include "utils/vtk.h"
 
 template <typename T, class Basis>
-void solve_poisson(T *lxy, Basis &basis) {
+void solve_poisson(T *lxy, Basis &basis, std::string name) {
   using Physics = PoissonPhysics<T, Basis::spatial_dim>;
   using Analysis = GalerkinAnalysis<T, Basis, Physics>;
   using BSRMat = GalerkinBSRMat<T, Physics::dof_per_node>;
@@ -37,9 +38,12 @@ void solve_poisson(T *lxy, Basis &basis) {
   std::vector<T> dof(ndof, 0.0);
   analysis.jacobian(dof.data(), jac_bsr);
 
-  // Compute sol
+  // Store right hand size to sol
   std::vector<T> sol(ndof);
   analysis.residual(dof.data(), sol.data());
+  for (int i = 0; i < sol.size(); i++) {
+    sol[i] *= -1.0;
+  }
 
   // Set up bcs
   std::vector<int> dof_bcs;
@@ -54,12 +58,16 @@ void solve_poisson(T *lxy, Basis &basis) {
     }
   }
 
+  jac_bsr->write_mtx("K0_" + name + ".mtx");
+
   // Apply bcs to Jacobian matrix
   jac_bsr->zero_rows(dof_bcs.size(), dof_bcs.data());
   CSCMat *jac_csc = SparseUtils::bsr_to_csc(jac_bsr);
   jac_csc->zero_columns(dof_bcs.size(), dof_bcs.data());
 
-  // Apply bcs to sol
+  jac_csc->write_mtx("K1_" + name + ".mtx");
+
+  // Apply bcs to right hand size
   for (int dof : dof_bcs) {
     sol[dof] = 0.0;
   }
@@ -73,9 +81,19 @@ void solve_poisson(T *lxy, Basis &basis) {
   chol->solve(sol.data());
 
   // Check error
-  std::vector<T> res(rhs.size());
+  // res = Ku - rhs
+  std::vector<T> Ku(sol.size());
+  jac_bsr->axpy(sol.data(), Ku.data());
+  T err = 0.0;
+  for (int i = 0; i < Ku.size(); i++) {
+    err += (Ku[i] - rhs[i]) * (Ku[i] - rhs[i]);
+  }
+  std::printf("||Ku - f||: %25.15e\n", sqrt(err));
 
-  jac_bsr.axpy(sol, rhs)
+  // Write to vtk
+  ToVTK<T, typename Basis::Mesh> vtk(basis.mesh, name + ".vtk");
+  vtk.write_mesh();
+  vtk.write_sol("u", sol.data());
 }
 
 void solve_poisson_fem() {
@@ -93,25 +111,25 @@ void solve_poisson_fem() {
   Basis::Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
   Basis basis(mesh);
 
-  solve_poisson<T, Basis>(lxy, basis);
+  solve_poisson<T, Basis>(lxy, basis, "fe");
 }
 
 void solve_poisson_gd() {
   using T = double;
-  int constexpr Np_1d = 2;
+  int constexpr Np_1d = 4;
   using Grid = StructuredGrid2D<T>;
   using Basis = GDBasis2D<T, Np_1d>;
-  int nxy[2] = {64, 64};
+  int nxy[2] = {32, 32};
   T lxy[2] = {1.0, 1.0};
   Grid grid(nxy, lxy);
   Basis::Mesh mesh(grid);
   Basis basis(mesh);
 
-  solve_poisson<T, Basis>(lxy, basis);
+  solve_poisson<T, Basis>(lxy, basis, "gd");
 }
 
 int main(int argc, char *argv[]) {
-  // solve_poisson_fem();
+  solve_poisson_fem();
   solve_poisson_gd();
 
   return 0;

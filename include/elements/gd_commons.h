@@ -36,10 +36,10 @@ class StructuredGrid2D final {
   int get_elem_verts(int elem, int* verts) const {
     if (verts) {
       int nij[spatial_dim] = {elem % nxy[0], elem / nxy[1]};
-      verts[0] = get_coords_vert(nij);
-      verts[1] = verts[0] + 1;
-      verts[2] = verts[0] + nxy[0] + 1;
-      verts[3] = verts[2] + 1;
+      verts[0] = get_coords_vert(nij);   //  3-------2
+      verts[1] = verts[0] + 1;           //  |       |
+      verts[2] = verts[1] + nxy[0] + 1;  //  |       |
+      verts[3] = verts[2] - 1;           //  0-------1
     }
     return 4;
   }
@@ -49,7 +49,7 @@ class StructuredGrid2D final {
     int vert_min = get_elem_verts(elem, verts);
 
     get_vert_xloc(verts[0], xloc_min);
-    get_vert_xloc(verts[3], xloc_max);
+    get_vert_xloc(verts[2], xloc_max);
   }
 
   void get_vert_xloc(int vert, T* xloc) const {
@@ -71,9 +71,9 @@ class StructuredGrid2D final {
 };
 
 template <typename T, int Np_1d>
-class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d> {
+class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
  private:
-  using MeshBase = MeshBase<T, 2, Np_1d * Np_1d>;
+  using MeshBase = MeshBase<T, 2, Np_1d * Np_1d, 4>;
   static_assert(Np_1d % 2 == 0);
   using Grid = StructuredGrid2D<T>;
 
@@ -144,6 +144,10 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d> {
       }
     }
   };
+
+  inline void get_elem_dof_verts(int elem, int* verts) const {
+    grid.get_elem_verts(elem, verts);
+  }
 
   void get_elem_node_ranges(int elem, T* xloc_min, T* xloc_max) const {
     // [x0, ..., xN, y0, ..., yN, ...]
