@@ -18,7 +18,7 @@ class TetrahedralBasis final : public BasisBase<T, 5, FEMesh<T, 3, 10>> {
 
   TetrahedralBasis(Mesh& mesh) : BasisBase(mesh) {}
 
-  void get_quadrature_pts(T pts[], T wts[]) const {
+  void get_quadrature_pts(int _, T pts[], T wts[]) const {
     pts[0] = 0.25;
     pts[1] = 0.25;
     pts[2] = 0.25;

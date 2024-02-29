@@ -41,18 +41,32 @@ class GDBasis2D final : public BasisBase<T, Np_1d * Np_1d, GDMesh2D<T, Np_1d>> {
  public:
   GDBasis2D(Mesh& mesh) : BasisBase(mesh) {
     for (int i = 0; i < Np_1d; i++) {
-      pts_1d[i] = algoim::GaussQuad::x(Np_1d, i) * 2.0 - 1.0;
-      wts_1d[i] = algoim::GaussQuad::w(Np_1d, i) * 2.0;
+      pts_1d[i] = algoim::GaussQuad::x(Np_1d, i);  // in [0, 1]
+      wts_1d[i] = algoim::GaussQuad::w(Np_1d, i);
     }
   }
 
-  void get_quadrature_pts(T pts[], T wts[]) const {
+  void get_quadrature_pts(int elem, T pts[], T wts[]) const {
+    T xy_min[spatial_dim], xy_max[spatial_dim];
+    T uv_min[spatial_dim], uv_max[spatial_dim];
+    this->mesh.get_elem_node_ranges(elem, xy_min, xy_max);
+    this->mesh.get_elem_vert_ranges(elem, uv_min, uv_max);
+
+    T hx = (uv_max[0] - uv_min[0]) / (xy_max[0] - xy_min[0]);
+    T hy = (uv_max[1] - uv_min[1]) / (xy_max[1] - xy_min[1]);
+    T wt = 4.0 * hx * hy;
+
+    T cx = (2.0 * uv_min[0] - xy_min[0] - xy_max[0]) / (xy_max[0] - xy_min[0]);
+    T dx = 2.0 * hx;
+    T cy = (2.0 * uv_min[1] - xy_min[1] - xy_max[1]) / (xy_max[1] - xy_min[1]);
+    T dy = 2.0 * hy;
+
     for (int q = 0; q < num_quadrature_pts; q++) {  // q = i * Np_1d + j
       int i = q / Np_1d;
       int j = q % Np_1d;
-      pts[q * spatial_dim] = pts_1d[i];
-      pts[q * spatial_dim + 1] = pts_1d[j];
-      wts[q] = wts_1d[i] * wts_1d[j];
+      pts[q * spatial_dim] = cx + dx * pts_1d[i];
+      pts[q * spatial_dim + 1] = cy + dy * pts_1d[j];
+      wts[q] = wt * wts_1d[i] * wts_1d[j];
     }
   }
 
@@ -60,14 +74,12 @@ class GDBasis2D final : public BasisBase<T, Np_1d * Np_1d, GDMesh2D<T, Np_1d>> {
     if (!N and !Nxi) return;
 
     T Ck[Nk * Np];
-    std::vector<T> xpows(Np_1d);
-    std::vector<T> ypows(Np_1d);
+    std::vector<T> xpows(Np_1d), ypows(Np_1d);
 
     int nodes[Nk];
     this->mesh.get_elem_dof_nodes(elem, nodes);
 
-    T xloc_min[spatial_dim];
-    T xloc_max[spatial_dim];
+    T xloc_min[spatial_dim], xloc_max[spatial_dim];
     this->mesh.get_elem_node_ranges(elem, xloc_min, xloc_max);
 
     for (int i = 0; i < Nk; i++) {

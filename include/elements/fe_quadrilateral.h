@@ -16,7 +16,7 @@ class QuadrilateralBasis final : public BasisBase<T, 4, FEMesh<T, 2, 4>> {
 
   QuadrilateralBasis(Mesh& mesh) : BasisBase(mesh) {}
 
-  void get_quadrature_pts(T pts[], T wts[]) const {
+  void get_quadrature_pts(int _, T pts[], T wts[]) const {
     pts[0] = -0.5773502692;
     pts[1] = -0.5773502692;
     pts[2] = 0.5773502692;

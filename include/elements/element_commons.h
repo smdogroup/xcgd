@@ -33,7 +33,7 @@ class BasisBase {
 
   BasisBase(const Mesh& mesh) : mesh(mesh) {}
 
-  virtual void get_quadrature_pts(T pts[], T wts[]) const = 0;
+  virtual void get_quadrature_pts(int elem, T pts[], T wts[]) const = 0;
   virtual void eval_basis_grad(int elem, const T* pts, T* N, T* Nxi) const = 0;
 
   const Mesh& mesh;

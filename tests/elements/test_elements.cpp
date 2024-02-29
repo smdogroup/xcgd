@@ -10,6 +10,8 @@
 #include "test_commons.h"
 #include "utils/mesh.h"
 
+#define PI 3.141592653589793
+
 TEST(ElementTest, GalerkinDiff2D) {
   int constexpr Np_1d = 6;
   int constexpr Nk = Np_1d * Np_1d;
@@ -124,16 +126,39 @@ TEST(IntegrationTest, Quad) {
   int nxy[2] = {128, 128};
   double lxy[2] = {3.0, 3.0};
   double pt0[2] = {1.5, 1.5};
-  create_2d_rect_quad_mesh(nxy[0], nxy[1], lxy[0], lxy[1], &num_elements,
-                           &num_nodes, &element_nodes, &xloc);
+  create_2d_rect_quad_mesh(nxy, lxy, &num_elements, &num_nodes, &element_nodes,
+                           &xloc);
 
   typename Basis::Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
 
-  std::cout << hypercircle_area<double, Basis>(mesh, pt0) << "\n";
+  double pi = hypercircle_area<double, Basis>(mesh, pt0);
+  double relerr = (pi - PI) / PI;
+  EXPECT_NEAR(relerr, 0.0, 1e-2);
 }
 
-TEST(IntegrationTest, GD2D) {
-  constexpr int Np_1d = 4;
+TEST(IntegrationTest, Tet) {
+  using Basis = TetrahedralBasis<T>;
+
+  int num_elements, num_nodes;
+  int* element_nodes;
+  double* xloc;
+
+  int nxyz[3] = {32, 32, 32};
+  double lxyz[3] = {3.0, 3.0, 3.0};
+  double pt0[3] = {1.5, 1.5, 1.5};
+  create_3d_box_tet_mesh(nxyz, lxyz, &num_elements, &num_nodes, &element_nodes,
+                         &xloc);
+
+  typename Basis::Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
+
+  double pi = hypercircle_area<double, Basis>(mesh, pt0) * 3.0 / 4.0;
+  double relerr = (pi - PI) / PI;
+  EXPECT_NEAR(relerr, 0.0, 1e-2);
+}
+
+TEST(IntegrationTest, GD2D_Np2) {
+  constexpr int Np_1d = 2;
+
   using Basis = GDBasis2D<T, Np_1d>;
   using Grid = StructuredGrid2D<T>;
 
@@ -143,5 +168,24 @@ TEST(IntegrationTest, GD2D) {
   Grid grid(nxy, lxy);
   typename Basis::Mesh mesh(grid);
 
-  std::cout << hypercircle_area<double, Basis>(mesh, pt0) << "\n";
+  double pi = hypercircle_area<double, Basis>(mesh, pt0);
+  double relerr = (pi - PI) / PI;
+  EXPECT_NEAR(relerr, 0.0, 1e-2);
+}
+
+TEST(IntegrationTest, GD2D_Np4) {
+  constexpr int Np_1d = 4;
+
+  using Basis = GDBasis2D<T, Np_1d>;
+  using Grid = StructuredGrid2D<T>;
+
+  int nxy[2] = {64, 64};
+  double lxy[2] = {3.0, 3.0};
+  double pt0[2] = {1.5, 1.5};
+  Grid grid(nxy, lxy);
+  typename Basis::Mesh mesh(grid);
+
+  double pi = hypercircle_area<double, Basis>(mesh, pt0);
+  double relerr = (pi - PI) / PI;
+  EXPECT_NEAR(relerr, 0.0, 1e-2);
 }

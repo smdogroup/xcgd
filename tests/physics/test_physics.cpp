@@ -108,10 +108,10 @@ TEST(Neohookean, Quad) {
   int *element_nodes;
   T *xloc;
 
-  int nx = 1, ny = 1;
-  T lx = 1.0, ly = 1.0;
-  create_2d_rect_quad_mesh(nx, ny, lx, ly, &num_elements, &num_nodes,
-                           &element_nodes, &xloc);
+  int nxy[2] = {1, 1};
+  T lxy[2] = {1.0, 1.0};
+  create_2d_rect_quad_mesh(nxy, lxy, &num_elements, &num_nodes, &element_nodes,
+                           &xloc);
   using Basis = QuadrilateralBasis<T>;
   typename Basis::Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
   Basis basis(mesh);
@@ -171,10 +171,10 @@ TEST(Poisson, Quad) {
   int *element_nodes;
   T *xloc;
 
-  int nx = 1, ny = 1;
-  T lx = 1.0, ly = 1.0;
-  create_2d_rect_quad_mesh(nx, ny, lx, ly, &num_elements, &num_nodes,
-                           &element_nodes, &xloc);
+  int nxy[2] = {1, 1};
+  T lxy[2] = {1.0, 1.0};
+  create_2d_rect_quad_mesh(nxy, lxy, &num_elements, &num_nodes, &element_nodes,
+                           &xloc);
   using Basis = QuadrilateralBasis<T>;
   typename Basis::Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
   Basis basis(mesh);

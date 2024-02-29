@@ -81,7 +81,7 @@ class GalerkinAnalysis final {
 
       T pts[spatial_dim * num_quadrature_pts];
       T wts[num_quadrature_pts];
-      basis.get_quadrature_pts(pts, wts);
+      basis.get_quadrature_pts(i, pts, wts);
 
       T N[nodes_per_element * num_quadrature_pts];
       T Nxi[spatial_dim * nodes_per_element * num_quadrature_pts];
@@ -128,7 +128,7 @@ class GalerkinAnalysis final {
 
       T pts[spatial_dim * num_quadrature_pts];
       T wts[num_quadrature_pts];
-      basis.get_quadrature_pts(pts, wts);
+      basis.get_quadrature_pts(i, pts, wts);
 
       T N[nodes_per_element * num_quadrature_pts];
       T Nxi[spatial_dim * nodes_per_element * num_quadrature_pts];
@@ -185,7 +185,7 @@ class GalerkinAnalysis final {
 
       T pts[spatial_dim * num_quadrature_pts];
       T wts[num_quadrature_pts];
-      basis.get_quadrature_pts(pts, wts);
+      basis.get_quadrature_pts(i, pts, wts);
 
       T N[nodes_per_element * num_quadrature_pts];
       T Nxi[spatial_dim * nodes_per_element * num_quadrature_pts];
@@ -247,7 +247,7 @@ class GalerkinAnalysis final {
 
       T pts[spatial_dim * num_quadrature_pts];
       T wts[num_quadrature_pts];
-      basis.get_quadrature_pts(pts, wts);
+      basis.get_quadrature_pts(i, pts, wts);
 
       T N[nodes_per_element * num_quadrature_pts];
       T Nxi[spatial_dim * nodes_per_element * num_quadrature_pts];

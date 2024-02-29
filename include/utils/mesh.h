@@ -245,10 +245,12 @@ void create_single_element_mesh(int *num_elements, int *num_nodes,
 }
 
 template <typename T>
-void create_2d_rect_quad_mesh(int nx, int ny, T lx, T ly, int *num_elements,
+void create_2d_rect_quad_mesh(int nxy[2], T lxy[2], int *num_elements,
                               int *num_nodes, int **element_nodes, T **xloc,
                               int *ndof_bcs = nullptr,
                               int **dof_bcs = nullptr) {
+  int nx = nxy[0], ny = nxy[1];
+  T lx = lxy[0], ly = lxy[1];
   int _num_elements = nx * ny;
   int _num_nodes = (nx + 1) * (ny + 1);
   int _num_nodes_per_elem = 4;
@@ -308,55 +310,120 @@ void create_2d_rect_quad_mesh(int nx, int ny, T lx, T ly, int *num_elements,
   }
 }
 
-#if 0
 template <typename T>
-void create_3d_box_tet_mesh(int nx, int ny, int nz, T lx, T ly, T lz,
-                            int *num_elements, int *num_nodes,
-                            int **element_nodes, T **xloc) {
-  int _num_elements = nx * ny;
-  int _num_nodes = (nx + 1) * (ny + 1);
-  int _num_nodes_per_elem = 4;
+void create_3d_box_tet_mesh(int nxyz[3], T lxyz[3], int *num_elements,
+                            int *num_nodes, int **element_nodes, T **xloc) {
+  int nx = nxyz[0], ny = nxyz[1], nz = nxyz[2];
+  T lx = lxyz[0], ly = lxyz[1], lz = lxyz[2];
+  int _num_elements = nx * ny * nz * 6;
+  int _num_nodes = (2 * nx + 1) * (2 * ny + 1) * (2 * nz + 1);
+  int _num_nodes_per_elem = 10;
   int *_element_nodes = new int[_num_elements * _num_nodes_per_elem];
-  T *_xloc = new T[2 * _num_nodes];
-  int _ndof_bcs = 2 * (ny + 1);
-  int *_dof_bcs = new int[_ndof_bcs];
+  T *_xloc = new T[3 * _num_nodes];
 
-  int idx = 0;
-  for (int j = 0; j < ny + 1; j++) {
-    int node = (nx + 1) * j;
-    _dof_bcs[idx] = 2 * node;
-    idx++;
-    _dof_bcs[idx] = 2 * node + 1;
-    idx++;
-  }
+  auto get_node = [nx, ny](int i, int j, int k) {
+    return i + (2 * nx + 1) * j + (2 * nx + 1) * (2 * ny + 1) * k;
+  };
 
   // Set X
-  for (int j = 0; j < ny + 1; j++) {
-    for (int i = 0; i < nx + 1; i++) {
-      int node = i + (nx + 1) * j;
+  for (int k = 0; k < 2 * nz + 1; k++) {
+    for (int j = 0; j < 2 * ny + 1; j++) {
+      for (int i = 0; i < 2 * nx + 1; i++) {
+        int node = get_node(i, j, k);
 
-      _xloc[2 * node] = lx * T(i) / T(nx);
-      _xloc[2 * node + 1] = ly * T(j) / T(ny);
+        _xloc[3 * node] = lx * T(i) / T(nx);
+        _xloc[3 * node + 1] = ly * T(j) / T(ny);
+        _xloc[3 * node + 2] = lz * T(k) / T(nz);
+      }
     }
   }
 
   // Set connectivity
-  for (int j = 0; j < ny; j++) {
-    for (int i = 0; i < nx; i++) {
-      int elem = i + nx * j;
-
-      int conn_coord[4];
-      for (int jj = 0, index = 0; jj < 2; jj++) {
-        for (int ii = 0; ii < 2; ii++, index++) {
-          conn_coord[index] = (i + ii) + (nx + 1) * (j + jj);
+  int *conn_ptr = _element_nodes;
+  for (int k = 0; k < nz; k++) {
+    for (int j = 0; j < ny; j++) {
+      for (int i = 0; i < nx; i++) {
+        int pt[27];
+        for (int kk = 0, index = 0; kk < 3; kk++) {
+          for (int jj = 0; jj < 3; jj++) {
+            for (int ii = 0; ii < 3; ii++, index++) {
+              pt[index] = get_node(2 * i + ii, 2 * j + jj, 2 * k + kk);
+            }
+          }
         }
-      }
 
-      // Convert to the correct connectivity
-      _element_nodes[4 * elem + 0] = conn_coord[0];
-      _element_nodes[4 * elem + 1] = conn_coord[1];
-      _element_nodes[4 * elem + 2] = conn_coord[3];
-      _element_nodes[4 * elem + 3] = conn_coord[2];
+        conn_ptr[0] = pt[0];
+        conn_ptr[1] = pt[20];
+        conn_ptr[2] = pt[24];
+        conn_ptr[3] = pt[18];
+        conn_ptr[4] = pt[10];
+        conn_ptr[5] = pt[22];
+        conn_ptr[6] = pt[12];
+        conn_ptr[7] = pt[9];
+        conn_ptr[8] = pt[19];
+        conn_ptr[9] = pt[21];
+        conn_ptr += 10;
+
+        conn_ptr[0] = pt[0];
+        conn_ptr[1] = pt[2];
+        conn_ptr[2] = pt[6];
+        conn_ptr[3] = pt[24];
+        conn_ptr[4] = pt[1];
+        conn_ptr[5] = pt[4];
+        conn_ptr[6] = pt[3];
+        conn_ptr[7] = pt[12];
+        conn_ptr[8] = pt[13];
+        conn_ptr[9] = pt[15];
+        conn_ptr += 10;
+
+        conn_ptr[0] = pt[24];
+        conn_ptr[1] = pt[0];
+        conn_ptr[2] = pt[2];
+        conn_ptr[3] = pt[20];
+        conn_ptr[4] = pt[12];
+        conn_ptr[5] = pt[1];
+        conn_ptr[6] = pt[13];
+        conn_ptr[7] = pt[22];
+        conn_ptr[8] = pt[10];
+        conn_ptr[9] = pt[11];
+        conn_ptr += 10;
+
+        conn_ptr[0] = pt[8];
+        conn_ptr[1] = pt[26];
+        conn_ptr[2] = pt[24];
+        conn_ptr[3] = pt[20];
+        conn_ptr[4] = pt[17];
+        conn_ptr[5] = pt[25];
+        conn_ptr[6] = pt[16];
+        conn_ptr[7] = pt[14];
+        conn_ptr[8] = pt[23];
+        conn_ptr[9] = pt[22];
+        conn_ptr += 10;
+
+        conn_ptr[0] = pt[24];
+        conn_ptr[1] = pt[2];
+        conn_ptr[2] = pt[8];
+        conn_ptr[3] = pt[20];
+        conn_ptr[4] = pt[13];
+        conn_ptr[5] = pt[5];
+        conn_ptr[6] = pt[16];
+        conn_ptr[7] = pt[22];
+        conn_ptr[8] = pt[11];
+        conn_ptr[9] = pt[14];
+        conn_ptr += 10;
+
+        conn_ptr[0] = pt[6];
+        conn_ptr[1] = pt[2];
+        conn_ptr[2] = pt[8];
+        conn_ptr[3] = pt[24];
+        conn_ptr[4] = pt[4];
+        conn_ptr[5] = pt[5];
+        conn_ptr[6] = pt[7];
+        conn_ptr[7] = pt[15];
+        conn_ptr[8] = pt[13];
+        conn_ptr[9] = pt[16];
+        conn_ptr += 10;
+      }
     }
   }
 
@@ -364,14 +431,7 @@ void create_3d_box_tet_mesh(int nx, int ny, int nz, T lx, T ly, T lz,
   *num_nodes = _num_nodes;
   *element_nodes = _element_nodes;
   *xloc = _xloc;
-  if (ndof_bcs) {
-    *ndof_bcs = _ndof_bcs;
-  }
-  if (dof_bcs) {
-    *dof_bcs = _dof_bcs;
-  }
 }
-#endif
 
 template <int nodes_per_element>
 struct GetElementNodes {
