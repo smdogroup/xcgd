@@ -1,7 +1,7 @@
 #ifndef XCGD_FE_COMMONS_H
 #define XCGD_FE_COMMONS_H
 
-#include "commons.h"
+#include "element_commons.h"
 
 template <typename T, int spatial_dim, int nodes_per_element_>
 class FEMesh final : public MeshBase<T, spatial_dim, nodes_per_element_> {

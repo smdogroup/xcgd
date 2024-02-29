@@ -2,12 +2,12 @@
 #define XCGD_ANALYSIS_H
 
 #include "a2dcore.h"
-#include "elements/commons.h"
+#include "elements/element_commons.h"
 #include "sparse_utils/sparse_matrix.h"
 #include "utils/linalg.h"
 
 template <typename T, class Basis, class Physics>
-class FEAnalysis final {
+class GalerkinAnalysis final {
  public:
   using Quadrature = typename Basis::Quadrature;
 
@@ -15,7 +15,7 @@ class FEAnalysis final {
   static const int spatial_dim = Basis::spatial_dim;
   static const int nodes_per_element = Basis::nodes_per_element;
 
-  // Static data from the qaudrature
+  // Static data from the quadrature
   static const int num_quadrature_pts = Quadrature::num_quadrature_pts;
 
   // Static data taken from the physics
@@ -24,7 +24,7 @@ class FEAnalysis final {
   // Derived static data
   static const int dof_per_element = dof_per_node * nodes_per_element;
 
-  FEAnalysis(const Basis& basis, const Physics& physics)
+  GalerkinAnalysis(const Basis& basis, const Physics& physics)
       : basis(basis), physics(physics) {}
 
   void get_element_xloc(int e, T element_xloc[]) const {
@@ -96,13 +96,12 @@ class FEAnalysis final {
         // Evaluate the derivative of the spatial dof in the computational
         // coordinates
         A2D::Mat<T, spatial_dim, spatial_dim> J;
-        eval_grad<T, Basis, spatial_dim>(i, pts, element_xloc, &Nxi[offset_nxi],
-                                         J);
+        eval_grad<T, Basis, spatial_dim>(i, element_xloc, &Nxi[offset_nxi], J);
 
         // Evaluate the derivative of the dof in the computational coordinates
         A2D::Vec<T, dof_per_node> vals;
         A2D::Mat<T, dof_per_node, spatial_dim> grad;
-        eval_val_grad<T, Basis, dof_per_node>(i, pts, element_dof, &N[offset_n],
+        eval_val_grad<T, Basis, dof_per_node>(i, element_dof, &N[offset_n],
                                               &Nxi[offset_nxi], vals, grad);
 
         // Add the energy contributions
@@ -144,13 +143,12 @@ class FEAnalysis final {
         // Evaluate the derivative of the spatial dof in the computational
         // coordinates
         A2D::Mat<T, spatial_dim, spatial_dim> J;
-        eval_grad<T, Basis, spatial_dim>(i, pts, element_xloc, &Nxi[offset_nxi],
-                                         J);
+        eval_grad<T, Basis, spatial_dim>(i, element_xloc, &Nxi[offset_nxi], J);
 
         // Evaluate the derivative of the dof in the computational coordinates
         A2D::Vec<T, dof_per_node> vals;
         A2D::Mat<T, dof_per_node, spatial_dim> grad;
-        eval_val_grad<T, Basis, dof_per_node>(i, pts, element_dof, &N[offset_n],
+        eval_val_grad<T, Basis, dof_per_node>(i, element_dof, &N[offset_n],
                                               &Nxi[offset_nxi], vals, grad);
 
         // Evaluate the residuals at the quadrature points
@@ -159,7 +157,7 @@ class FEAnalysis final {
         physics.residual(wts[j], J, vals, grad, coef_vals, coef_grad);
 
         // Add the contributions to the element residual
-        add_grad<T, Basis, dof_per_node>(i, pts, &N[offset_n], &Nxi[offset_nxi],
+        add_grad<T, Basis, dof_per_node>(i, &N[offset_n], &Nxi[offset_nxi],
                                          coef_vals, coef_grad, element_res);
       }
 
@@ -202,22 +200,21 @@ class FEAnalysis final {
         // Evaluate the derivative of the spatial dof in the computational
         // coordinates
         A2D::Mat<T, spatial_dim, spatial_dim> J;
-        eval_grad<T, Basis, spatial_dim>(i, pts, element_xloc, &Nxi[offset_nxi],
-                                         J);
+        eval_grad<T, Basis, spatial_dim>(i, element_xloc, &Nxi[offset_nxi], J);
 
         // Evaluate the derivative of the dof in the computational coordinates
         A2D::Vec<T, dof_per_node> vals;
         A2D::Mat<T, dof_per_node, spatial_dim> grad;
-        eval_val_grad<T, Basis, dof_per_node>(i, pts, element_dof, &N[offset_n],
+        eval_val_grad<T, Basis, dof_per_node>(i, element_dof, &N[offset_n],
                                               &Nxi[offset_nxi], vals, grad);
 
         // Evaluate the derivative of the direction in the computational
         // coordinates
         A2D::Vec<T, dof_per_node> direct_vals;
         A2D::Mat<T, dof_per_node, spatial_dim> direct_grad;
-        eval_val_grad<T, Basis, dof_per_node>(i, pts, element_direct,
-                                              &N[offset_n], &Nxi[offset_nxi],
-                                              direct_vals, direct_grad);
+        eval_val_grad<T, Basis, dof_per_node>(i, element_direct, &N[offset_n],
+                                              &Nxi[offset_nxi], direct_vals,
+                                              direct_grad);
 
         // Evaluate the residuals at the quadrature points
         A2D::Vec<T, dof_per_node> coef_vals;
@@ -226,7 +223,7 @@ class FEAnalysis final {
                                  direct_grad, coef_vals, coef_grad);
 
         // Add the contributions to the element residual
-        add_grad<T, Basis, dof_per_node>(i, pts, &N[offset_n], &Nxi[offset_nxi],
+        add_grad<T, Basis, dof_per_node>(i, &N[offset_n], &Nxi[offset_nxi],
                                          coef_vals, coef_grad, element_res);
       }
 
@@ -265,13 +262,12 @@ class FEAnalysis final {
         // Evaluate the derivative of the spatial dof in the computational
         // coordinates
         A2D::Mat<T, spatial_dim, spatial_dim> J;
-        eval_grad<T, Basis, spatial_dim>(i, pts, element_xloc, &Nxi[offset_nxi],
-                                         J);
+        eval_grad<T, Basis, spatial_dim>(i, element_xloc, &Nxi[offset_nxi], J);
 
         // Evaluate the derivative of the dof in the computational coordinates
         A2D::Vec<T, dof_per_node> vals;
         A2D::Mat<T, dof_per_node, spatial_dim> grad;
-        eval_val_grad<T, Basis, dof_per_node>(i, pts, element_dof, &N[offset_n],
+        eval_val_grad<T, Basis, dof_per_node>(i, element_dof, &N[offset_n],
                                               &Nxi[offset_nxi], vals, grad);
 
         // Evaluate the residuals at the quadrature points
@@ -281,9 +277,8 @@ class FEAnalysis final {
         physics.jacobian(wts[j], J, vals, grad, coef_vals, coef_grad);
 
         // Add the contributions to the element residual
-        add_matrix<T, Basis, dof_per_node>(i, pts, &N[offset_n],
-                                           &Nxi[offset_nxi], coef_vals,
-                                           coef_grad, element_jac);
+        add_matrix<T, Basis, dof_per_node>(i, &N[offset_n], &Nxi[offset_nxi],
+                                           coef_vals, coef_grad, element_jac);
       }
 
       mat->add_block_values(i, nodes_per_element, basis, element_jac);

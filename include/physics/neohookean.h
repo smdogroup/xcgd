@@ -3,14 +3,19 @@
 
 #include <cmath>
 
-#include "a2dcore.h"
+#include "physics_commons.h"
 
 /* Neohookean physics implemented using A2D, i.e. residual and Jacobian are
 automatically differentiated */
-template <typename T, int spatial_dim = 3>
-class NeohookeanPhysics {
+template <typename T, int spatial_dim_>
+class NeohookeanPhysics final
+    : public PhysicsBase<T, spatial_dim_, spatial_dim_> {
+ private:
+  using PhysicsBase = PhysicsBase<T, spatial_dim_, spatial_dim_>;
+
  public:
-  static constexpr int dof_per_node = spatial_dim;
+  using PhysicsBase::dof_per_node;
+  using PhysicsBase::spatial_dim;
 
   T C1, D1;  // Constitutitive data
 

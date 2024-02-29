@@ -103,7 +103,6 @@ def polynomials_fit_2d(p, pts):
 
     Ck = np.linalg.inv(Vk)
     cond_Vk = np.linalg.cond(Vk)
-    print("[2d]condition number of Vk:", cond_Vk)
 
     funcs = []
     for i in range(Nk):
@@ -222,9 +221,14 @@ def demo_poly_fit_2d(p=3, i=0, j=0):
 
 def test_gd_impl(Np_1d=2):
     pts = [2.0 * i / (Np_1d - 1.0) - 1.0 for i in range(Np_1d)]
+    pts = np.array(pts)
+    print(pts)
     pts2 = [(i, j) for j in pts for i in pts]
+    pts2 = np.array(pts2)
 
     funcs_fit, cond = polynomials_fit_2d(Np_1d - 1, pts2)
+    print(cond)
+    exit()
 
     x, y = 0.39214122, -0.24213123
     for i, f in enumerate(funcs_fit):

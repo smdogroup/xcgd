@@ -13,16 +13,16 @@ class StructuredGrid2D final {
     }
   }
 
-  // Compute element/node coordinates <-> element/node index
-  inline int get_coords_node(int ni, int nj) const {
+  // Compute element/vertice coordinates <-> element/vertice index
+  inline int get_coords_vert(int ni, int nj) const {
     return ni + (nxy[0] + 1) * nj;
   }
-  inline int get_coords_node(const int* nij) const {
+  inline int get_coords_vert(const int* nij) const {
     return nij[0] + (nxy[0] + 1) * nij[1];
   }
-  inline void get_node_coords(int node, int* nij) const {
-    nij[0] = node % (nxy[0] + 1);
-    nij[1] = node / (nxy[0] + 1);
+  inline void get_vert_coords(int vert, int* nij) const {
+    nij[0] = vert % (nxy[0] + 1);
+    nij[1] = vert / (nxy[0] + 1);
   }
   inline int get_coords_elem(int ei, int ej) const { return ei + nxy[0] * ej; }
   inline int get_coords_elem(const int* eij) const {
@@ -33,21 +33,29 @@ class StructuredGrid2D final {
     eij[1] = elem / nxy[0];
   }
 
-  int get_elem_nodes(int elem, int* nodes) const {
-    if (nodes) {
+  int get_elem_verts(int elem, int* verts) const {
+    if (verts) {
       int nij[spatial_dim] = {elem % nxy[0], elem / nxy[1]};
-      nodes[0] = get_coords_node(nij);
-      nodes[1] = nodes[0] + 1;
-      nodes[2] = nodes[0] + nxy[0] + 1;
-      nodes[3] = nodes[2] + 1;
+      verts[0] = get_coords_vert(nij);
+      verts[1] = verts[0] + 1;
+      verts[2] = verts[0] + nxy[0] + 1;
+      verts[3] = verts[2] + 1;
     }
     return 4;
   }
 
-  void get_node_xloc(int node, T* xloc) const {
+  void get_elem_vert_ranges(int elem, T* xloc_min, T* xloc_max) const {
+    int verts[4];
+    int vert_min = get_elem_verts(elem, verts);
+
+    get_vert_xloc(verts[0], xloc_min);
+    get_vert_xloc(verts[3], xloc_max);
+  }
+
+  void get_vert_xloc(int vert, T* xloc) const {
     if (xloc) {
       int nij[spatial_dim];
-      get_node_coords(node, nij);
+      get_vert_coords(vert, nij);
       for (int d = 0; d < spatial_dim; d++) {
         xloc[d] = lxy[d] * T(nij[d]) / T(nxy[d]);
       }
@@ -106,7 +114,7 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d> {
   }
 
   inline void get_node_xloc(int node, T* xloc) const {
-    grid.get_node_xloc(node, xloc);
+    grid.get_vert_xloc(node, xloc);
   }
 
   /**
@@ -132,10 +140,42 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d> {
     for (int j = 0; j < Np_1d; j++) {
       for (int i = 0; i < Np_1d; i++, index++) {
         nodes[index] =
-            grid.get_coords_node(eij[0] - q + 1 + i, eij[1] - q + 1 + j);
+            grid.get_coords_vert(eij[0] - q + 1 + i, eij[1] - q + 1 + j);
       }
     }
   };
+
+  void get_elem_node_ranges(int elem, T* xloc_min, T* xloc_max) const {
+    // [x0, ..., xN, y0, ..., yN, ...]
+    std::vector<T> coords(spatial_dim * nodes_per_element);
+
+    int nodes[nodes_per_element];
+    get_elem_dof_nodes(elem, nodes);
+
+    for (int i = 0; i < nodes_per_element; i++) {
+      T xloc[spatial_dim];
+      get_node_xloc(nodes[i], xloc);
+      for (int d = 0; d < spatial_dim; d++) {
+        coords[i + d * nodes_per_element] = xloc[d];
+      }
+    }
+
+    for (int d = 0; d < spatial_dim; d++) {
+      xloc_min[d] =
+          *std::min_element(&coords[d * nodes_per_element],
+                            &coords[d * nodes_per_element] + nodes_per_element,
+                            [](T& a, T& b) { return freal(a) < freal(b); });
+
+      xloc_max[d] =
+          *std::max_element(&coords[d * nodes_per_element],
+                            &coords[d * nodes_per_element] + nodes_per_element,
+                            [](T& a, T& b) { return freal(a) < freal(b); });
+    }
+  }
+
+  inline void get_elem_vert_ranges(int elem, T* xloc_min, T* xloc_max) const {
+    grid.get_elem_vert_ranges(elem, xloc_min, xloc_max);
+  }
 
  private:
   const Grid& grid;

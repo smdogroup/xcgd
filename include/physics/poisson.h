@@ -1,14 +1,16 @@
 #ifndef XCGD_POISSON_H
 #define XCGD_POISSON_H
 
-#include "a2dcore.h"
+#include "physics_commons.h"
 
-template <typename T, int spatial_dim = 3>
-class PoissonPhysics {
+template <typename T, int spatial_dim_>
+class PoissonPhysics final : public PhysicsBase<T, spatial_dim_, 1> {
+ private:
+  using PhysicsBase = PhysicsBase<T, spatial_dim_, 1>;
+
  public:
-  static constexpr int dof_per_node = 1;
-
-  PoissonPhysics() = default;
+  using PhysicsBase::dof_per_node;
+  using PhysicsBase::spatial_dim;
 
   T energy(T weight, const A2D::Mat<T, spatial_dim, spatial_dim>& J,
            A2D::Vec<T, dof_per_node>& vals,

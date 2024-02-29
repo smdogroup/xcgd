@@ -1,5 +1,5 @@
-#ifndef XCGD_COMMONS_H
-#define XCGD_COMMONS_H
+#ifndef XCGD_ELEMENT_COMMONS_H
+#define XCGD_ELEMENT_COMMONS_H
 
 #include "a2dcore.h"
 
@@ -50,7 +50,7 @@ class QuadratureBase {
 };
 
 template <typename T, class Basis, int dim>
-static void eval_grad(int elem, const T pts[], const T dof[], const T Nxi[],
+static void eval_grad(int elem, const T dof[], const T Nxi[],
                       A2D::Mat<T, dim, Basis::spatial_dim>& grad) {
   static constexpr int spatial_dim = Basis::spatial_dim;
   static constexpr int nodes_per_element = Basis::nodes_per_element;
@@ -69,8 +69,8 @@ static void eval_grad(int elem, const T pts[], const T dof[], const T Nxi[],
 }
 
 template <typename T, class Basis, int dim>
-static void eval_val_grad(int elem, const T pts[], const T dof[], const T N[],
-                          const T Nxi[], A2D::Vec<T, dim>& vals,
+static void eval_val_grad(int elem, const T dof[], const T N[], const T Nxi[],
+                          A2D::Vec<T, dim>& vals,
                           A2D::Mat<T, dim, Basis::spatial_dim>& grad) {
   static constexpr int spatial_dim = Basis::spatial_dim;
   static constexpr int nodes_per_element = Basis::nodes_per_element;
@@ -94,7 +94,7 @@ static void eval_val_grad(int elem, const T pts[], const T dof[], const T N[],
 }
 
 template <typename T, class Basis, int dim>
-static void add_grad(int elem, const T pts[], const T N[], const T Nxi[],
+static void add_grad(int elem, const T N[], const T Nxi[],
                      const A2D::Vec<T, dim>& coef_vals,
                      const A2D::Mat<T, dim, Basis::spatial_dim>& coef_grad,
                      T elem_res[]) {
@@ -112,7 +112,7 @@ static void add_grad(int elem, const T pts[], const T N[], const T Nxi[],
 }
 
 template <typename T, class Basis, int dim>
-static void add_matrix(int elem, const T pts[], const T N[], const T Nxi[],
+static void add_matrix(int elem, const T N[], const T Nxi[],
                        const A2D::Mat<T, dim, dim>& coef_vals,
                        const A2D::Mat<T, dim * Basis::spatial_dim,
                                       dim * Basis::spatial_dim>& coef_grad,
@@ -152,4 +152,4 @@ static void add_matrix(int elem, const T pts[], const T N[], const T Nxi[],
   }
 }
 
-#endif  // XCGD_COMMONS_H
+#endif  // XCGD_ELEMENT_COMMONS_H

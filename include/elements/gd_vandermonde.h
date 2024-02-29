@@ -9,7 +9,7 @@
 #include <limits>
 #include <vector>
 
-#include "commons.h"
+#include "element_commons.h"
 #include "gaussquad.hpp"
 #include "gd_commons.h"
 #include "utils/linalg.h"
@@ -84,18 +84,9 @@ class GDBasis2D final
     int nodes[Nk];
     this->mesh.get_elem_dof_nodes(elem, nodes);
 
-    std::vector<double> xloc_min(spatial_dim,
-                                 std::numeric_limits<double>::max());
-    std::vector<double> xloc_max(spatial_dim,
-                                 std::numeric_limits<double>::min());
-    for (int i = 0; i < Nk; i++) {
-      T xloc[spatial_dim];
-      this->mesh.get_node_xloc(nodes[i], xloc);
-      for (int d = 0; d < spatial_dim; d++) {
-        xloc_min[d] = std::min(xloc_min[d], freal(xloc[d]));
-        xloc_max[d] = std::max(xloc_max[d], freal(xloc[d]));
-      }
-    }
+    T xloc_min[spatial_dim];
+    T xloc_max[spatial_dim];
+    this->mesh.get_elem_node_ranges(elem, xloc_min, xloc_max);
 
     for (int i = 0; i < Nk; i++) {
       T xloc[spatial_dim];

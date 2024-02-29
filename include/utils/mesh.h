@@ -308,6 +308,71 @@ void create_2d_rect_quad_mesh(int nx, int ny, T lx, T ly, int *num_elements,
   }
 }
 
+#if 0
+template <typename T>
+void create_3d_box_tet_mesh(int nx, int ny, int nz, T lx, T ly, T lz,
+                            int *num_elements, int *num_nodes,
+                            int **element_nodes, T **xloc) {
+  int _num_elements = nx * ny;
+  int _num_nodes = (nx + 1) * (ny + 1);
+  int _num_nodes_per_elem = 4;
+  int *_element_nodes = new int[_num_elements * _num_nodes_per_elem];
+  T *_xloc = new T[2 * _num_nodes];
+  int _ndof_bcs = 2 * (ny + 1);
+  int *_dof_bcs = new int[_ndof_bcs];
+
+  int idx = 0;
+  for (int j = 0; j < ny + 1; j++) {
+    int node = (nx + 1) * j;
+    _dof_bcs[idx] = 2 * node;
+    idx++;
+    _dof_bcs[idx] = 2 * node + 1;
+    idx++;
+  }
+
+  // Set X
+  for (int j = 0; j < ny + 1; j++) {
+    for (int i = 0; i < nx + 1; i++) {
+      int node = i + (nx + 1) * j;
+
+      _xloc[2 * node] = lx * T(i) / T(nx);
+      _xloc[2 * node + 1] = ly * T(j) / T(ny);
+    }
+  }
+
+  // Set connectivity
+  for (int j = 0; j < ny; j++) {
+    for (int i = 0; i < nx; i++) {
+      int elem = i + nx * j;
+
+      int conn_coord[4];
+      for (int jj = 0, index = 0; jj < 2; jj++) {
+        for (int ii = 0; ii < 2; ii++, index++) {
+          conn_coord[index] = (i + ii) + (nx + 1) * (j + jj);
+        }
+      }
+
+      // Convert to the correct connectivity
+      _element_nodes[4 * elem + 0] = conn_coord[0];
+      _element_nodes[4 * elem + 1] = conn_coord[1];
+      _element_nodes[4 * elem + 2] = conn_coord[3];
+      _element_nodes[4 * elem + 3] = conn_coord[2];
+    }
+  }
+
+  *num_elements = _num_elements;
+  *num_nodes = _num_nodes;
+  *element_nodes = _element_nodes;
+  *xloc = _xloc;
+  if (ndof_bcs) {
+    *ndof_bcs = _ndof_bcs;
+  }
+  if (dof_bcs) {
+    *dof_bcs = _dof_bcs;
+  }
+}
+#endif
+
 template <int nodes_per_element>
 struct GetElementNodes {
   GetElementNodes(const int *element_nodes) : element_nodes(element_nodes) {}

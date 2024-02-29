@@ -8,8 +8,8 @@
 int main(int argc, char *argv[]) {
   using T = double;
   using Basis = TetrahedralBasis<T>;
-  using Physics = NeohookeanPhysics<T>;
-  using Analysis = FEAnalysis<T, Basis, Physics>;
+  using Physics = NeohookeanPhysics<T, 3>;
+  using Analysis = GalerkinAnalysis<T, Basis, Physics>;
 
   int num_elements, num_nodes;
   int *element_nodes;

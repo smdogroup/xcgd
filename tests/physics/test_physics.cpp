@@ -40,7 +40,7 @@ void test_physics(Basis &basis, Physics &physics, double h = 1e-30,
   }
 
   // Allocate space for the residual
-  using Analysis = FEAnalysis<T, Basis, Physics>;
+  using Analysis = GalerkinAnalysis<T, Basis, Physics>;
   Analysis analysis(basis, physics);
 
   T energy = analysis.energy(dof);

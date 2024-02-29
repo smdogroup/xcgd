@@ -13,7 +13,7 @@ int main(int argc, char *argv[]) {
   using Grid = StructuredGrid2D<T>;
   using Basis = GDBasis2D<T, Np_1d>;
   using Physics = PoissonPhysics<T, spatial_dim>;
-  using Analysis = FEAnalysis<T, Basis, Physics>;
+  using Analysis = GalerkinAnalysis<T, Basis, Physics>;
 
   // Set the number of degrees of freedom
   int ndof = spatial_dim * (nx + 1) * (ny + 1);

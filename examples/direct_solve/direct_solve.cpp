@@ -16,7 +16,7 @@ int main(int argc, char *argv[]) {
 
   using Basis = TetrahedralBasis<T>;
   using Physics = NeohookeanPhysics<T, Basis::spatial_dim>;
-  using Analysis = FEAnalysis<T, Basis, Physics>;
+  using Analysis = GalerkinAnalysis<T, Basis, Physics>;
   using BSRMat = GalerkinBSRMat<T, Physics::dof_per_node>;
   using CSCMat = SparseUtils::CSCMat<T>;
 
