@@ -43,19 +43,33 @@ class BasisBase {
 };
 
 template <typename T, class Basis, int dim>
-static void eval_grad(int elem, const T dof[], const T Nxi[],
-                      A2D::Mat<T, dim, Basis::spatial_dim>& grad) {
+static void interp_val_grad(int elem, const T dof[], const T N[], const T Nxi[],
+                            A2D::Vec<T, dim>* vals,
+                            A2D::Mat<T, dim, Basis::spatial_dim>* grad) {
   static constexpr int spatial_dim = Basis::spatial_dim;
   static constexpr int nodes_per_element = Basis::nodes_per_element;
 
-  for (int k = 0; k < spatial_dim * dim; k++) {
-    grad[k] = 0.0;
+  if (vals) {
+    for (int k = 0; k < dim; k++) {
+      (*vals)(k) = 0.0;
+    }
+  }
+
+  if (grad) {
+    for (int k = 0; k < spatial_dim * dim; k++) {
+      (*grad)[k] = 0.0;
+    }
   }
 
   for (int i = 0; i < nodes_per_element; i++) {
     for (int k = 0; k < dim; k++) {
-      for (int j = 0; j < spatial_dim; j++) {
-        grad(k, j) += Nxi[spatial_dim * i + j] * dof[dim * i + k];
+      if (vals) {
+        (*vals)(k) += N[i] * dof[dim * i + k];
+      }
+      if (grad) {
+        for (int j = 0; j < spatial_dim; j++) {
+          (*grad)(k, j) += Nxi[spatial_dim * i + j] * dof[dim * i + k];
+        }
       }
     }
   }
@@ -63,64 +77,29 @@ static void eval_grad(int elem, const T dof[], const T Nxi[],
 
 // dim == 1
 template <typename T, class Basis>
-static void eval_grad(int elem, const T dof[], const T Nxi[],
-                      A2D::Vec<T, Basis::spatial_dim>& grad) {
+static void interp_val_grad(int elem, const T dof[], const T N[], const T Nxi[],
+                            T* val, A2D::Vec<T, Basis::spatial_dim>* grad) {
   static constexpr int spatial_dim = Basis::spatial_dim;
   static constexpr int nodes_per_element = Basis::nodes_per_element;
 
-  for (int k = 0; k < spatial_dim; k++) {
-    grad[k] = 0.0;
+  if (val) {
+    *val = 0.0;
   }
 
-  for (int i = 0; i < nodes_per_element; i++) {
-    for (int j = 0; j < spatial_dim; j++) {
-      grad(j) += Nxi[spatial_dim * i + j] * dof[i];
+  if (grad) {
+    for (int k = 0; k < spatial_dim; k++) {
+      (*grad)[k] = 0.0;
     }
   }
-}
-
-template <typename T, class Basis, int dim>
-static void eval_val_grad(int elem, const T dof[], const T N[], const T Nxi[],
-                          A2D::Vec<T, dim>& vals,
-                          A2D::Mat<T, dim, Basis::spatial_dim>& grad) {
-  static constexpr int spatial_dim = Basis::spatial_dim;
-  static constexpr int nodes_per_element = Basis::nodes_per_element;
-
-  for (int k = 0; k < dim; k++) {
-    vals(k) = 0.0;
-  }
-
-  for (int k = 0; k < spatial_dim * dim; k++) {
-    grad[k] = 0.0;
-  }
 
   for (int i = 0; i < nodes_per_element; i++) {
-    for (int k = 0; k < dim; k++) {
-      vals(k) += N[i] * dof[dim * i + k];
+    if (val) {
+      *val += N[i] * dof[i];
+    }
+    if (grad) {
       for (int j = 0; j < spatial_dim; j++) {
-        grad(k, j) += Nxi[spatial_dim * i + j] * dof[dim * i + k];
+        (*grad)(j) += Nxi[spatial_dim * i + j] * dof[i];
       }
-    }
-  }
-}
-
-// dim == 1
-template <typename T, class Basis>
-static void eval_val_grad(int elem, const T dof[], const T N[], const T Nxi[],
-                          T& val, A2D::Vec<T, Basis::spatial_dim>& grad) {
-  static constexpr int spatial_dim = Basis::spatial_dim;
-  static constexpr int nodes_per_element = Basis::nodes_per_element;
-
-  val = 0.0;
-
-  for (int k = 0; k < spatial_dim; k++) {
-    grad[k] = 0.0;
-  }
-
-  for (int i = 0; i < nodes_per_element; i++) {
-    val += N[i] * dof[i];
-    for (int j = 0; j < spatial_dim; j++) {
-      grad(j) += Nxi[spatial_dim * i + j] * dof[i];
     }
   }
 }

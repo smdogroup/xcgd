@@ -15,29 +15,27 @@ class HelmholtzPhysics final : public PhysicsBase<T, spatial_dim_, 1, 1> {
 
   HelmholtzPhysics(T r0) : r0(r0) {}
 
-  T energy(T weight, const A2D::Mat<T, spatial_dim, spatial_dim>& J,
-           dof_t& vals, grad_t& grad) const {
-    T detJ, output, dot, rho = vals(0);
-    A2D::Vec<T, spatial_dim> grad_v(grad.get_data());
+  T energy(T weight, const A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
+           A2D::Vec<T, spatial_dim>& grad) const {
+    T detJ, dot;
     A2D::MatDet(J, detJ);
-    A2D::VecDot(grad_v, grad_v, dot);
-    return 0.5 * weight * detJ * (rho * rho + r0 * r0 * dot - 2.0 * rho * x);
+    A2D::VecDot(grad, grad, dot);
+    return 0.5 * weight * detJ * (val * val + r0 * r0 * dot - 2.0 * val * x);
   }
 
-  virtual void residual(T weight, A2D::Mat<T, spatial_dim, spatial_dim>& J,
-                        dof_t& vals, grad_t& grad, dof_t& coef_vals,
-                        grad_t& coef_grad) const {}
+  void residual(T weight, A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
+                A2D::Vec<T, spatial_dim>& grad, T& coef_val,
+                A2D::Vec<T, spatial_dim>& coef_grad) const {}
 
-  virtual void jacobian_product(T weight,
-                                A2D::Mat<T, spatial_dim, spatial_dim>& J,
-                                dof_t& vals, grad_t& grad, dof_t& direct_vals,
-                                grad_t& direct_grad, dof_t& coef_vals,
-                                grad_t& coef_grad) const {}
+  void jacobian_product(T weight, A2D::Mat<T, spatial_dim, spatial_dim>& J,
+                        T& val, A2D::Vec<T, spatial_dim>& grad, T& direct_val,
+                        A2D::Vec<T, spatial_dim>& direct_grad, T& coef_val,
+                        A2D::Vec<T, spatial_dim>& coef_grad) const {}
 
-  virtual void jacobian(T weight, A2D::Mat<T, spatial_dim, spatial_dim>& J,
-                        dof_t& vals, grad_t& grad, jac_t& jac_vals,
-                        A2D::Mat<T, dof_per_node * spatial_dim,
-                                 dof_per_node * spatial_dim>& jac_grad) const {}
+  void jacobian(T weight, A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
+                A2D::Vec<T, spatial_dim>& grad, T& jac_val,
+                A2D::Mat<T, dof_per_node * spatial_dim,
+                         dof_per_node * spatial_dim>& jac_grad) const {}
 
  private:
   T r0;

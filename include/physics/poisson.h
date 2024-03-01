@@ -13,15 +13,15 @@ class PoissonPhysics final : public PhysicsBase<T, spatial_dim_, 0, 1> {
   using PhysicsBase::dof_per_node;
   using PhysicsBase::spatial_dim;
 
-  T energy(T weight, const A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
-           A2D::Vec<T, spatial_dim>& grad) const {
+  T energy(T weight, T _, const A2D::Mat<T, spatial_dim, spatial_dim>& J,
+           T& val, A2D::Vec<T, spatial_dim>& grad) const {
     T detJ, output, dot, u = val;
     A2D::MatDet(J, detJ);
     A2D::VecDot(grad, grad, dot);
     return weight * detJ * (0.5 * dot - u);
   }
 
-  void residual(T weight, A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
+  void residual(T weight, T _, A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
                 A2D::Vec<T, spatial_dim>& grad, T& coef_val,
                 A2D::Vec<T, spatial_dim>& coef_grad) const {
     A2D::ADObj<T> dot_obj, output_obj, detJ_obj;
@@ -37,7 +37,7 @@ class PoissonPhysics final : public PhysicsBase<T, spatial_dim_, 0, 1> {
     stack.reverse();
   }
 
-  void jacobian_product(T weight, A2D::Mat<T, spatial_dim, spatial_dim>& J,
+  void jacobian_product(T weight, T _, A2D::Mat<T, spatial_dim, spatial_dim>& J,
                         T& val, A2D::Vec<T, spatial_dim>& grad, T& direct_val,
                         A2D::Vec<T, spatial_dim>& direct_grad, T& coef_val,
                         A2D::Vec<T, spatial_dim>& coef_grad) const {
@@ -58,7 +58,7 @@ class PoissonPhysics final : public PhysicsBase<T, spatial_dim_, 0, 1> {
     stack.hproduct();
   }
 
-  void jacobian(T weight, A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
+  void jacobian(T weight, T _, A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
                 A2D::Vec<T, spatial_dim>& grad, T& jac_val,
                 A2D::Mat<T, dof_per_node * spatial_dim,
                          dof_per_node * spatial_dim>& jac_grad) const {
