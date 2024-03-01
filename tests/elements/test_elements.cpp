@@ -115,6 +115,7 @@ T hypercircle_area(typename Basis::Mesh& mesh,
 }
 
 TEST(IntegrationTest, Quad) {
+  using T = double;
   using Basis = QuadrilateralBasis<T>;
 
   int num_elements, num_nodes;
@@ -135,6 +136,7 @@ TEST(IntegrationTest, Quad) {
 }
 
 TEST(IntegrationTest, Tet) {
+  using T = double;
   using Basis = TetrahedralBasis<T>;
 
   int num_elements, num_nodes;
@@ -155,6 +157,7 @@ TEST(IntegrationTest, Tet) {
 }
 
 TEST(IntegrationTest, GD2D_Np2) {
+  using T = double;
   constexpr int Np_1d = 2;
 
   using Basis = GDBasis2D<T, Np_1d>;
@@ -172,6 +175,7 @@ TEST(IntegrationTest, GD2D_Np2) {
 }
 
 TEST(IntegrationTest, GD2D_Np4) {
+  using T = double;
   constexpr int Np_1d = 4;
 
   using Basis = GDBasis2D<T, Np_1d>;
