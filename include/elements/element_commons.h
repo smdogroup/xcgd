@@ -61,6 +61,24 @@ static void eval_grad(int elem, const T dof[], const T Nxi[],
   }
 }
 
+// dim == 1
+template <typename T, class Basis>
+static void eval_grad(int elem, const T dof[], const T Nxi[],
+                      A2D::Vec<T, Basis::spatial_dim>& grad) {
+  static constexpr int spatial_dim = Basis::spatial_dim;
+  static constexpr int nodes_per_element = Basis::nodes_per_element;
+
+  for (int k = 0; k < spatial_dim; k++) {
+    grad[k] = 0.0;
+  }
+
+  for (int i = 0; i < nodes_per_element; i++) {
+    for (int j = 0; j < spatial_dim; j++) {
+      grad(j) += Nxi[spatial_dim * i + j] * dof[i];
+    }
+  }
+}
+
 template <typename T, class Basis, int dim>
 static void eval_val_grad(int elem, const T dof[], const T N[], const T Nxi[],
                           A2D::Vec<T, dim>& vals,
@@ -86,6 +104,27 @@ static void eval_val_grad(int elem, const T dof[], const T N[], const T Nxi[],
   }
 }
 
+// dim == 1
+template <typename T, class Basis>
+static void eval_val_grad(int elem, const T dof[], const T N[], const T Nxi[],
+                          T& val, A2D::Vec<T, Basis::spatial_dim>& grad) {
+  static constexpr int spatial_dim = Basis::spatial_dim;
+  static constexpr int nodes_per_element = Basis::nodes_per_element;
+
+  val = 0.0;
+
+  for (int k = 0; k < spatial_dim; k++) {
+    grad[k] = 0.0;
+  }
+
+  for (int i = 0; i < nodes_per_element; i++) {
+    val += N[i] * dof[i];
+    for (int j = 0; j < spatial_dim; j++) {
+      grad(j) += Nxi[spatial_dim * i + j] * dof[i];
+    }
+  }
+}
+
 template <typename T, class Basis, int dim>
 static void add_grad(int elem, const T N[], const T Nxi[],
                      const A2D::Vec<T, dim>& coef_vals,
@@ -100,6 +139,22 @@ static void add_grad(int elem, const T N[], const T Nxi[],
       for (int j = 0; j < spatial_dim; j++) {
         elem_res[dim * i + k] += (coef_grad(k, j) * Nxi[spatial_dim * i + j]);
       }
+    }
+  }
+}
+
+// dim == 1
+template <typename T, class Basis>
+static void add_grad(int elem, const T N[], const T Nxi[], const T& coef_val,
+                     const A2D::Vec<T, Basis::spatial_dim>& coef_grad,
+                     T elem_res[]) {
+  static constexpr int spatial_dim = Basis::spatial_dim;
+  static constexpr int nodes_per_element = Basis::nodes_per_element;
+
+  for (int i = 0; i < nodes_per_element; i++) {
+    elem_res[i] += coef_val * N[i];
+    for (int j = 0; j < spatial_dim; j++) {
+      elem_res[i] += (coef_grad(j) * Nxi[spatial_dim * i + j]);
     }
   }
 }
@@ -141,6 +196,38 @@ static void add_matrix(int elem, const T N[], const T Nxi[],
               val + coef_vals(ii, jj) * ni * nj;
         }
       }
+    }
+  }
+}
+
+// dim == 1
+template <typename T, class Basis>
+static void add_matrix(
+    int elem, const T N[], const T Nxi[], const T& coef_val,
+    const A2D::Mat<T, Basis::spatial_dim, Basis::spatial_dim>& coef_grad,
+    T elem_jac[]) {
+  static constexpr int spatial_dim = Basis::spatial_dim;
+  static constexpr int nodes_per_element = Basis::nodes_per_element;
+
+  constexpr int dof_per_element = nodes_per_element;
+
+  for (int i = 0; i < nodes_per_element; i++) {
+    T ni = N[i];
+    std::vector<T> nxi(&Nxi[spatial_dim * i],
+                       &Nxi[spatial_dim * i] + spatial_dim);
+
+    for (int j = 0; j < nodes_per_element; j++) {
+      T nj = N[j];
+      std::vector<T> nxj(&Nxi[spatial_dim * j],
+                         &Nxi[spatial_dim * j] + spatial_dim);
+
+      T val = 0.0;
+      for (int kk = 0; kk < spatial_dim; kk++) {
+        for (int ll = 0; ll < spatial_dim; ll++) {
+          val += coef_grad(kk, ll) * nxi[kk] * nxj[ll];
+        }
+      }
+      elem_jac[j + i * dof_per_element] += val + coef_val * ni * nj;
     }
   }
 }

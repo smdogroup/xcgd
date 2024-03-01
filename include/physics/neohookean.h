@@ -9,11 +9,12 @@
 automatically differentiated */
 template <typename T, int spatial_dim_>
 class NeohookeanPhysics final
-    : public PhysicsBase<T, spatial_dim_, spatial_dim_> {
+    : public PhysicsBase<T, spatial_dim_, 0, spatial_dim_> {
  private:
-  using PhysicsBase = PhysicsBase<T, spatial_dim_, spatial_dim_>;
+  using PhysicsBase = PhysicsBase<T, spatial_dim_, 0, spatial_dim_>;
 
  public:
+  using PhysicsBase::data_per_node;
   using PhysicsBase::dof_per_node;
   using PhysicsBase::spatial_dim;
 

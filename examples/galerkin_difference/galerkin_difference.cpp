@@ -36,11 +36,11 @@ void solve_poisson(T *lxy, Basis &basis, std::string name) {
 
   // Compute Jacobian matrix
   std::vector<T> dof(ndof, 0.0);
-  analysis.jacobian(dof.data(), jac_bsr);
+  analysis.jacobian(nullptr, dof.data(), jac_bsr);
 
   // Store right hand size to sol
   std::vector<T> sol(ndof);
-  analysis.residual(dof.data(), sol.data());
+  analysis.residual(nullptr, dof.data(), sol.data());
   for (int i = 0; i < sol.size(); i++) {
     sol[i] *= -1.0;
   }

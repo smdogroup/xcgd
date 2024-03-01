@@ -44,9 +44,9 @@ int main(int argc, char *argv[]) {
   Analysis analysis(basis, physics);
 
   // Allocate space for the residual
-  T energy = analysis.energy(dof);
-  analysis.residual(dof, res);
-  analysis.jacobian_product(dof, direction, Jp);
+  T energy = analysis.energy(nullptr, dof);
+  analysis.residual(nullptr, dof, res);
+  analysis.jacobian_product(nullptr, dof, direction, Jp);
 
   T pres = 0.0, pJp = 0.0;
   for (int i = 0; i < ndof; i++) {

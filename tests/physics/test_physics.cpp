@@ -43,9 +43,9 @@ void test_physics(Basis &basis, Physics &physics, std::string name,
   using Analysis = GalerkinAnalysis<T, Basis, Physics>;
   Analysis analysis(basis, physics);
 
-  T energy = analysis.energy(dof);
-  analysis.residual(dof, res);
-  analysis.jacobian_product(dof, direction, Jp);
+  T energy = analysis.energy(nullptr, dof);
+  analysis.residual(nullptr, dof, res);
+  analysis.jacobian_product(nullptr, dof, direction, Jp);
 
   double dres_cs = energy.imag() / h;
   double dres_exact = 0.0;
@@ -85,7 +85,7 @@ void test_physics(Basis &basis, Physics &physics, std::string name,
   int nnz = rowp[num_nodes];
   using BSRMat = GalerkinBSRMat<T, Physics::dof_per_node>;
   BSRMat *jac_bsr = new BSRMat(num_nodes, nnz, rowp, cols);
-  analysis.jacobian(dof, jac_bsr);
+  analysis.jacobian(nullptr, dof, jac_bsr);
   jac_bsr->axpy(direction, Jp_axpy);
 
   jac_bsr->write_mtx("Jacobian_" + name + ".mtx");

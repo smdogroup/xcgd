@@ -46,7 +46,7 @@ class GalerkinAnalysis final {
   }
 
   template <int dim>
-  void add_element_res_new(int e, const T element_res[], T res[]) const {
+  void add_element_res(int e, const T element_res[], T res[]) const {
     int nodes[nodes_per_element];
     basis.mesh.get_elem_dof_nodes(e, nodes);
     for (int j = 0; j < nodes_per_element; j++) {
@@ -56,18 +56,7 @@ class GalerkinAnalysis final {
     }
   }
 
-  template <int dim>
-  void add_element_res(const int nodes[], const T element_res[],
-                       T res[]) const {
-    for (int j = 0; j < nodes_per_element; j++) {
-      int node = nodes[j];
-      for (int k = 0; k < dim; k++, element_res++) {
-        res[dim * node + k] += element_res[0];
-      }
-    }
-  }
-
-  T energy(const T dof[]) const {
+  T energy(const T x[], const T dof[]) const {
     T total_energy = 0.0;
 
     for (int i = 0; i < basis.mesh.get_num_elements(); i++) {
@@ -97,10 +86,10 @@ class GalerkinAnalysis final {
         eval_grad<T, Basis, spatial_dim>(i, element_xloc, &Nxi[offset_nxi], J);
 
         // Evaluate the derivative of the dof in the computational coordinates
-        A2D::Vec<T, dof_per_node> vals;
-        A2D::Mat<T, dof_per_node, spatial_dim> grad;
-        eval_val_grad<T, Basis, dof_per_node>(i, element_dof, &N[offset_n],
-                                              &Nxi[offset_nxi], vals, grad);
+        typename Physics::dof_t vals;
+        typename Physics::grad_t grad;
+        eval_val_grad<T, Basis>(i, element_dof, &N[offset_n], &Nxi[offset_nxi],
+                                vals, grad);
 
         // Add the energy contributions
         total_energy += physics.energy(wts[j], J, vals, grad);
@@ -110,7 +99,7 @@ class GalerkinAnalysis final {
     return total_energy;
   }
 
-  void residual(const T dof[], T res[]) const {
+  void residual(const T x[], const T dof[], T res[]) const {
     for (int i = 0; i < basis.mesh.get_num_elements(); i++) {
       // Get the element node locations
       T element_xloc[spatial_dim * nodes_per_element];
@@ -144,26 +133,27 @@ class GalerkinAnalysis final {
         eval_grad<T, Basis, spatial_dim>(i, element_xloc, &Nxi[offset_nxi], J);
 
         // Evaluate the derivative of the dof in the computational coordinates
-        A2D::Vec<T, dof_per_node> vals;
-        A2D::Mat<T, dof_per_node, spatial_dim> grad;
-        eval_val_grad<T, Basis, dof_per_node>(i, element_dof, &N[offset_n],
-                                              &Nxi[offset_nxi], vals, grad);
+        typename Physics::dof_t vals;
+        typename Physics::grad_t grad;
+        eval_val_grad<T, Basis>(i, element_dof, &N[offset_n], &Nxi[offset_nxi],
+                                vals, grad);
 
         // Evaluate the residuals at the quadrature points
-        A2D::Vec<T, dof_per_node> coef_vals;
-        A2D::Mat<T, dof_per_node, spatial_dim> coef_grad;
+        typename Physics::dof_t coef_vals;
+        typename Physics::grad_t coef_grad;
         physics.residual(wts[j], J, vals, grad, coef_vals, coef_grad);
 
         // Add the contributions to the element residual
-        add_grad<T, Basis, dof_per_node>(i, &N[offset_n], &Nxi[offset_nxi],
-                                         coef_vals, coef_grad, element_res);
+        add_grad<T, Basis>(i, &N[offset_n], &Nxi[offset_nxi], coef_vals,
+                           coef_grad, element_res);
       }
 
-      add_element_res_new<dof_per_node>(i, element_res, res);
+      add_element_res<dof_per_node>(i, element_res, res);
     }
   }
 
-  void jacobian_product(const T dof[], const T direct[], T res[]) const {
+  void jacobian_product(const T x[], const T dof[], const T direct[],
+                        T res[]) const {
     for (int i = 0; i < basis.mesh.get_num_elements(); i++) {
       // Get the element node locations
       T element_xloc[spatial_dim * nodes_per_element];
@@ -201,35 +191,35 @@ class GalerkinAnalysis final {
         eval_grad<T, Basis, spatial_dim>(i, element_xloc, &Nxi[offset_nxi], J);
 
         // Evaluate the derivative of the dof in the computational coordinates
-        A2D::Vec<T, dof_per_node> vals;
-        A2D::Mat<T, dof_per_node, spatial_dim> grad;
-        eval_val_grad<T, Basis, dof_per_node>(i, element_dof, &N[offset_n],
-                                              &Nxi[offset_nxi], vals, grad);
+        typename Physics::dof_t vals;
+        typename Physics::grad_t grad;
+        eval_val_grad<T, Basis>(i, element_dof, &N[offset_n], &Nxi[offset_nxi],
+                                vals, grad);
 
         // Evaluate the derivative of the direction in the computational
         // coordinates
-        A2D::Vec<T, dof_per_node> direct_vals;
-        A2D::Mat<T, dof_per_node, spatial_dim> direct_grad;
-        eval_val_grad<T, Basis, dof_per_node>(i, element_direct, &N[offset_n],
-                                              &Nxi[offset_nxi], direct_vals,
-                                              direct_grad);
+        typename Physics::dof_t direct_vals;
+        typename Physics::grad_t direct_grad;
+        eval_val_grad<T, Basis>(i, element_direct, &N[offset_n],
+                                &Nxi[offset_nxi], direct_vals, direct_grad);
 
         // Evaluate the residuals at the quadrature points
-        A2D::Vec<T, dof_per_node> coef_vals;
-        A2D::Mat<T, dof_per_node, spatial_dim> coef_grad;
+        typename Physics::dof_t coef_vals;
+        typename Physics::grad_t coef_grad;
         physics.jacobian_product(wts[j], J, vals, grad, direct_vals,
                                  direct_grad, coef_vals, coef_grad);
 
         // Add the contributions to the element residual
-        add_grad<T, Basis, dof_per_node>(i, &N[offset_n], &Nxi[offset_nxi],
-                                         coef_vals, coef_grad, element_res);
+        add_grad<T, Basis>(i, &N[offset_n], &Nxi[offset_nxi], coef_vals,
+                           coef_grad, element_res);
       }
 
-      add_element_res_new<dof_per_node>(i, element_res, res);
+      add_element_res<dof_per_node>(i, element_res, res);
     }
   }
 
-  void jacobian(const T dof[], GalerkinBSRMat<T, dof_per_node>* mat) const {
+  void jacobian(const T x[], const T dof[],
+                GalerkinBSRMat<T, dof_per_node>* mat) const {
     for (int i = 0; i < basis.mesh.get_num_elements(); i++) {
       // Get the element node locations
       T element_xloc[spatial_dim * nodes_per_element];
@@ -263,20 +253,20 @@ class GalerkinAnalysis final {
         eval_grad<T, Basis, spatial_dim>(i, element_xloc, &Nxi[offset_nxi], J);
 
         // Evaluate the derivative of the dof in the computational coordinates
-        A2D::Vec<T, dof_per_node> vals;
-        A2D::Mat<T, dof_per_node, spatial_dim> grad;
-        eval_val_grad<T, Basis, dof_per_node>(i, element_dof, &N[offset_n],
-                                              &Nxi[offset_nxi], vals, grad);
+        typename Physics::dof_t vals;
+        typename Physics::grad_t grad;
+        eval_val_grad<T, Basis>(i, element_dof, &N[offset_n], &Nxi[offset_nxi],
+                                vals, grad);
 
         // Evaluate the residuals at the quadrature points
-        A2D::Mat<T, dof_per_node, dof_per_node> coef_vals;
+        typename Physics::jac_t jac_vals;
         A2D::Mat<T, dof_per_node * spatial_dim, dof_per_node * spatial_dim>
-            coef_grad;
-        physics.jacobian(wts[j], J, vals, grad, coef_vals, coef_grad);
+            jac_grad;
+        physics.jacobian(wts[j], J, vals, grad, jac_vals, jac_grad);
 
         // Add the contributions to the element residual
-        add_matrix<T, Basis, dof_per_node>(i, &N[offset_n], &Nxi[offset_nxi],
-                                           coef_vals, coef_grad, element_jac);
+        add_matrix<T, Basis>(i, &N[offset_n], &Nxi[offset_nxi], jac_vals,
+                             jac_grad, element_jac);
       }
 
       mat->add_block_values(i, nodes_per_element, basis, element_jac);

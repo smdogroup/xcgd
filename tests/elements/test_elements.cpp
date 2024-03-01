@@ -74,27 +74,25 @@ TEST(ElementTest, GalerkinDiff2D) {
   }
 }
 
-template <typename T, int spatial_dim, int dof_per_node>
-class Integration final : public PhysicsBase<T, spatial_dim, dof_per_node> {
+template <typename T, int spatial_dim>
+class Integration final : public PhysicsBase<T, spatial_dim, 0, 1> {
  public:
-  T energy(T weight, const A2D::Mat<T, spatial_dim, spatial_dim>& J,
-           A2D::Vec<T, dof_per_node>& vals,
-           A2D::Mat<T, dof_per_node, spatial_dim>& grad) const {
+  T energy(T weight, const A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
+           A2D::Vec<T, spatial_dim>& grad) const {
     T detJ;
     A2D::MatDet(J, detJ);
-    return weight * detJ * vals(0);
+    return weight * detJ * val;
   }
 };
 
 template <typename T, class Basis>
 T hypercircle_area(typename Basis::Mesh& mesh,
                    const T pt0[Basis::spatial_dim]) {
-  constexpr int dof_per_node = 1;
-  using Physics = Integration<T, Basis::spatial_dim, dof_per_node>;
+  using Physics = Integration<T, Basis::spatial_dim>;
   using Analysis = GalerkinAnalysis<T, Basis, Physics>;
   constexpr int spatial_dim = Basis::spatial_dim;
 
-  std::vector<double> dof(mesh.get_num_nodes() * dof_per_node, 0.0);
+  std::vector<double> dof(mesh.get_num_nodes() * Physics::dof_per_node, 0.0);
 
   // Set the circle/sphere
   for (int i = 0; i < mesh.get_num_nodes(); i++) {
@@ -113,7 +111,7 @@ T hypercircle_area(typename Basis::Mesh& mesh,
   Physics physics;
   Analysis analysis(basis, physics);
 
-  return analysis.energy(dof.data());
+  return analysis.energy(nullptr, dof.data());
 }
 
 TEST(IntegrationTest, Quad) {

@@ -67,7 +67,7 @@ int main(int argc, char *argv[]) {
   StopWatch watch;
   Basis basis(mesh);
   Analysis analysis(basis, physics);
-  analysis.jacobian(dof, jac_bsr);
+  analysis.jacobian(nullptr, dof, jac_bsr);
   double t1 = watch.lap();
   std::printf("Jacobian assembly time: %.3e s\n", t1);
 
