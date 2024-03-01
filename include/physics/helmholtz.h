@@ -13,32 +13,82 @@ class HelmholtzPhysics final : public PhysicsBase<T, spatial_dim_, 1, 1> {
   using PhysicsBase::dof_per_node;
   using PhysicsBase::spatial_dim;
 
-  HelmholtzPhysics(T r0) : r0(r0) {}
+  HelmholtzPhysics(T r0) : r0square(r0 * r0) {}
 
-  T energy(T weight, const A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
-           A2D::Vec<T, spatial_dim>& grad) const {
+  T energy(T weight, T x, const A2D::Mat<T, spatial_dim, spatial_dim>& J,
+           T& val, A2D::Vec<T, spatial_dim>& grad) const {
     T detJ, dot;
     A2D::MatDet(J, detJ);
     A2D::VecDot(grad, grad, dot);
-    return 0.5 * weight * detJ * (val * val + r0 * r0 * dot - 2.0 * val * x);
+    return 0.5 * weight * detJ * (val * val + r0square * dot - 2.0 * val * x);
   }
 
-  void residual(T weight, A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
+  void residual(T weight, T x, A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
                 A2D::Vec<T, spatial_dim>& grad, T& coef_val,
-                A2D::Vec<T, spatial_dim>& coef_grad) const {}
+                A2D::Vec<T, spatial_dim>& coef_grad) const {
+    A2D::ADObj<T> dot_obj, output_obj, detJ_obj;
+    A2D::ADObj<T&> u_obj(val, coef_val);
+    A2D::ADObj<A2D::Vec<T, spatial_dim>&> grad_obj(grad, coef_grad);
+    A2D::ADObj<A2D::Mat<T, spatial_dim, spatial_dim>> J_obj(J);
 
-  void jacobian_product(T weight, A2D::Mat<T, spatial_dim, spatial_dim>& J,
+    auto stack = A2D::MakeStack(
+        A2D::MatDet(J_obj, detJ_obj), A2D::VecDot(grad_obj, grad_obj, dot_obj),
+        A2D::Eval(0.5 * weight * detJ_obj *
+                      (u_obj * u_obj + r0square * dot_obj - 2.0 * u_obj * x),
+                  output_obj));
+
+    output_obj.bvalue() = 1.0;
+    stack.reverse();
+  }
+
+  void jacobian_product(T weight, T x, A2D::Mat<T, spatial_dim, spatial_dim>& J,
                         T& val, A2D::Vec<T, spatial_dim>& grad, T& direct_val,
                         A2D::Vec<T, spatial_dim>& direct_grad, T& coef_val,
-                        A2D::Vec<T, spatial_dim>& coef_grad) const {}
+                        A2D::Vec<T, spatial_dim>& coef_grad) const {
+    A2D::Vec<T, spatial_dim> bgrad;
+    T ub = 0.0;
 
-  void jacobian(T weight, A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
+    A2D::A2DObj<T> dot_obj, output_obj, detJ_obj;
+    A2D::A2DObj<T&> u_obj(val, ub, direct_val, coef_val);
+    A2D::A2DObj<A2D::Vec<T, spatial_dim>&> grad_obj(grad, bgrad, direct_grad,
+                                                    coef_grad);
+    A2D::A2DObj<A2D::Mat<T, spatial_dim, spatial_dim>> J_obj(J);
+
+    auto stack = A2D::MakeStack(
+        A2D::MatDet(J_obj, detJ_obj), A2D::VecDot(grad_obj, grad_obj, dot_obj),
+        A2D::Eval(0.5 * weight * detJ_obj *
+                      (u_obj * u_obj + r0square * dot_obj - 2.0 * u_obj * x),
+                  output_obj));
+
+    output_obj.bvalue() = 1.0;
+    stack.hproduct();
+  }
+
+  void jacobian(T weight, T x, A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
                 A2D::Vec<T, spatial_dim>& grad, T& jac_val,
                 A2D::Mat<T, dof_per_node * spatial_dim,
-                         dof_per_node * spatial_dim>& jac_grad) const {}
+                         dof_per_node * spatial_dim>& jac_grad) const {
+    A2D::Vec<T, spatial_dim> bgrad, pgrad, hgrad;
+    T ub = 0.0, up = 1.0;
+
+    A2D::A2DObj<T> dot_obj, output_obj, detJ_obj;
+    A2D::A2DObj<T&> u_obj(val, ub, up, jac_val);
+
+    A2D::A2DObj<A2D::Vec<T, spatial_dim>&> grad_obj(grad, bgrad, pgrad, hgrad);
+    A2D::A2DObj<A2D::Mat<T, spatial_dim, spatial_dim>> J_obj(J);
+
+    auto stack = A2D::MakeStack(
+        A2D::MatDet(J_obj, detJ_obj), A2D::VecDot(grad_obj, grad_obj, dot_obj),
+        A2D::Eval(0.5 * weight * detJ_obj *
+                      (u_obj * u_obj + r0square * dot_obj - 2.0 * u_obj * x),
+                  output_obj));
+
+    output_obj.bvalue() = 1.0;
+    stack.hextract(pgrad, hgrad, jac_grad);
+  }
 
  private:
-  T r0;
+  T r0square;
 };
 
 #endif  // XCGD_HELMHOLTZ_H
