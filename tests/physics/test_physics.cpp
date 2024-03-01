@@ -126,7 +126,10 @@ TetrahedralBasis<T> *create_tet_basis() {
   int *element_nodes;
   T *xloc;
 
-  create_single_element_mesh(&num_elements, &num_nodes, &element_nodes, &xloc);
+  int nxyz[3] = {2, 2, 2};
+  T lxyz[3] = {1.1, 1.2, 1.3};
+  create_3d_box_tet_mesh(nxyz, lxyz, &num_elements, &num_nodes, &element_nodes,
+                         &xloc);
   using Basis = TetrahedralBasis<T>;
   using Mesh = typename Basis::Mesh;
   Mesh *mesh = new Mesh(num_elements, num_nodes, element_nodes, xloc);

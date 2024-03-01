@@ -94,8 +94,8 @@ class GalerkinAnalysis final {
                                                &Nxi[offset_nxi], nullptr, &J);
 
         // Evaluate the derivative of the dof in the computational coordinates
-        typename Physics::dof_t vals;
-        typename Physics::grad_t grad;
+        typename Physics::dof_t vals{};
+        typename Physics::grad_t grad{};
         interp_val_grad<T, Basis>(i, element_dof, &N[offset_n],
                                   &Nxi[offset_nxi], &vals, &grad);
 
@@ -154,14 +154,14 @@ class GalerkinAnalysis final {
                                                &Nxi[offset_nxi], nullptr, &J);
 
         // Evaluate the derivative of the dof in the computational coordinates
-        typename Physics::dof_t vals;
-        typename Physics::grad_t grad;
+        typename Physics::dof_t vals{};
+        typename Physics::grad_t grad{};
         interp_val_grad<T, Basis>(i, element_dof, &N[offset_n],
                                   &Nxi[offset_nxi], &vals, &grad);
 
         // Evaluate the residuals at the quadrature points
-        typename Physics::dof_t coef_vals;
-        typename Physics::grad_t coef_grad;
+        typename Physics::dof_t coef_vals{};
+        typename Physics::grad_t coef_grad{};
         if (x) {
           interp_val_grad<T, Basis>(i, element_x.data(), &N[offset_n], nullptr,
                                     &xq, nullptr);
@@ -225,21 +225,21 @@ class GalerkinAnalysis final {
                                                &Nxi[offset_nxi], nullptr, &J);
 
         // Evaluate the derivative of the dof in the computational coordinates
-        typename Physics::dof_t vals;
-        typename Physics::grad_t grad;
+        typename Physics::dof_t vals{};
+        typename Physics::grad_t grad{};
         interp_val_grad<T, Basis>(i, element_dof, &N[offset_n],
                                   &Nxi[offset_nxi], &vals, &grad);
 
         // Evaluate the derivative of the direction in the computational
         // coordinates
-        typename Physics::dof_t direct_vals;
-        typename Physics::grad_t direct_grad;
+        typename Physics::dof_t direct_vals{};
+        typename Physics::grad_t direct_grad{};
         interp_val_grad<T, Basis>(i, element_direct, &N[offset_n],
                                   &Nxi[offset_nxi], &direct_vals, &direct_grad);
 
         // Evaluate the residuals at the quadrature points
-        typename Physics::dof_t coef_vals;
-        typename Physics::grad_t coef_grad;
+        typename Physics::dof_t coef_vals{};
+        typename Physics::grad_t coef_grad{};
         if (x) {
           interp_val_grad<T, Basis>(i, element_x.data(), &N[offset_n], nullptr,
                                     &xq, nullptr);
@@ -300,13 +300,13 @@ class GalerkinAnalysis final {
                                                &Nxi[offset_nxi], nullptr, &J);
 
         // Evaluate the derivative of the dof in the computational coordinates
-        typename Physics::dof_t vals;
-        typename Physics::grad_t grad;
+        typename Physics::dof_t vals{};
+        typename Physics::grad_t grad{};
         interp_val_grad<T, Basis>(i, element_dof, &N[offset_n],
                                   &Nxi[offset_nxi], &vals, &grad);
 
         // Evaluate the residuals at the quadrature points
-        typename Physics::jac_t jac_vals;
+        typename Physics::jac_t jac_vals{};
         A2D::Mat<T, dof_per_node * spatial_dim, dof_per_node * spatial_dim>
             jac_grad;
         if (x) {

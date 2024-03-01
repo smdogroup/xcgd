@@ -22,7 +22,7 @@ void solve_helmholtz(T *lxy, T *pt0, T r, T r0, Basis &basis,
   Physics physics(r0);
   Analysis analysis(basis, physics);
 
-  int ndof = Basis::spatial_dim * basis.mesh.get_num_nodes();
+  int ndof = basis.mesh.get_num_nodes();
 
   // Set up Jacobian matrix
   int *rowp = nullptr, *cols = nullptr;
@@ -54,14 +54,11 @@ void solve_helmholtz(T *lxy, T *pt0, T r, T r0, Basis &basis,
   analysis.jacobian(x.data(), dof.data(), jac_bsr);
 
   // Store right hand size to sol
-  std::vector<T> sol(ndof);
+  std::vector<T> sol(ndof, 0.0);
   analysis.residual(x.data(), dof.data(), sol.data());
   for (int i = 0; i < sol.size(); i++) {
     sol[i] *= -1.0;
   }
-
-  // // TODO: remove this
-  // sol = x;
 
   T x_2norm = 0.0, rhs_2norm = 0.0;
   for (int i = 0; i < ndof; i++) {
@@ -100,6 +97,7 @@ void solve_helmholtz(T *lxy, T *pt0, T r, T r0, Basis &basis,
   vtk.write_mesh();
   vtk.write_sol("x", x.data());
   vtk.write_sol("u", sol.data());
+  vtk.write_sol("rhs", rhs.data());
 }
 
 void solve_helmholtz_fem() {
@@ -112,7 +110,7 @@ void solve_helmholtz_fem() {
   int nxy[2] = {64, 64};
   T lxy[2] = {3.0, 3.0};
   T pt0[2] = {1.5, 1.5};
-  T r = 1.0, r0 = 0.1;
+  T r = 1.0, r0 = 5.0;
   create_2d_rect_quad_mesh(nxy, lxy, &num_elements, &num_nodes, &element_nodes,
                            &xloc);
 
@@ -127,10 +125,10 @@ void solve_helmholtz_gd() {
   int constexpr Np_1d = 4;
   using Grid = StructuredGrid2D<T>;
   using Basis = GDBasis2D<T, Np_1d>;
-  int nxy[2] = {32, 32};
+  int nxy[2] = {64, 64};
   T lxy[2] = {3.0, 3.0};
   T pt0[2] = {1.5, 1.5};
-  T r = 1.0, r0 = 0.1;
+  T r = 1.0, r0 = 5.0;
   Grid grid(nxy, lxy);
   Basis::Mesh mesh(grid);
   Basis basis(mesh);
