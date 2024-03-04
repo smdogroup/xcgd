@@ -210,7 +210,7 @@ template <typename T, int spatial_dim>
 class FieldToVTK {
  public:
   FieldToVTK(const std::string vtk_name = "field.vtk") {
-    fp = std::fopen(vtk_name.c_str(), "w");
+    fp = std::fopen(vtk_name.c_str(), "w+");
 
     // Write header
     std::fprintf(fp, "# vtk DataFile Version 3.0\n");
@@ -252,7 +252,8 @@ class FieldToVTK {
 
     // Write field data
     std::fprintf(fp, "POINT_DATA %d \n", nverts);
-    std::fprintf(fp, "SCALARS scalar double\n");
+    std::fprintf(fp, "SCALARS scalar double 1\n");
+    std::fprintf(fp, "LOOKUP_TABLE default\n");
     for (T s : scalars) {
       write_real_val(fp, s);
       std::fprintf(fp, "\n");

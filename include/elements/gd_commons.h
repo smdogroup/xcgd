@@ -10,11 +10,18 @@ class StructuredGrid2D final {
   /**
    * @param nxy_ numbers of elements in x, y directions
    * @param lxy_ lengths of the grid in x, y directions
+   * @param lxy_ origin (x, y) of the grid
    */
-  StructuredGrid2D(const int* nxy_, const T* lxy_) {
+  StructuredGrid2D(const int* nxy_, const T* lxy_, const T* xy0_ = nullptr) {
     for (int d = 0; d < spatial_dim; d++) {
       nxy[d] = nxy_[d];
-      lxy[d] = lxy_[d];
+      if (xy0_) {
+        xy0[d] = xy0_[d];
+        lxy[d] = lxy_[d] - xy0_[d];
+      } else {
+        xy0[d] = 0.0;
+        lxy[d] = lxy_[d];
+      }
     }
   }
 
@@ -62,17 +69,19 @@ class StructuredGrid2D final {
       int nij[spatial_dim];
       get_vert_coords(vert, nij);
       for (int d = 0; d < spatial_dim; d++) {
-        xloc[d] = lxy[d] * T(nij[d]) / T(nxy[d]);
+        xloc[d] = xy0[d] + lxy[d] * T(nij[d]) / T(nxy[d]);
       }
     }
   }
 
   const int* get_nxy() const { return nxy; };
   const T* get_lxy() const { return lxy; };
+  const T* get_xy0() const { return xy0; };
 
  private:
   int nxy[spatial_dim];
   T lxy[spatial_dim];
+  T xy0[spatial_dim];
 };
 
 template <typename T, int Np_1d>
