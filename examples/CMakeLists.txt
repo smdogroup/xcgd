@@ -1,7 +1,6 @@
 add_subdirectory(jacobian_vector_product)
 add_subdirectory(direct_solve)
-add_subdirectory(level_set)
+add_subdirectory(pi_study)
 add_subdirectory(galerkin_difference)
 add_subdirectory(vtk)
 add_subdirectory(helmholtz)
-add_subdirectory(interpolation)
