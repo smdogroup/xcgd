@@ -205,4 +205,68 @@ class ToVTK {
   bool vtk_has_sol_header = false;
 };
 
+// TODO: finish this
+template <typename T, int spatial_dim>
+class FieldToVTK {
+ public:
+  FieldToVTK(const std::string vtk_name = "field.vtk") {
+    fp = std::fopen(vtk_name.c_str(), "w");
+
+    // Write header
+    std::fprintf(fp, "# vtk DataFile Version 3.0\n");
+    std::fprintf(fp, "my example\n");
+    std::fprintf(fp, "ASCII\n");
+    std::fprintf(fp, "DATASET UNSTRUCTURED_GRID\n");
+  }
+
+  // void add_vector_field(std::vector<T> xloc, std::vector<T> vecs) {}
+
+  void add_scalar_field(std::vector<T> xloc, std::vector<T> vals) {
+    xloc_scalars.insert(xloc_scalars.end(), xloc.begin(), xloc.end());
+    scalars.insert(scalars.end(), vals.begin(), vals.end());
+  }
+
+  void write_vtk() {
+    int nverts = scalars.size();
+    if (nverts * spatial_dim != xloc_scalars.size()) {
+      char msg[256];
+      std::snprintf(msg, 256,
+                    "incompatible scalars (size %d) and xloc_scalars (size "
+                    "%d) for the %d dimentional problem",
+                    (int)scalars.size(), (int)xloc_scalars.size(), spatial_dim);
+      throw std::runtime_error(msg);
+    }
+
+    // Write vertices
+    std::fprintf(fp, "POINTS %d double\n", nverts);
+    for (int i = 0; i < xloc_scalars.size(); i += spatial_dim) {
+      write_real_val(fp, xloc_scalars[i]);
+      write_real_val(fp, xloc_scalars[i + 1]);
+      if (spatial_dim == 2) {
+        write_real_val(fp, 0.0);
+      } else {
+        write_real_val(fp, xloc_scalars[i + 2]);
+      }
+      std::fprintf(fp, "\n");
+    }
+
+    // Write field data
+    std::fprintf(fp, "POINT_DATA %d \n", nverts);
+    std::fprintf(fp, "SCALARS scalar double\n");
+    for (T s : scalars) {
+      write_real_val(fp, s);
+      std::fprintf(fp, "\n");
+    }
+  }
+
+  ~FieldToVTK() { std::fclose(fp); }
+
+ private:
+  std::FILE* fp;
+  // std::vector<T> xloc_vectors;
+  // std::vector<T> vectors;
+  std::vector<T> xloc_scalars;
+  std::vector<T> scalars;
+};
+
 #endif  // XCGD_VTK_H

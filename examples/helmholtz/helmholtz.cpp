@@ -19,8 +19,9 @@ void solve_helmholtz(T *lxy, T *pt0, T r, T r0, Basis &basis,
   using BSRMat = GalerkinBSRMat<T, Physics::dof_per_node>;
   using CSCMat = SparseUtils::CSCMat<T>;
 
+  typename Basis::Quadrature quadrature(basis.mesh);
   Physics physics(r0);
-  Analysis analysis(basis, physics);
+  Analysis analysis(quadrature, basis, physics);
 
   int ndof = basis.mesh.get_num_nodes();
 

@@ -6,6 +6,11 @@ template <typename T>
 class StructuredGrid2D final {
  public:
   static constexpr int spatial_dim = 2;
+
+  /**
+   * @param nxy_ numbers of elements in x, y directions
+   * @param lxy_ lengths of the grid in x, y directions
+   */
   StructuredGrid2D(const int* nxy_, const T* lxy_) {
     for (int d = 0; d < spatial_dim; d++) {
       nxy[d] = nxy_[d];

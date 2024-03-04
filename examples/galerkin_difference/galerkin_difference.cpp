@@ -17,7 +17,8 @@ void solve_poisson(T *lxy, Basis &basis, std::string name) {
   using CSCMat = SparseUtils::CSCMat<T>;
 
   Physics physics;
-  Analysis analysis(basis, physics);
+  typename Basis::Quadrature quadrature(basis.mesh);
+  Analysis analysis(quadrature, basis, physics);
 
   int ndof = Basis::spatial_dim * basis.mesh.get_num_nodes();
 

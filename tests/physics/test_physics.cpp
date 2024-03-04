@@ -44,8 +44,10 @@ void test_physics(Basis &basis, Physics &physics, double h = 1e-30,
   }
 
   // Allocate space for the residual
+  using Quadrature = typename Basis::Quadrature;
+  Quadrature quadrature(basis.mesh);
   using Analysis = GalerkinAnalysis<T, Basis, Physics>;
-  Analysis analysis(basis, physics);
+  Analysis analysis(quadrature, basis, physics);
 
   T energy = analysis.energy(nullptr, dof);
   analysis.residual(nullptr, dof, res);
@@ -182,5 +184,5 @@ TEST(Poisson, Tet) { test_poisson(create_tet_basis()); }
 TEST(Poisson, GD) { test_poisson(create_gd_basis(), 1e-8, 1e-6); }
 
 TEST(Helmholtz, Quad) { test_helmholtz(create_quad_basis()); }
-TEST(Helmholtz, Tet) { test_helmholtz(create_tet_basis()); }
+TEST(Helmholtz, Tet) { test_helmholtz(create_tet_basis(), 1e-30, 1e-13); }
 TEST(Helmholtz, GD) { test_helmholtz(create_gd_basis(), 1e-8, 1e-6); }

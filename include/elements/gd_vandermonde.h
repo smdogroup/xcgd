@@ -15,31 +15,16 @@
 #include "utils/linalg.h"
 #include "utils/misc.h"
 
-/**
- * Galerkin difference basis given a set of stencil nodes
- *
- * @tparam Np_1d number of nodes along one dimension, number of stencil nodes
- *               should be Np_1d^2, Np_1d >= 2, Np_1d should be even
- */
-template <typename T, int Np_1d>
-class GDBasis2D final : public BasisBase<T, Np_1d * Np_1d, GDMesh2D<T, Np_1d>> {
+template <typename T, int Np_1d, class Mesh_ = GDMesh2D<T, Np_1d>>
+class GDQuadrature2D final : public QuadratureBase<T, Np_1d * Np_1d, Mesh_> {
  private:
-  // algoim limit, see gaussquad.hpp
-  static_assert(Np_1d <= algoim::GaussQuad::p_max);  // algoim limit
-  using BasisBase = BasisBase<T, Np_1d * Np_1d, GDMesh2D<T, Np_1d>>;
+  using QuadratureBase = QuadratureBase<T, Np_1d * Np_1d, Mesh_>;
 
  public:
-  using BasisBase::nodes_per_element;
-  using BasisBase::num_quadrature_pts;
-  using BasisBase::spatial_dim;
-  using typename BasisBase::Mesh;
+  using QuadratureBase::num_quadrature_pts;
+  using typename QuadratureBase::Mesh;
 
- private:
-  static constexpr int Np = Mesh::nodes_per_element;
-  static constexpr int Nk = Mesh::nodes_per_element;
-
- public:
-  GDBasis2D(Mesh& mesh) : BasisBase(mesh) {
+  GDQuadrature2D(const Mesh& mesh) : QuadratureBase(mesh) {
     for (int i = 0; i < Np_1d; i++) {
       pts_1d[i] = algoim::GaussQuad::x(Np_1d, i);  // in [0, 1]
       wts_1d[i] = algoim::GaussQuad::w(Np_1d, i);
@@ -47,6 +32,7 @@ class GDBasis2D final : public BasisBase<T, Np_1d * Np_1d, GDMesh2D<T, Np_1d>> {
   }
 
   void get_quadrature_pts(int elem, T pts[], T wts[]) const {
+    int constexpr spatial_dim = Mesh::spatial_dim;
     T xy_min[spatial_dim], xy_max[spatial_dim];
     T uv_min[spatial_dim], uv_max[spatial_dim];
     this->mesh.get_elem_node_ranges(elem, xy_min, xy_max);
@@ -69,6 +55,37 @@ class GDBasis2D final : public BasisBase<T, Np_1d * Np_1d, GDMesh2D<T, Np_1d>> {
       wts[q] = wt * wts_1d[i] * wts_1d[j];
     }
   }
+
+ private:
+  std::array<T, Np_1d> pts_1d, wts_1d;
+};
+
+/**
+ * Galerkin difference basis given a set of stencil nodes
+ *
+ * @tparam Np_1d number of nodes along one dimension, number of stencil nodes
+ *               should be Np_1d^2, Np_1d >= 2, Np_1d should be even
+ */
+template <typename T, int Np_1d, class Quadrature_ = GDQuadrature2D<T, Np_1d>>
+class GDBasis2D final : public BasisBase<T, Quadrature_> {
+ private:
+  // algoim limit, see gaussquad.hpp
+  static_assert(Np_1d <= algoim::GaussQuad::p_max);  // algoim limit
+  using BasisBase = BasisBase<T, Quadrature_>;
+
+ public:
+  using BasisBase::nodes_per_element;
+  using BasisBase::num_quadrature_pts;
+  using BasisBase::spatial_dim;
+  using typename BasisBase::Mesh;
+  using typename BasisBase::Quadrature;
+
+ private:
+  static constexpr int Np = Mesh::nodes_per_element;
+  static constexpr int Nk = Mesh::nodes_per_element;
+
+ public:
+  GDBasis2D(Mesh& mesh) : BasisBase(mesh) {}
 
   void eval_basis_grad(int elem, const T* pts, T* N, T* Nxi) const {
     if (!N and !Nxi) return;
@@ -148,9 +165,6 @@ class GDBasis2D final : public BasisBase<T, Np_1d * Np_1d, GDMesh2D<T, Np_1d>> {
       }
     }
   }
-
- private:
-  std::array<T, Np_1d> pts_1d, wts_1d;
 };
 
 #endif  // XCGD_GALERKIN_DIFFERENCE_H

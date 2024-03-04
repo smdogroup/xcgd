@@ -30,6 +30,7 @@ int main(int argc, char *argv[]) {
                              &ndof_bcs, &dof_bcs);
 
   Basis::Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
+  Basis::Quadrature quadrature(mesh);
 
   ToVTK<T, typename Basis::Mesh> vtk(mesh);
 
@@ -66,7 +67,7 @@ int main(int argc, char *argv[]) {
 
   StopWatch watch;
   Basis basis(mesh);
-  Analysis analysis(basis, physics);
+  Analysis analysis(quadrature, basis, physics);
   analysis.jacobian(nullptr, dof, jac_bsr);
   double t1 = watch.lap();
   std::printf("Jacobian assembly time: %.3e s\n", t1);

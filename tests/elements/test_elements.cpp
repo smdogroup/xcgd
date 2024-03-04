@@ -107,9 +107,10 @@ T hypercircle_area(typename Basis::Mesh& mesh,
     }
   }
 
+  typename Basis::Quadrature quadrature(mesh);
   Basis basis(mesh);
   Physics physics;
-  Analysis analysis(basis, physics);
+  Analysis analysis(quadrature, basis, physics);
 
   return analysis.energy(nullptr, dof.data());
 }

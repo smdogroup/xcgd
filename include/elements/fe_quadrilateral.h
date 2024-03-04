@@ -3,18 +3,16 @@
 
 #include "fe_commons.h"
 
-template <typename T>
-class QuadrilateralBasis final : public BasisBase<T, 4, FEMesh<T, 2, 4>> {
+template <typename T, class Mesh_ = FEMesh<T, 2, 4>>
+class QuadrilateralQuadrature final : public QuadratureBase<T, 4, Mesh_> {
  private:
-  using BasisBase = BasisBase<T, 4, FEMesh<T, 2, 4>>;
+  using QuadratureBase = QuadratureBase<T, 4, Mesh_>;
 
  public:
-  using BasisBase::nodes_per_element;
-  using BasisBase::num_quadrature_pts;
-  using BasisBase::spatial_dim;
-  using typename BasisBase::Mesh;
+  using QuadratureBase::num_quadrature_pts;
+  using typename QuadratureBase::Mesh;
 
-  QuadrilateralBasis(Mesh& mesh) : BasisBase(mesh) {}
+  QuadrilateralQuadrature(const Mesh& mesh) : QuadratureBase(mesh) {}
 
   void get_quadrature_pts(int _, T pts[], T wts[]) const {
     pts[0] = -0.5773502692;
@@ -31,6 +29,21 @@ class QuadrilateralBasis final : public BasisBase<T, 4, FEMesh<T, 2, 4>> {
     wts[2] = 1.0;
     wts[3] = 1.0;
   }
+};
+
+template <typename T, class Quadrature_ = QuadrilateralQuadrature<T>>
+class QuadrilateralBasis final : public BasisBase<T, Quadrature_> {
+ private:
+  using BasisBase = BasisBase<T, Quadrature_>;
+
+ public:
+  using BasisBase::nodes_per_element;
+  using BasisBase::num_quadrature_pts;
+  using BasisBase::spatial_dim;
+  using typename BasisBase::Mesh;
+  using typename BasisBase::Quadrature;
+
+  QuadrilateralBasis(const Mesh& mesh) : BasisBase(mesh) {}
 
   void eval_basis_grad(int _, const T* pts, T* N, T* Nxi) const {
     for (int q = 0; q < num_quadrature_pts; q++) {

@@ -22,8 +22,9 @@ class GalerkinAnalysis final {
   // Derived static data
   static const int dof_per_element = dof_per_node * nodes_per_element;
 
-  GalerkinAnalysis(const Basis& basis, const Physics& physics)
-      : basis(basis), physics(physics) {}
+  GalerkinAnalysis(const typename Basis::Quadrature& quadrature,
+                   const Basis& basis, const Physics& physics)
+      : quadrature(quadrature), basis(basis), physics(physics) {}
 
   void get_element_xloc(int e, T element_xloc[]) const {
     int nodes[nodes_per_element];
@@ -77,7 +78,7 @@ class GalerkinAnalysis final {
 
       T pts[spatial_dim * num_quadrature_pts];
       T wts[num_quadrature_pts];
-      basis.get_quadrature_pts(i, pts, wts);
+      quadrature.get_quadrature_pts(i, pts, wts);
 
       T N[nodes_per_element * num_quadrature_pts];
       T Nxi[spatial_dim * nodes_per_element * num_quadrature_pts];
@@ -137,7 +138,7 @@ class GalerkinAnalysis final {
 
       T pts[spatial_dim * num_quadrature_pts];
       T wts[num_quadrature_pts];
-      basis.get_quadrature_pts(i, pts, wts);
+      quadrature.get_quadrature_pts(i, pts, wts);
 
       T N[nodes_per_element * num_quadrature_pts];
       T Nxi[spatial_dim * nodes_per_element * num_quadrature_pts];
@@ -208,7 +209,7 @@ class GalerkinAnalysis final {
 
       T pts[spatial_dim * num_quadrature_pts];
       T wts[num_quadrature_pts];
-      basis.get_quadrature_pts(i, pts, wts);
+      quadrature.get_quadrature_pts(i, pts, wts);
 
       T N[nodes_per_element * num_quadrature_pts];
       T Nxi[spatial_dim * nodes_per_element * num_quadrature_pts];
@@ -283,7 +284,7 @@ class GalerkinAnalysis final {
 
       T pts[spatial_dim * num_quadrature_pts];
       T wts[num_quadrature_pts];
-      basis.get_quadrature_pts(i, pts, wts);
+      quadrature.get_quadrature_pts(i, pts, wts);
 
       T N[nodes_per_element * num_quadrature_pts];
       T Nxi[spatial_dim * nodes_per_element * num_quadrature_pts];
@@ -325,6 +326,7 @@ class GalerkinAnalysis final {
   }
 
  private:
+  const typename Basis::Quadrature& quadrature;
   const Basis& basis;
   const Physics& physics;
 };

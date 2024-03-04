@@ -20,6 +20,7 @@ int main(int argc, char *argv[]) {
   load_mesh<T>(filename, &num_elements, &num_nodes, &element_nodes, &xloc);
 
   Basis::Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
+  typename Basis::Quadrature quadrature(mesh);
   Basis basis(mesh);
 
   // Set the number of degrees of freeom
@@ -41,7 +42,7 @@ int main(int argc, char *argv[]) {
   T C1 = 0.01;
   T D1 = 0.5;
   Physics physics(C1, D1);
-  Analysis analysis(basis, physics);
+  Analysis analysis(quadrature, basis, physics);
 
   // Allocate space for the residual
   T energy = analysis.energy(nullptr, dof);
