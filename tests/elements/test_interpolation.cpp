@@ -145,3 +145,19 @@ TEST(Interpolation, GD) {
     EXPECT_NEAR(vals[i], GDInterpData::vals[i], 1e-15);
   }
 }
+
+TEST(Interpolation, Demo) {
+  constexpr int samples_1d = 10;
+  int constexpr Np_1d = 4;
+  using Grid = StructuredGrid2D<T>;
+  using Mesh = GDMesh2D<T, Np_1d>;
+  using Quadrature = StructuredSampling2D<samples_1d, Mesh>;
+  using Basis = GDBasis2D<T, Np_1d, Quadrature>;
+
+  int nxy[2] = {3, 3};
+  T lxy[2] = {1.0, 1.0};
+  Grid grid(nxy, lxy);
+  Mesh mesh(grid);
+  std::vector<T> ptx, vals;
+  interpolate<Mesh, Basis>("demo", mesh, ptx, vals);
+}

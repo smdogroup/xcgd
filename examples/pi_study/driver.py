@@ -22,7 +22,7 @@ if __name__ == "__main__":
         n_list = []
 
         for n_ in tqdm(n):
-            cmd = ["./level_set", "%d" % n_, "%d" % q_]
+            cmd = ["./pi_study", "%d" % n_, "%d" % q_]
             output = subprocess.run(cmd, capture_output=True)
 
             h, err_native, nquads_native, err_algoim, nquads_algoim = (
@@ -37,7 +37,6 @@ if __name__ == "__main__":
 
             h_native_list.append(h)
             h_algoim_list.append(h)
-            # h_algoim_list.append(h * np.sqrt(nquads_native / nquads_algoim))
 
             err_native_list.append(err_native)
             err_algoim_list.append(err_algoim)
@@ -82,7 +81,7 @@ if __name__ == "__main__":
     axs[2].grid()
     axs[2].legend()
     axs[2].set_xlabel("n")
-    axs[2].set_ylabel(r"$\dfrac{\mathrm{num~Gauss~quads}}{\mathrm{num~Saye's~quads}}$")
+    axs[2].set_ylabel(r"$\dfrac{\mathrm{num~Saye's~quads}}{\mathrm{num~Gauss~quads}}$")
 
     fig.savefig("pi_study.pdf")
     plt.show()
