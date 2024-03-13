@@ -36,21 +36,25 @@ class QuadratureBase {
 };
 
 /**
- * @brief The abstract base class for a Galerkin (finite element or Galerkin
+ * @brief The base class for a Galerkin (finite element or Galerkin
  * difference) basis
+ *
+ * Note:
+ *  This class serves as a "template" for implementation, it is not an abstract
+ *  base class, so don't use the pointer/reference of this type to invoke
+ *  overloading methods in derived classes
  */
-template <typename T, class Quadrature_>
+template <typename T, class Mesh_>
 class BasisBase {
  public:
-  using Quadrature = Quadrature_;
-  using Mesh = typename Quadrature::Mesh;
+  using Mesh = Mesh_;
   static constexpr int spatial_dim = Mesh::spatial_dim;
   static constexpr int nodes_per_element = Mesh::nodes_per_element;
-  static constexpr int num_quadrature_pts = Quadrature::num_quadrature_pts;
 
   BasisBase(const Mesh& mesh) : mesh(mesh) {}
 
-  virtual void eval_basis_grad(int elem, const T* pts, T* N, T* Nxi) const = 0;
+  template <int num_quadrature_pts>
+  void eval_basis_grad(int elem, const T* pts, T* N, T* Nxi) const {};
 
   const Mesh& mesh;
 };

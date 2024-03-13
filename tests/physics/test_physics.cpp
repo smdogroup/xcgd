@@ -17,11 +17,14 @@
 
 using T = std::complex<double>;
 
-template <class Physics, class Basis>
-void test_physics(Basis &basis, Physics &physics, double h = 1e-30,
-                  double tol = 1e-14) {
-  int num_nodes = basis.mesh.get_num_nodes();
-  int num_elements = basis.mesh.get_num_elements();
+template <class Physics, class Quadrature, class Basis>
+void test_physics(std::tuple<Quadrature *, Basis *> tuple, Physics &physics,
+                  double h = 1e-30, double tol = 1e-14) {
+  Quadrature *quadrature = std::get<0>(tuple);
+  Basis *basis = std::get<1>(tuple);
+
+  int num_nodes = basis->mesh.get_num_nodes();
+  int num_elements = basis->mesh.get_num_elements();
 
   // Set the number of degrees of freeom
   int ndof = Physics::dof_per_node * num_nodes;
@@ -44,10 +47,8 @@ void test_physics(Basis &basis, Physics &physics, double h = 1e-30,
   }
 
   // Allocate space for the residual
-  using Quadrature = typename Basis::Quadrature;
-  Quadrature quadrature(basis.mesh);
-  using Analysis = GalerkinAnalysis<T, Basis, Physics>;
-  Analysis analysis(quadrature, basis, physics);
+  using Analysis = GalerkinAnalysis<T, Quadrature, Basis, Physics>;
+  Analysis analysis(*quadrature, *basis, physics);
 
   T energy = analysis.energy(nullptr, dof);
   analysis.residual(nullptr, dof, res);
@@ -84,8 +85,8 @@ void test_physics(Basis &basis, Physics &physics, double h = 1e-30,
   int *rowp = nullptr, *cols = nullptr;
   SparseUtils::CSRFromConnectivityFunctor(
       num_nodes, num_elements, Basis::nodes_per_element,
-      [&basis](int elem, int *nodes) {
-        basis.mesh.get_elem_dof_nodes(elem, nodes);
+      [basis](int elem, int *nodes) {
+        basis->mesh.get_elem_dof_nodes(elem, nodes);
       },
       &rowp, &cols);
   int nnz = rowp[num_nodes];
@@ -108,7 +109,8 @@ void test_physics(Basis &basis, Physics &physics, double h = 1e-30,
   EXPECT_NEAR(Jp_relerr, 0.0, tol);
 }
 
-QuadrilateralBasis<T> *create_quad_basis() {
+std::tuple<QuadrilateralQuadrature<T> *, QuadrilateralBasis<T> *>
+create_quad_basis() {
   int num_elements, num_nodes;
   int *element_nodes;
   T *xloc;
@@ -117,13 +119,15 @@ QuadrilateralBasis<T> *create_quad_basis() {
   T lxy[2] = {1.3, 2.4};
   create_2d_rect_quad_mesh(nxy, lxy, &num_elements, &num_nodes, &element_nodes,
                            &xloc);
+  using Quadrature = QuadrilateralQuadrature<T>;
   using Basis = QuadrilateralBasis<T>;
   using Mesh = typename Basis::Mesh;
   Mesh *mesh = new Mesh(num_elements, num_nodes, element_nodes, xloc);
-  return new Basis(*mesh);
+  return {new Quadrature(*mesh), new Basis(*mesh)};
 }
 
-TetrahedralBasis<T> *create_tet_basis() {
+std::tuple<TetrahedralQuadrature<T> *, TetrahedralBasis<T> *>
+create_tet_basis() {
   int num_elements, num_nodes;
   int *element_nodes;
   T *xloc;
@@ -132,16 +136,19 @@ TetrahedralBasis<T> *create_tet_basis() {
   T lxyz[3] = {1.1, 1.2, 1.3};
   create_3d_box_tet_mesh(nxyz, lxyz, &num_elements, &num_nodes, &element_nodes,
                          &xloc);
+  using Quadrature = TetrahedralQuadrature<T>;
   using Basis = TetrahedralBasis<T>;
   using Mesh = typename Basis::Mesh;
   Mesh *mesh = new Mesh(num_elements, num_nodes, element_nodes, xloc);
-  return new Basis(*mesh);
+  return {new Quadrature(*mesh), new Basis(*mesh)};
 }
 
 template <int Np_1d = 4>
-GDBasis2D<T, Np_1d> *create_gd_basis() {
+std::tuple<GDQuadrature2D<T, Np_1d> *, GDBasis2D<T, Np_1d> *>
+create_gd_basis() {
   int constexpr nx = 5, ny = 7;
   using Grid = StructuredGrid2D<T>;
+  using Quadrature = GDQuadrature2D<T, Np_1d>;
   using Basis = GDBasis2D<T, Np_1d>;
   using Mesh = typename Basis::Mesh;
 
@@ -149,30 +156,33 @@ GDBasis2D<T, Np_1d> *create_gd_basis() {
   T lxy[2] = {1.0, 1.4};
   Grid *grid = new Grid(nxy, lxy);
   Mesh *mesh = new Mesh(*grid);
-  return new Basis(*mesh);
+  return {new Quadrature(*mesh), new Basis(*mesh)};
 }
 
-template <class Basis>
-void test_neohookean(Basis *basis, double h = 1e-30, double tol = 1e-14) {
+template <class Quadrature, class Basis>
+void test_neohookean(std::tuple<Quadrature *, Basis *> tuple, double h = 1e-30,
+                     double tol = 1e-14) {
   T C1 = 0.01;
   T D1 = 0.5;
   NeohookeanPhysics<T, Basis::spatial_dim> physics(C1, D1);
-  test_physics(*basis, physics, h, tol);
+  test_physics(tuple, physics, h, tol);
 }
 
-template <class Basis>
-void test_poisson(Basis *basis, double h = 1e-30, double tol = 1e-14) {
+template <class Quadrature, class Basis>
+void test_poisson(std::tuple<Quadrature *, Basis *> tuple, double h = 1e-30,
+                  double tol = 1e-14) {
   using Physics = PoissonPhysics<T, Basis::spatial_dim>;
   Physics physics;
-  test_physics<Physics, Basis>(*basis, physics, h, tol);
+  test_physics(tuple, physics, h, tol);
 }
 
-template <class Basis>
-void test_helmholtz(Basis *basis, double h = 1e-30, double tol = 1e-14) {
+template <class Quadrature, class Basis>
+void test_helmholtz(std::tuple<Quadrature *, Basis *> tuple, double h = 1e-30,
+                    double tol = 1e-14) {
   using Physics = HelmholtzPhysics<T, Basis::spatial_dim>;
   T r0 = 1.2;
   Physics physics(r0);
-  test_physics<Physics, Basis>(*basis, physics, h, tol);
+  test_physics(tuple, physics, h, tol);
 }
 
 TEST(Neohookean, Quad) { test_neohookean(create_quad_basis()); }

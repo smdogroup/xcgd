@@ -18,7 +18,9 @@ TEST(ElementTest, GalerkinDiff2D) {
   using T = std::complex<double>;
   using Grid = StructuredGrid2D<T>;
   using Mesh = GDMesh2D<T, Np_1d>;
+  using Quadrature = GDQuadrature2D<T, Np_1d>;
   using Basis = GDBasis2D<T, Np_1d>;
+  int constexpr num_quadrature_pts = Quadrature::num_quadrature_pts;
 
   int constexpr nx = 10, ny = 10;
   int nxy[2] = {nx, ny};
@@ -26,16 +28,16 @@ TEST(ElementTest, GalerkinDiff2D) {
   Grid grid(nxy, lxy);
   Mesh mesh(grid);
 
-  std::vector<T> N(Nk * Basis::num_quadrature_pts);
-  std::vector<T> Nxi(grid.spatial_dim * Nk * Basis::num_quadrature_pts);
+  std::vector<T> N(Nk * num_quadrature_pts);
+  std::vector<T> Nxi(grid.spatial_dim * Nk * num_quadrature_pts);
 
   double h = 1e-7;
   std::vector<double> p = {0.4385123, 0.742383};
   std::vector<double> pt = {0.39214122, -0.24213123};
 
-  std::vector<T> pts(Basis::num_quadrature_pts * Grid::spatial_dim);
+  std::vector<T> pts(num_quadrature_pts * Grid::spatial_dim);
 
-  for (int q = 0; q < Basis::num_quadrature_pts; q++) {
+  for (int q = 0; q < num_quadrature_pts; q++) {
     pts[Grid::spatial_dim * q] = T(pt[0], h * p[0]);
     pts[Grid::spatial_dim * q + 1] = T(pt[1], h * p[1]);
   }
@@ -57,7 +59,8 @@ TEST(ElementTest, GalerkinDiff2D) {
   Basis basis(mesh);
 
   for (int elem = 0; elem < nx * ny; elem++) {
-    basis.eval_basis_grad(elem, pts.data(), N.data(), Nxi.data());
+    basis.template eval_basis_grad<num_quadrature_pts>(elem, pts.data(),
+                                                       N.data(), Nxi.data());
 
     for (int i = 0; i < Nk; i++) {
       double nxi_cs = N[i].imag() / h;
@@ -85,11 +88,11 @@ class Integration final : public PhysicsBase<T, spatial_dim, 0, 1> {
   }
 };
 
-template <typename T, class Basis>
+template <typename T, class Quadrature, class Basis>
 T hypercircle_area(typename Basis::Mesh& mesh,
                    const T pt0[Basis::spatial_dim]) {
   using Physics = Integration<T, Basis::spatial_dim>;
-  using Analysis = GalerkinAnalysis<T, Basis, Physics>;
+  using Analysis = GalerkinAnalysis<T, Quadrature, Basis, Physics>;
   constexpr int spatial_dim = Basis::spatial_dim;
 
   std::vector<double> dof(mesh.get_num_nodes() * Physics::dof_per_node, 0.0);
@@ -107,7 +110,7 @@ T hypercircle_area(typename Basis::Mesh& mesh,
     }
   }
 
-  typename Basis::Quadrature quadrature(mesh);
+  Quadrature quadrature(mesh);
   Basis basis(mesh);
   Physics physics;
   Analysis analysis(quadrature, basis, physics);
@@ -117,6 +120,7 @@ T hypercircle_area(typename Basis::Mesh& mesh,
 
 TEST(IntegrationTest, Quad) {
   using T = double;
+  using Quadrature = QuadrilateralQuadrature<T>;
   using Basis = QuadrilateralBasis<T>;
 
   int num_elements, num_nodes;
@@ -131,13 +135,14 @@ TEST(IntegrationTest, Quad) {
 
   typename Basis::Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
 
-  double pi = hypercircle_area<double, Basis>(mesh, pt0);
+  double pi = hypercircle_area<double, Quadrature, Basis>(mesh, pt0);
   double relerr = (pi - PI) / PI;
   EXPECT_NEAR(relerr, 0.0, 1e-2);
 }
 
 TEST(IntegrationTest, Tet) {
   using T = double;
+  using Quadrature = TetrahedralQuadrature<T>;
   using Basis = TetrahedralBasis<T>;
 
   int num_elements, num_nodes;
@@ -152,7 +157,8 @@ TEST(IntegrationTest, Tet) {
 
   typename Basis::Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
 
-  double pi = hypercircle_area<double, Basis>(mesh, pt0) * 3.0 / 4.0;
+  double pi =
+      hypercircle_area<double, Quadrature, Basis>(mesh, pt0) * 3.0 / 4.0;
   double relerr = (pi - PI) / PI;
   EXPECT_NEAR(relerr, 0.0, 1e-2);
 }
@@ -161,6 +167,7 @@ TEST(IntegrationTest, GD2D_Np2) {
   using T = double;
   constexpr int Np_1d = 2;
 
+  using Quadrature = GDQuadrature2D<T, Np_1d>;
   using Basis = GDBasis2D<T, Np_1d>;
   using Grid = StructuredGrid2D<T>;
 
@@ -170,7 +177,7 @@ TEST(IntegrationTest, GD2D_Np2) {
   Grid grid(nxy, lxy);
   typename Basis::Mesh mesh(grid);
 
-  double pi = hypercircle_area<double, Basis>(mesh, pt0);
+  double pi = hypercircle_area<double, Quadrature, Basis>(mesh, pt0);
   double relerr = (pi - PI) / PI;
   EXPECT_NEAR(relerr, 0.0, 1e-2);
 }
@@ -179,6 +186,7 @@ TEST(IntegrationTest, GD2D_Np4) {
   using T = double;
   constexpr int Np_1d = 4;
 
+  using Quadrature = GDQuadrature2D<T, Np_1d>;
   using Basis = GDBasis2D<T, Np_1d>;
   using Grid = StructuredGrid2D<T>;
 
@@ -188,7 +196,7 @@ TEST(IntegrationTest, GD2D_Np4) {
   Grid grid(nxy, lxy);
   typename Basis::Mesh mesh(grid);
 
-  double pi = hypercircle_area<double, Basis>(mesh, pt0);
+  double pi = hypercircle_area<double, Quadrature, Basis>(mesh, pt0);
   double relerr = (pi - PI) / PI;
   EXPECT_NEAR(relerr, 0.0, 1e-2);
 }

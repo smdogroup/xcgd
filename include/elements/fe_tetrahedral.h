@@ -41,20 +41,19 @@ class TetrahedralQuadrature final : public QuadratureBase<T, 5, Mesh_> {
   }
 };
 
-template <typename T, class Quadrature_ = TetrahedralQuadrature<T>>
-class TetrahedralBasis final : public BasisBase<T, Quadrature_> {
+template <typename T, class Mesh_ = FEMesh<T, 3, 10>>
+class TetrahedralBasis final : public BasisBase<T, Mesh_> {
  private:
-  using BasisBase = BasisBase<T, Quadrature_>;
+  using BasisBase = BasisBase<T, Mesh_>;
 
  public:
   using BasisBase::nodes_per_element;
-  using BasisBase::num_quadrature_pts;
   using BasisBase::spatial_dim;
   using typename BasisBase::Mesh;
-  using typename BasisBase::Quadrature;
 
   TetrahedralBasis(const Mesh& mesh) : BasisBase(mesh) {}
 
+  template <int num_quadrature_pts>
   void eval_basis_grad(int _, const T* pts, T* N, T* Nxi) const {
     for (int q = 0; q < num_quadrature_pts; q++) {
       int offset_n = q * nodes_per_element;

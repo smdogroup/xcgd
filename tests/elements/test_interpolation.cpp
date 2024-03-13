@@ -39,15 +39,14 @@ class StructuredSampling2D final
   StructuredGrid2D<T>* grid;
 };
 
-template <class Mesh, class Basis>
+template <class Mesh, class Quadrature, class Basis>
 void interpolate(const std::string name, Mesh& mesh, std::vector<T>& ptx,
                  std::vector<T>& vals) {
   int constexpr dof_per_node = 1;
   int constexpr data_per_node = 0;
   using Physics =
       PhysicsBase<T, Mesh::spatial_dim, data_per_node, dof_per_node>;
-  using Analysis = GalerkinAnalysis<T, Basis, Physics>;
-  using Quadrature = typename Basis::Quadrature;
+  using Analysis = GalerkinAnalysis<T, Quadrature, Basis, Physics>;
 
   Quadrature quadrature(mesh);
   Basis basis(mesh);
@@ -78,7 +77,8 @@ void interpolate(const std::string name, Mesh& mesh, std::vector<T>& ptx,
 
     analysis.get_element_xloc(elem, element_xloc.data());
     quadrature.get_quadrature_pts(elem, pts.data(), wts.data());
-    basis.eval_basis_grad(elem, pts.data(), N, nullptr);
+    basis.template eval_basis_grad<Quadrature::num_quadrature_pts>(
+        elem, pts.data(), N, nullptr);
 
     for (int i = 0; i < Quadrature::num_quadrature_pts; i++) {
       int offset_n = i * Basis::nodes_per_element;
@@ -105,7 +105,7 @@ void interpolate(const std::string name, Mesh& mesh, std::vector<T>& ptx,
 TEST(Interpolation, Quad) {
   using Mesh = FEMesh<T, 2, 4>;
   using Quadrature = StructuredSampling2D<QuadInterpData::samples_1d, Mesh>;
-  using Basis = QuadrilateralBasis<T, Quadrature>;
+  using Basis = QuadrilateralBasis<T, Mesh>;
 
   // Create a coarse mesh
   int num_elements, num_nodes;
@@ -116,7 +116,7 @@ TEST(Interpolation, Quad) {
                            &num_elements, &num_nodes, &element_nodes, &xloc);
   Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
   std::vector<T> ptx, vals;
-  interpolate<Mesh, Basis>("quad", mesh, ptx, vals);
+  interpolate<Mesh, Quadrature, Basis>("quad", mesh, ptx, vals);
 
   for (int i = 0; i < ptx.size(); i++) {
     EXPECT_NEAR(ptx[i], QuadInterpData::ptx[i], 1e-15);
@@ -131,12 +131,12 @@ TEST(Interpolation, GD) {
   using Grid = StructuredGrid2D<T>;
   using Mesh = GDMesh2D<T, Np_1d>;
   using Quadrature = StructuredSampling2D<GDInterpData::samples_1d, Mesh>;
-  using Basis = GDBasis2D<T, Np_1d, Quadrature>;
+  using Basis = GDBasis2D<T, Np_1d, Mesh>;
 
   Grid grid(GDInterpData::nxy, GDInterpData::lxy);
   Mesh mesh(grid);
   std::vector<T> ptx, vals;
-  interpolate<Mesh, Basis>("gd", mesh, ptx, vals);
+  interpolate<Mesh, Quadrature, Basis>("gd", mesh, ptx, vals);
 
   for (int i = 0; i < ptx.size(); i++) {
     EXPECT_NEAR(ptx[i], GDInterpData::ptx[i], 1e-15);
@@ -152,12 +152,12 @@ TEST(Interpolation, Demo) {
   using Grid = StructuredGrid2D<T>;
   using Mesh = GDMesh2D<T, Np_1d>;
   using Quadrature = StructuredSampling2D<samples_1d, Mesh>;
-  using Basis = GDBasis2D<T, Np_1d, Quadrature>;
+  using Basis = GDBasis2D<T, Np_1d, Mesh>;
 
   int nxy[2] = {3, 3};
   T lxy[2] = {1.0, 1.0};
   Grid grid(nxy, lxy);
   Mesh mesh(grid);
   std::vector<T> ptx, vals;
-  interpolate<Mesh, Basis>("demo", mesh, ptx, vals);
+  interpolate<Mesh, Quadrature, Basis>("demo", mesh, ptx, vals);
 }

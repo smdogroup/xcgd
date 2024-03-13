@@ -14,9 +14,10 @@
 int main(int argc, char *argv[]) {
   using T = double;
 
+  using Quadrature = TetrahedralQuadrature<T>;
   using Basis = TetrahedralBasis<T>;
   using Physics = NeohookeanPhysics<T, Basis::spatial_dim>;
-  using Analysis = GalerkinAnalysis<T, Basis, Physics>;
+  using Analysis = GalerkinAnalysis<T, Quadrature, Basis, Physics>;
   using BSRMat = GalerkinBSRMat<T, Physics::dof_per_node>;
   using CSCMat = SparseUtils::CSCMat<T>;
 
@@ -30,7 +31,7 @@ int main(int argc, char *argv[]) {
                              &ndof_bcs, &dof_bcs);
 
   Basis::Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
-  Basis::Quadrature quadrature(mesh);
+  Quadrature quadrature(mesh);
 
   ToVTK<T, typename Basis::Mesh> vtk(mesh);
 

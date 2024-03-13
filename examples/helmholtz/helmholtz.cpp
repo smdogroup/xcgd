@@ -11,15 +11,15 @@
 #include "utils/mesh.h"
 #include "utils/vtk.h"
 
-template <typename T, class Basis>
+template <typename T, class Quadrature, class Basis>
 void solve_helmholtz(T *lxy, T *pt0, T r, T r0, Basis &basis,
                      std::string name) {
   using Physics = HelmholtzPhysics<T, Basis::spatial_dim>;
-  using Analysis = GalerkinAnalysis<T, Basis, Physics>;
+  using Analysis = GalerkinAnalysis<T, Quadrature, Basis, Physics>;
   using BSRMat = GalerkinBSRMat<T, Physics::dof_per_node>;
   using CSCMat = SparseUtils::CSCMat<T>;
 
-  typename Basis::Quadrature quadrature(basis.mesh);
+  Quadrature quadrature(basis.mesh);
   Physics physics(r0);
   Analysis analysis(quadrature, basis, physics);
 
@@ -103,6 +103,7 @@ void solve_helmholtz(T *lxy, T *pt0, T r, T r0, Basis &basis,
 
 void solve_helmholtz_fem() {
   using T = double;
+  using Quadrature = QuadrilateralQuadrature<T>;
   using Basis = QuadrilateralBasis<T>;
 
   int num_elements, num_nodes;
@@ -118,13 +119,14 @@ void solve_helmholtz_fem() {
   Basis::Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
   Basis basis(mesh);
 
-  solve_helmholtz<T, Basis>(lxy, pt0, r, r0, basis, "fe");
+  solve_helmholtz<T, Quadrature, Basis>(lxy, pt0, r, r0, basis, "fe");
 }
 
 void solve_helmholtz_gd() {
   using T = double;
   int constexpr Np_1d = 4;
   using Grid = StructuredGrid2D<T>;
+  using Quadrature = GDQuadrature2D<T, Np_1d>;
   using Basis = GDBasis2D<T, Np_1d>;
   int nxy[2] = {64, 64};
   T lxy[2] = {3.0, 3.0};
@@ -134,7 +136,7 @@ void solve_helmholtz_gd() {
   Basis::Mesh mesh(grid);
   Basis basis(mesh);
 
-  solve_helmholtz<T, Basis>(lxy, pt0, r, r0, basis, "gd");
+  solve_helmholtz<T, Quadrature, Basis>(lxy, pt0, r, r0, basis, "gd");
 }
 
 int main(int argc, char *argv[]) {

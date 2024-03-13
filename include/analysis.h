@@ -6,24 +6,24 @@
 #include "sparse_utils/sparse_matrix.h"
 #include "utils/linalg.h"
 
-template <typename T, class Basis, class Physics>
+template <typename T, class Quadrature, class Basis, class Physics>
 class GalerkinAnalysis final {
  public:
   // Static data taken from the element basis
-  static const int spatial_dim = Basis::spatial_dim;
-  static const int nodes_per_element = Basis::nodes_per_element;
+  static constexpr int spatial_dim = Basis::spatial_dim;
+  static constexpr int nodes_per_element = Basis::nodes_per_element;
 
   // Static data from the quadrature
-  static const int num_quadrature_pts = Basis::num_quadrature_pts;
+  static constexpr int num_quadrature_pts = Quadrature::num_quadrature_pts;
 
   // Static data taken from the physics
-  static const int dof_per_node = Physics::dof_per_node;
+  static constexpr int dof_per_node = Physics::dof_per_node;
 
   // Derived static data
-  static const int dof_per_element = dof_per_node * nodes_per_element;
+  static constexpr int dof_per_element = dof_per_node * nodes_per_element;
 
-  GalerkinAnalysis(const typename Basis::Quadrature& quadrature,
-                   const Basis& basis, const Physics& physics)
+  GalerkinAnalysis(const Quadrature& quadrature, const Basis& basis,
+                   const Physics& physics)
       : quadrature(quadrature), basis(basis), physics(physics) {}
 
   void get_element_xloc(int e, T element_xloc[]) const {
@@ -82,7 +82,7 @@ class GalerkinAnalysis final {
 
       T N[nodes_per_element * num_quadrature_pts];
       T Nxi[spatial_dim * nodes_per_element * num_quadrature_pts];
-      basis.eval_basis_grad(i, pts, N, Nxi);
+      basis.template eval_basis_grad<num_quadrature_pts>(i, pts, N, Nxi);
 
       for (int j = 0; j < num_quadrature_pts; j++) {
         int offset_n = j * nodes_per_element;
@@ -142,7 +142,7 @@ class GalerkinAnalysis final {
 
       T N[nodes_per_element * num_quadrature_pts];
       T Nxi[spatial_dim * nodes_per_element * num_quadrature_pts];
-      basis.eval_basis_grad(i, pts, N, Nxi);
+      basis.template eval_basis_grad<num_quadrature_pts>(i, pts, N, Nxi);
 
       for (int j = 0; j < num_quadrature_pts; j++) {
         int offset_n = j * nodes_per_element;
@@ -213,7 +213,7 @@ class GalerkinAnalysis final {
 
       T N[nodes_per_element * num_quadrature_pts];
       T Nxi[spatial_dim * nodes_per_element * num_quadrature_pts];
-      basis.eval_basis_grad(i, pts, N, Nxi);
+      basis.template eval_basis_grad<num_quadrature_pts>(i, pts, N, Nxi);
 
       for (int j = 0; j < num_quadrature_pts; j++) {
         int offset_n = j * nodes_per_element;
@@ -288,7 +288,7 @@ class GalerkinAnalysis final {
 
       T N[nodes_per_element * num_quadrature_pts];
       T Nxi[spatial_dim * nodes_per_element * num_quadrature_pts];
-      basis.eval_basis_grad(i, pts, N, Nxi);
+      basis.template eval_basis_grad<num_quadrature_pts>(i, pts, N, Nxi);
 
       for (int j = 0; j < num_quadrature_pts; j++) {
         int offset_n = j * nodes_per_element;
@@ -326,7 +326,7 @@ class GalerkinAnalysis final {
   }
 
  private:
-  const typename Basis::Quadrature& quadrature;
+  const Quadrature& quadrature;
   const Basis& basis;
   const Physics& physics;
 };

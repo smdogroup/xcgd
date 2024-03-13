@@ -9,15 +9,15 @@
 #include "utils/mesh.h"
 #include "utils/vtk.h"
 
-template <typename T, class Basis>
+template <typename T, class Quadrature, class Basis>
 void solve_poisson(T *lxy, Basis &basis, std::string name) {
   using Physics = PoissonPhysics<T, Basis::spatial_dim>;
-  using Analysis = GalerkinAnalysis<T, Basis, Physics>;
+  using Analysis = GalerkinAnalysis<T, Quadrature, Basis, Physics>;
   using BSRMat = GalerkinBSRMat<T, Physics::dof_per_node>;
   using CSCMat = SparseUtils::CSCMat<T>;
 
   Physics physics;
-  typename Basis::Quadrature quadrature(basis.mesh);
+  Quadrature quadrature(basis.mesh);
   Analysis analysis(quadrature, basis, physics);
 
   int ndof = Basis::spatial_dim * basis.mesh.get_num_nodes();
@@ -99,6 +99,7 @@ void solve_poisson(T *lxy, Basis &basis, std::string name) {
 
 void solve_poisson_fem() {
   using T = double;
+  using Quadrature = QuadrilateralQuadrature<T>;
   using Basis = QuadrilateralBasis<T>;
 
   int num_elements, num_nodes;
@@ -112,13 +113,14 @@ void solve_poisson_fem() {
   Basis::Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
   Basis basis(mesh);
 
-  solve_poisson<T, Basis>(lxy, basis, "fe");
+  solve_poisson<T, Quadrature, Basis>(lxy, basis, "fe");
 }
 
 void solve_poisson_gd() {
   using T = double;
   int constexpr Np_1d = 4;
   using Grid = StructuredGrid2D<T>;
+  using Quadrature = GDQuadrature2D<T, Np_1d>;
   using Basis = GDBasis2D<T, Np_1d>;
   int nxy[2] = {32, 32};
   T lxy[2] = {1.0, 1.0};
@@ -126,7 +128,7 @@ void solve_poisson_gd() {
   Basis::Mesh mesh(grid);
   Basis basis(mesh);
 
-  solve_poisson<T, Basis>(lxy, basis, "gd");
+  solve_poisson<T, Quadrature, Basis>(lxy, basis, "gd");
 }
 
 int main(int argc, char *argv[]) {

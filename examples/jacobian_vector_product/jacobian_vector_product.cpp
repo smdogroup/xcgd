@@ -8,8 +8,9 @@
 int main(int argc, char *argv[]) {
   using T = double;
   using Basis = TetrahedralBasis<T>;
+  using Quadrature = TetrahedralQuadrature<T>;
   using Physics = NeohookeanPhysics<T, 3>;
-  using Analysis = GalerkinAnalysis<T, Basis, Physics>;
+  using Analysis = GalerkinAnalysis<T, Quadrature, Basis, Physics>;
 
   int num_elements, num_nodes;
   int *element_nodes;
@@ -20,7 +21,7 @@ int main(int argc, char *argv[]) {
   load_mesh<T>(filename, &num_elements, &num_nodes, &element_nodes, &xloc);
 
   Basis::Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
-  typename Basis::Quadrature quadrature(mesh);
+  Quadrature quadrature(mesh);
   Basis basis(mesh);
 
   // Set the number of degrees of freeom
