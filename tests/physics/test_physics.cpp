@@ -185,14 +185,14 @@ void test_helmholtz(std::tuple<Quadrature *, Basis *> tuple, double h = 1e-30,
   test_physics(tuple, physics, h, tol);
 }
 
-TEST(Neohookean, Quad) { test_neohookean(create_quad_basis()); }
-TEST(Neohookean, Tet) { test_neohookean(create_tet_basis()); }
-TEST(Neohookean, GD) { test_neohookean(create_gd_basis(), 1e-8, 1e-6); }
+TEST(physics, NeohookeanQuad) { test_neohookean(create_quad_basis()); }
+TEST(physics, NeohookeanTet) { test_neohookean(create_tet_basis()); }
+TEST(physics, NeohookeanGD) { test_neohookean(create_gd_basis(), 1e-8, 1e-6); }
 
-TEST(Poisson, Quad) { test_poisson(create_quad_basis()); }
-TEST(Poisson, Tet) { test_poisson(create_tet_basis()); }
-TEST(Poisson, GD) { test_poisson(create_gd_basis(), 1e-8, 1e-6); }
+TEST(physics, PoissonQuad) { test_poisson(create_quad_basis()); }
+TEST(physics, PoissonTet) { test_poisson(create_tet_basis()); }
+TEST(physics, PoissonGD) { test_poisson(create_gd_basis(), 1e-8, 1e-6); }
 
-TEST(Helmholtz, Quad) { test_helmholtz(create_quad_basis()); }
-TEST(Helmholtz, Tet) { test_helmholtz(create_tet_basis(), 1e-30, 1e-13); }
-TEST(Helmholtz, GD) { test_helmholtz(create_gd_basis(), 1e-8, 1e-6); }
+TEST(physics, HelmholtzQuad) { test_helmholtz(create_quad_basis()); }
+TEST(physics, HelmholtzTet) { test_helmholtz(create_tet_basis(), 1e-30, 1e-13); }
+TEST(physics, HelmholtzGD) { test_helmholtz(create_gd_basis(), 1e-8, 1e-6); }

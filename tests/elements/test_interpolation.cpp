@@ -102,7 +102,7 @@ void interpolate(const std::string name, Mesh& mesh, std::vector<T>& ptx,
   field_vtk.write_vtk();
 }
 
-TEST(Interpolation, Quad) {
+TEST(elements, InterpolationQuad) {
   using Mesh = FEMesh<T, 2, 4>;
   using Quadrature = StructuredSampling2D<QuadInterpData::samples_1d, Mesh>;
   using Basis = QuadrilateralBasis<T, Mesh>;
@@ -126,7 +126,7 @@ TEST(Interpolation, Quad) {
   }
 }
 
-TEST(Interpolation, GD) {
+TEST(elements, InterpolationGD) {
   int constexpr Np_1d = GDInterpData::Np_1d;
   using Grid = StructuredGrid2D<T>;
   using Mesh = GDMesh2D<T, Np_1d>;
@@ -146,7 +146,7 @@ TEST(Interpolation, GD) {
   }
 }
 
-TEST(Interpolation, Demo) {
+TEST(elements, InterpolationDemo) {
   constexpr int samples_1d = 10;
   int constexpr Np_1d = 4;
   using Grid = StructuredGrid2D<T>;

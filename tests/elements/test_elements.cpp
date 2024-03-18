@@ -12,7 +12,7 @@
 
 #define PI 3.141592653589793
 
-TEST(ElementTest, GalerkinDiff2D) {
+TEST(elements, GalerkinDiff2D) {
   int constexpr Np_1d = 6;
   int constexpr Nk = Np_1d * Np_1d;
   using T = std::complex<double>;
@@ -118,7 +118,7 @@ T hypercircle_area(typename Basis::Mesh& mesh,
   return analysis.energy(nullptr, dof.data());
 }
 
-TEST(IntegrationTest, Quad) {
+TEST(elements, IntegrationQuad) {
   using T = double;
   using Quadrature = QuadrilateralQuadrature<T>;
   using Basis = QuadrilateralBasis<T>;
@@ -140,7 +140,7 @@ TEST(IntegrationTest, Quad) {
   EXPECT_NEAR(relerr, 0.0, 1e-2);
 }
 
-TEST(IntegrationTest, Tet) {
+TEST(elements, IntegrationTet) {
   using T = double;
   using Quadrature = TetrahedralQuadrature<T>;
   using Basis = TetrahedralBasis<T>;
@@ -163,7 +163,7 @@ TEST(IntegrationTest, Tet) {
   EXPECT_NEAR(relerr, 0.0, 1e-2);
 }
 
-TEST(IntegrationTest, GD2D_Np2) {
+TEST(elements, IntergrationGD2D_Np2) {
   using T = double;
   constexpr int Np_1d = 2;
 
@@ -182,7 +182,7 @@ TEST(IntegrationTest, GD2D_Np2) {
   EXPECT_NEAR(relerr, 0.0, 1e-2);
 }
 
-TEST(IntegrationTest, GD2D_Np4) {
+TEST(elements, IntergrationGD2D_Np4) {
   using T = double;
   constexpr int Np_1d = 4;
 

@@ -4,7 +4,7 @@
 #include "test_commons.h"
 #include "utils/vtk.h"
 
-TEST(GDMeshTest, Structured) {
+TEST(mesh, GDMeshStructured) {
   constexpr int Np_1d = 4;
   using T = double;
   using Grid = StructuredGrid2D<T>;
