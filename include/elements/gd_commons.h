@@ -180,22 +180,6 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
    * @param nodes dof node indices, length: nodes_per_element
    */
   void get_elem_dof_nodes(int elem, int* nodes) const {
-    // if (has_lsf) {
-    //   elem = elem_cells[elem];
-    // }
-
-    // // Get stencil coordinates for each spatial dimension
-    // int coords[spatial_dim * nodes_per_element];
-    // get_cell_ground_stencil_coords(elem, coords);
-
-    // if (has_lsf) {
-    //   adjust_stencil(elem, coords);
-    // }
-
-    // for (int index = 0; index < nodes_per_element; index++) {
-    //   nodes[index] = grid.get_coords_vert(&coords[spatial_dim * index]);
-    // }
-
     if (has_lsf) {
       int cell = elem_cells[elem];
       get_cell_ground_stencil(cell, nodes);
@@ -203,79 +187,6 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
 
     } else {
       get_cell_ground_stencil(elem, nodes);
-    }
-  }
-
-  void get_cell_ground_stencil(int cell, int* nodes) const {
-    constexpr int q = Np_1d / 2;
-    int eij[spatial_dim];
-    grid.get_cell_coords(cell, eij);
-    const int* nxy = grid.get_nxy();
-    for (int d = 0; d < spatial_dim; d++) {
-      if (eij[d] < q - 1) {
-        eij[d] = q - 1;
-      } else if (eij[d] > nxy[d] - q) {
-        eij[d] = nxy[d] - q;
-      }
-    }
-
-    int index = 0;
-    for (int j = 0; j < Np_1d; j++) {
-      for (int i = 0; i < Np_1d; i++, index++) {
-        nodes[index] =
-            grid.get_coords_vert(eij[0] - q + 1 + i, eij[1] - q + 1 + j);
-      }
-    }
-  };
-
-  /**
-   * @brief For a GD element, get the stencil associated to the ground grid,
-   * regardless the optional boundary defined by the level set function
-   *
-   * @param elem element index
-   * @param vert_coords array of size spatial_dim * nodes_per_element, each
-   * entry is the coordinates of a ground stencil vertex
-   */
-  void get_cell_ground_stencil_coords(int cell, int* vert_coords) const {
-    constexpr int q = Np_1d / 2;
-    int eij[spatial_dim];
-    grid.get_cell_coords(cell, eij);
-    const int* nxy = grid.get_nxy();
-    for (int d = 0; d < spatial_dim; d++) {
-      if (eij[d] < q - 1) {
-        eij[d] = q - 1;
-      } else if (eij[d] > nxy[d] - q) {
-        eij[d] = nxy[d] - q;
-      }
-    }
-
-    for (int index = 0; index < nodes_per_element; index++) {
-      int i = index % Np_1d;
-      int j = index / Np_1d;
-      vert_coords[spatial_dim * index] = eij[0] - q + 1 + i;
-      vert_coords[spatial_dim * index + 1] = eij[1] - q + 1 + j;
-    }
-  }
-
-  /**
-   * @brief Adjust the stencil by pushing the stencil verts that are outside the
-   * LSF boundary inward such that all nodes are active nodes
-   */
-  void adjust_stencil(int cell, int* nodes) const {
-    // Get push direction
-    int dir = dir_cells[cell];
-    int dim = dir / spatial_dim;
-    int sign = dir % spatial_dim == 0 ? 1 : -1;
-
-    // Adjust nodes
-    for (int index = 0; index < nodes_per_element; index++) {
-      int vert = node_verts[nodes[index]];
-      if (active_verts_set.count(vert) == 0) {
-        int vert_coords[spatial_dim] = {-1, -1};
-        grid.get_vert_coords(vert, vert_coords);
-        vert_coords[dim] += sign * Np_1d;
-        nodes[index] = grid.get_coords_vert(vert_coords);
-      }
     }
   }
 
@@ -406,6 +317,54 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
         }
       }
       dir_cells[c] = 2 * dim + grad[dim] > 0 ? 0 : 1;
+    }
+  }
+
+  /**
+   * @brief For a GD element, get the stencil associated to the ground grid,
+   * regardless the optional boundary defined by the level set function
+   */
+  void get_cell_ground_stencil(int cell, int* nodes) const {
+    constexpr int q = Np_1d / 2;
+    int eij[spatial_dim];
+    grid.get_cell_coords(cell, eij);
+    const int* nxy = grid.get_nxy();
+    for (int d = 0; d < spatial_dim; d++) {
+      if (eij[d] < q - 1) {
+        eij[d] = q - 1;
+      } else if (eij[d] > nxy[d] - q) {
+        eij[d] = nxy[d] - q;
+      }
+    }
+
+    int index = 0;
+    for (int j = 0; j < Np_1d; j++) {
+      for (int i = 0; i < Np_1d; i++, index++) {
+        nodes[index] =
+            grid.get_coords_vert(eij[0] - q + 1 + i, eij[1] - q + 1 + j);
+      }
+    }
+  };
+
+  /**
+   * @brief Adjust the stencil by pushing the stencil verts that are outside the
+   * LSF boundary inward such that all nodes are active nodes
+   */
+  void adjust_stencil(int cell, int* nodes) const {
+    // Get push direction
+    int dir = dir_cells[cell];
+    int dim = dir / spatial_dim;
+    int sign = dir % spatial_dim == 0 ? 1 : -1;
+
+    // Adjust nodes
+    for (int index = 0; index < nodes_per_element; index++) {
+      int vert = node_verts[nodes[index]];
+      if (active_verts_set.count(vert) == 0) {
+        int vert_coords[spatial_dim] = {-1, -1};
+        grid.get_vert_coords(vert, vert_coords);
+        vert_coords[dim] += sign * Np_1d;
+        nodes[index] = grid.get_coords_vert(vert_coords);
+      }
     }
   }
 
