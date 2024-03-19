@@ -11,6 +11,7 @@ class FEMesh final
       MeshBase<T, spatial_dim, nodes_per_element_, nodes_per_element_>;
 
  public:
+  using MeshBase::corner_nodes_per_element;
   using MeshBase::nodes_per_element;
   using MeshBase::spatial_dim;
 
@@ -34,8 +35,8 @@ class FEMesh final
     }
   }
 
-  inline void get_elem_dof_verts(int elem, int* verts) const {
-    get_elem_dof_nodes(elem, verts);
+  inline void get_elem_corner_nodes(int elem, int* nodes) const {
+    get_elem_dof_nodes(elem, nodes);
   }
 
  private:

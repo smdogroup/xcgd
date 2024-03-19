@@ -15,6 +15,11 @@ set(XCGD_A2D_DIR $ENV{HOME}/installs/a2d)
 set(XCGD_ALGOIM_DIR $ENV{HOME}/git/algoim)
 option(XCGD_BUILD_TESTS "Build unit tests or not" ON)
 
+# If in debug mode, set the preprocessor definition
+if(CMAKE_BUILD_TYPE MATCHES Debug)
+  add_definitions(-DXCGD_DEBUG_MODE)
+endif()
+
 # Dependencies
 include(cmake/utils.cmake)
 check_path_and_inform(a2d ${XCGD_A2D_DIR} XCGD_A2D_DIR)

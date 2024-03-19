@@ -81,10 +81,10 @@ class ToVTK {
       throw std::runtime_error(msg);
     }
 
-    // If not provided, infer vtk type id from mesh.verts_per_element
+    // If not provided, infer vtk type id from mesh.corner_nodes_per_element
     if (vtk_elem_type == -1) {
       if constexpr (spatial_dim == 2) {
-        switch (mesh.verts_per_element) {
+        switch (mesh.corner_nodes_per_element) {
           case 3:
             vtk_elem_type = VTKID::TRIANGLE;
             break;
@@ -99,7 +99,7 @@ class ToVTK {
             break;
         }
       } else {  // spatial_dim == 3
-        switch (mesh.verts_per_element) {
+        switch (mesh.corner_nodes_per_element) {
           case 4:
             vtk_elem_type = VTKID::TETRA;
             break;
@@ -124,10 +124,11 @@ class ToVTK {
 
     if (vtk_elem_type == -1) {
       char msg[256];
-      snprintf(msg, 256,
-               "Cannot infer element type from verts_per_element(%d) for a "
-               "%d-dimensional mesh",
-               mesh.verts_per_element, spatial_dim);
+      snprintf(
+          msg, 256,
+          "Cannot infer element type from corner_nodes_per_element(%d) for a "
+          "%d-dimensional mesh",
+          mesh.corner_nodes_per_element, spatial_dim);
       throw std::runtime_error(msg);
     }
   }
@@ -164,13 +165,13 @@ class ToVTK {
 
     // Write connectivity
     std::fprintf(fp, "CELLS %d %d\n", mesh.get_num_elements(),
-                 mesh.get_num_elements() * (1 + mesh.verts_per_element));
+                 mesh.get_num_elements() * (1 + mesh.corner_nodes_per_element));
     for (int i = 0; i < mesh.get_num_elements(); i++) {
-      std::fprintf(fp, "%d ", mesh.verts_per_element);
-      int verts[mesh.verts_per_element];
-      mesh.get_elem_dof_verts(i, verts);
-      for (int j = 0; j < mesh.verts_per_element; j++) {
-        std::fprintf(fp, "%d ", verts[j]);
+      std::fprintf(fp, "%d ", mesh.corner_nodes_per_element);
+      int nodes[mesh.corner_nodes_per_element];
+      mesh.get_elem_corner_nodes(i, nodes);
+      for (int j = 0; j < mesh.corner_nodes_per_element; j++) {
+        std::fprintf(fp, "%d ", nodes[j]);
       }
       std::fprintf(fp, "\n");
     }

@@ -1,6 +1,7 @@
 #include <vector>
 
 #include "elements/gd_vandermonde.h"
+#include "quadrature_general.hpp"
 #include "test_commons.h"
 #include "utils/vtk.h"
 
@@ -33,40 +34,62 @@ TEST(mesh, GDMeshStructured) {
   }
 }
 
-// TEST(GDMeshTest, LSF) {
-//   constexpr int Np_1d = 4;
-//   using T = double;
-//   using Grid = StructuredGrid2D<T>;
-//   using Mesh = GDMesh2D<T, Np_1d>;
+class Circle {
+ public:
+  Circle(bool flip = false) {
+    if (flip) {
+      sign = -1.0;
+    }
+  }
 
-//   int nxy[2] = {20, 20};
-//   T lxy[2] = {1.0, 1.0};
+  template <typename T>
+  T operator()(const algoim::uvector<T, 2>& x) const {
+    return sign *
+           ((x(0) - 0.5) * (x(0) - 0.5) + (x(1) - 0.5) * (x(1) - 0.5) - 0.25);
+  }
 
-//   auto lsf = [](T xy[2]) {
-//     T x = xy[0];
-//     T y = xy[1];
-//     return (x - 0.5) * (x - 0.5) + (y - 0.5) * (y - 0.5) - 0.25;
-//   };
+  template <typename T>
+  algoim::uvector<T, 2> grad(const algoim::uvector<T, 2>& x) const {
+    return algoim::uvector<T, 2>(sign * (2.0 * x(0) - 1.0),
+                                 sign * (2.0 * x(1) - 1.0));
+  }
 
-//   Grid grid(nxy, lxy);
-//   Mesh mesh(grid, lsf);
+ private:
+  double sign = 1.0;
+};
 
-//   std::vector<T> active_lsf_verts(grid.get_num_verts(), 0.0);
-//   std::vector<T> active_dof_verts(grid.get_num_verts(), 0.0);
+void generate_lsf_mesh(bool flip = false) {
+  constexpr int Np_1d = 4;
+  using T = double;
+  using Grid = StructuredGrid2D<T>;
+  using Mesh = GDMesh2D<T, Np_1d>;
 
-//   for (int i = 0; i < grid.get_num_verts(); i++) {
-//     if (mesh.active_lsf_verts[i]) {
-//       active_lsf_verts[i] = 1.0;
-//     }
-//   }
+  int nxy[2] = {21, 21};
+  T lxy[2] = {2.0, 2.0};
+  T xy0[2] = {-1.0, -1.0};
 
-//   for (int vert : mesh.active_dof_nodes) {
-//     active_dof_verts[vert] = 1.0;
-//   }
+  Circle lsf(flip);
 
-//   ToVTK<T, Mesh> vtk(mesh, "mesh_gd.vtk");
+  Grid grid(nxy, lxy, xy0);
+  Mesh mesh(grid, lsf);
 
-//   vtk.write_mesh();
-//   vtk.write_sol("active_lsf_nodes", active_lsf_verts.data());
-//   vtk.write_sol("active_dof_nodes", active_dof_verts.data());
-// }
+  char vtkname[256];
+  std::snprintf(vtkname, 256, "mesh_gd%s.vtk", flip ? "_flip" : "");
+  ToVTK<T, Mesh> vtk(mesh, vtkname);
+  vtk.write_mesh();
+
+  for (int elem = 0; elem < mesh.get_num_elements(); elem++) {
+    std::vector<T> dof(mesh.get_num_nodes(), 0.0);
+    int nodes[Mesh::nodes_per_element];
+    mesh.get_elem_dof_nodes(elem, nodes);
+    for (int i = 0; i < Mesh::nodes_per_element; i++) {
+      dof[nodes[i]] = 1.0;
+    }
+    char name[256];
+    std::snprintf(name, 256, "elem_%05d", elem);
+    vtk.write_sol(name, dof.data());
+  }
+}
+
+TEST(mesh, LSFPositive) { generate_lsf_mesh(true); }
+TEST(mesh, LSFNegative) { generate_lsf_mesh(false); }

@@ -2,8 +2,11 @@
 #define XCGD_GD_COMMONS_H
 
 #include <algorithm>
+#include <map>
 #include <set>
 #include <vector>
+
+#include "quadrature_general.hpp"
 
 // The structured ground grid
 template <typename T>
@@ -132,6 +135,7 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
   using Grid = StructuredGrid2D<T>;
 
  public:
+  using MeshBase::corner_nodes_per_element;
   using MeshBase::nodes_per_element;
   using MeshBase::spatial_dim;
 
@@ -167,7 +171,7 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
 
   inline void get_node_xloc(int node, T* xloc) const {
     if (has_lsf) {
-      grid.get_vert_xloc(node_verts[node], xloc);
+      grid.get_vert_xloc(node_verts.at(node), xloc);
     } else {
       grid.get_vert_xloc(node, xloc);
     }
@@ -184,14 +188,23 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
       int cell = elem_cells[elem];
       get_cell_ground_stencil(cell, nodes);
       adjust_stencil(cell, nodes);
-
+      for (int i = 0; i < nodes_per_element; i++) {
+        nodes[i] = vert_nodes.at(nodes[i]);
+      }
     } else {
       get_cell_ground_stencil(elem, nodes);
     }
   }
 
-  inline void get_elem_dof_verts(int elem, int* verts) const {
-    grid.get_cell_verts(elem, verts);
+  inline void get_elem_corner_nodes(int elem, int* nodes) const {
+    if (has_lsf) {
+      grid.get_cell_verts(elem_cells[elem], nodes);
+      for (int i = 0; i < corner_nodes_per_element; i++) {
+        nodes[i] = vert_nodes.at(nodes[i]);
+      }
+    } else {
+      grid.get_cell_verts(elem, nodes);
+    }
   }
 
   void get_elem_node_ranges(int elem, T* xloc_min, T* xloc_max) const {
@@ -252,8 +265,8 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
     // Populate lsf values
     std::vector<bool> active_lsf_verts(nverts, false);
     for (int i = 0; i < nverts; i++) {
-      T xloc[spatial_dim];
-      grid.get_vert_xloc(i, xloc);
+      algoim::uvector<T, spatial_dim> xloc;
+      grid.get_vert_xloc(i, xloc.data());
       lsf_dof[i] = lsf(xloc);
       if (lsf_dof[i] <= T(0.0)) {
         active_lsf_verts[i] = true;
@@ -279,19 +292,20 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
     }
 
     // Create active dof nodes and the mapping to verts
+    int node = 0;
     for (int c = 0; c < ncells; c++) {
       if (!active_cells[c]) continue;
       elem_cells.push_back(c);
       int verts[Grid::nverts_per_cell];
       grid.get_cell_verts(c, verts);
       for (int i = 0; i < Grid::nverts_per_cell; i++) {
-        active_verts_set.insert(verts[i]);
+        if (vert_nodes.count(verts[i]) == 0) {
+          vert_nodes[verts[i]] = node;
+          node_verts[node] = verts[i];
+          node++;
+        }
       }
     }
-
-    node_verts.resize(active_verts_set.size());
-    std::copy(active_verts_set.begin(), active_verts_set.end(),
-              node_verts.begin());
 
     // For each cell, get the push direction for the outlying ground stencil
     // vertices
@@ -304,19 +318,19 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
                                                // 5   | -z
 
     for (int c = 0; c < ncells; c++) {
-      T xloc[spatial_dim];
-      grid.get_cell_coords(c, xloc);
+      algoim::uvector<T, spatial_dim> xloc;
+      grid.get_cell_xloc(c, xloc.data());
       auto grad = lsf.grad(xloc);
 
       double tmp = 0.0;
       int dim = -1;
       for (int d = 0; d < spatial_dim; d++) {
-        if (fabs(grad[d]) > tmp) {
-          tmp = fabs(grad[d]);
+        if (fabs(grad(d)) > tmp) {
+          tmp = fabs(grad(d));
           dim = d;
         }
       }
-      dir_cells[c] = 2 * dim + grad[dim] > 0 ? 0 : 1;
+      dir_cells[c] = 2 * dim + (grad(dim) < 0 ? 0 : 1);
     }
   }
 
@@ -324,7 +338,7 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
    * @brief For a GD element, get the stencil associated to the ground grid,
    * regardless the optional boundary defined by the level set function
    */
-  void get_cell_ground_stencil(int cell, int* nodes) const {
+  void get_cell_ground_stencil(int cell, int* verts) const {
     constexpr int q = Np_1d / 2;
     int eij[spatial_dim];
     grid.get_cell_coords(cell, eij);
@@ -340,7 +354,7 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
     int index = 0;
     for (int j = 0; j < Np_1d; j++) {
       for (int i = 0; i < Np_1d; i++, index++) {
-        nodes[index] =
+        verts[index] =
             grid.get_coords_vert(eij[0] - q + 1 + i, eij[1] - q + 1 + j);
       }
     }
@@ -350,7 +364,7 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
    * @brief Adjust the stencil by pushing the stencil verts that are outside the
    * LSF boundary inward such that all nodes are active nodes
    */
-  void adjust_stencil(int cell, int* nodes) const {
+  void adjust_stencil(int cell, int* verts) const {
     // Get push direction
     int dir = dir_cells[cell];
     int dim = dir / spatial_dim;
@@ -358,14 +372,28 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
 
     // Adjust nodes
     for (int index = 0; index < nodes_per_element; index++) {
-      int vert = node_verts[nodes[index]];
-      if (active_verts_set.count(vert) == 0) {
+      int vert = verts[index];
+      if (vert_nodes.count(vert) == 0) {
         int vert_coords[spatial_dim] = {-1, -1};
         grid.get_vert_coords(vert, vert_coords);
         vert_coords[dim] += sign * Np_1d;
-        nodes[index] = grid.get_coords_vert(vert_coords);
+        verts[index] = grid.get_coords_vert(vert_coords);
       }
     }
+
+// check  if the stencil is a valid stencil
+#ifdef XCGD_DEBUG_MODE
+    for (int index = 0; index < nodes_per_element; index++) {
+      int vert = verts[index];
+      if (vert_nodes.count(vert) == 0) {
+        int coords[spatial_dim];
+        grid.get_vert_coords(vert, coords);
+        std::printf(
+            "[Debug] vert %d (%d, %d) is not an active node, cell: %d\n", vert,
+            coords[0], coords[1], cell);
+      }
+    }
+#endif
   }
 
   const Grid& grid;
@@ -375,8 +403,8 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
 
   // indices of vertices that are dof nodes, i.e. vertices that have active
   // degrees of freedom
-  std::set<int> active_verts_set;
-  std::vector<int> node_verts;  // node -> vert
+  std::unordered_map<int, int> node_verts;  // node -> vert
+  std::unordered_map<int, int> vert_nodes;  // vert -> node
 
   // indices of cells that are dof elements, i.e. cells that have active degrees
   // of freedom
