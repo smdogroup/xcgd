@@ -48,26 +48,33 @@ class StructuredGrid2D final {
     return nelems;
   }
 
-  // Compute cell/vertice coordinates <-> cell/vertice index
+  // coordinates -> vert
   inline int get_coords_vert(int ni, int nj) const {
     return ni + (nxy[0] + 1) * nj;
   }
   inline int get_coords_vert(const int* nij) const {
     return nij[0] + (nxy[0] + 1) * nij[1];
   }
+
+  // vert -> coordinates
   inline void get_vert_coords(int vert, int* nij) const {
     nij[0] = vert % (nxy[0] + 1);
     nij[1] = vert / (nxy[0] + 1);
   }
+
+  // coordinates -> cell
   inline int get_coords_cell(int ei, int ej) const { return ei + nxy[0] * ej; }
   inline int get_coords_cell(const int* eij) const {
     return eij[0] + nxy[0] * eij[1];
   }
+
+  // cell -> coordinates
   inline void get_cell_coords(int cell, int* eij) const {
     eij[0] = cell % nxy[0];
     eij[1] = cell / nxy[0];
   }
 
+  // cell -> verts
   void get_cell_verts(int cell, int* verts) const {
     if (verts) {
       int nij[spatial_dim] = {cell % nxy[0], cell / nxy[1]};
@@ -92,6 +99,17 @@ class StructuredGrid2D final {
       get_vert_coords(vert, nij);
       for (int d = 0; d < spatial_dim; d++) {
         xloc[d] = xy0[d] + lxy[d] * T(nij[d]) / T(nxy[d]);
+      }
+    }
+  }
+
+  // Get the xloc of the centroid of the cell
+  void get_cell_xloc(int cell, T* xloc) const {
+    if (xloc) {
+      int nij[spatial_dim];
+      get_cell_coords(cell, nij);
+      for (int d = 0; d < spatial_dim; d++) {
+        xloc[d] = xy0[d] + lxy[d] * (T(nij[d]) + 0.5) / T(nxy[d]);
       }
     }
   }
@@ -140,15 +158,19 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
   GDMesh2D(const Grid& grid, const Func& lsf) : grid(grid), has_lsf(true) {
     check_grid_compatibility(grid);
     init_dofs_from_lsf(lsf);
-    num_nodes = dof_nodes.size();
-    num_elements = dof_elems.size();
+    num_nodes = node_verts.size();
+    num_elements = elem_cells.size();
   }
 
   int get_num_nodes() const { return num_nodes; }
   int get_num_elements() const { return num_elements; }
 
   inline void get_node_xloc(int node, T* xloc) const {
-    grid.get_vert_xloc(node, xloc);
+    if (has_lsf) {
+      grid.get_vert_xloc(node_verts[node], xloc);
+    } else {
+      grid.get_vert_xloc(node, xloc);
+    }
   }
 
   /**
@@ -158,20 +180,36 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
    * @param nodes dof node indices, length: nodes_per_element
    */
   void get_elem_dof_nodes(int elem, int* nodes) const {
-    get_elem_ground_stencil(elem, nodes);
+    // if (has_lsf) {
+    //   elem = elem_cells[elem];
+    // }
+
+    // // Get stencil coordinates for each spatial dimension
+    // int coords[spatial_dim * nodes_per_element];
+    // get_cell_ground_stencil_coords(elem, coords);
+
+    // if (has_lsf) {
+    //   adjust_stencil(elem, coords);
+    // }
+
+    // for (int index = 0; index < nodes_per_element; index++) {
+    //   nodes[index] = grid.get_coords_vert(&coords[spatial_dim * index]);
+    // }
+
     if (has_lsf) {
-      adjust_stencil(elem, nodes);
+      int cell = elem_cells[elem];
+      get_cell_ground_stencil(cell, nodes);
+      adjust_stencil(cell, nodes);
+
+    } else {
+      get_cell_ground_stencil(elem, nodes);
     }
   }
 
-  /**
-   * @brief For a GD element, get the stencil associated to the ground grid,
-   * regardless the optional boundary defined by the level set function
-   */
-  void get_elem_ground_stencil(int elem, int* nodes) const {
+  void get_cell_ground_stencil(int cell, int* nodes) const {
     constexpr int q = Np_1d / 2;
     int eij[spatial_dim];
-    grid.get_cell_coords(elem, eij);
+    grid.get_cell_coords(cell, eij);
     const int* nxy = grid.get_nxy();
     for (int d = 0; d < spatial_dim; d++) {
       if (eij[d] < q - 1) {
@@ -191,9 +229,55 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
   };
 
   /**
-   * @brief Adjust the stencil such that all nodes are active nodes
+   * @brief For a GD element, get the stencil associated to the ground grid,
+   * regardless the optional boundary defined by the level set function
+   *
+   * @param elem element index
+   * @param vert_coords array of size spatial_dim * nodes_per_element, each
+   * entry is the coordinates of a ground stencil vertex
    */
-  void adjust_stencil(int elem, int* nodes) const {}  // TODO
+  void get_cell_ground_stencil_coords(int cell, int* vert_coords) const {
+    constexpr int q = Np_1d / 2;
+    int eij[spatial_dim];
+    grid.get_cell_coords(cell, eij);
+    const int* nxy = grid.get_nxy();
+    for (int d = 0; d < spatial_dim; d++) {
+      if (eij[d] < q - 1) {
+        eij[d] = q - 1;
+      } else if (eij[d] > nxy[d] - q) {
+        eij[d] = nxy[d] - q;
+      }
+    }
+
+    for (int index = 0; index < nodes_per_element; index++) {
+      int i = index % Np_1d;
+      int j = index / Np_1d;
+      vert_coords[spatial_dim * index] = eij[0] - q + 1 + i;
+      vert_coords[spatial_dim * index + 1] = eij[1] - q + 1 + j;
+    }
+  }
+
+  /**
+   * @brief Adjust the stencil by pushing the stencil verts that are outside the
+   * LSF boundary inward such that all nodes are active nodes
+   */
+  void adjust_stencil(int cell, int* nodes) const {
+    // Get push direction
+    int dir = dir_cells[cell];
+    int dim = dir / spatial_dim;
+    int sign = dir % spatial_dim == 0 ? 1 : -1;
+
+    // Adjust nodes
+    for (int index = 0; index < nodes_per_element; index++) {
+      int vert = node_verts[nodes[index]];
+      if (active_verts_set.count(vert) == 0) {
+        int vert_coords[spatial_dim] = {-1, -1};
+        grid.get_vert_coords(vert, vert_coords);
+        vert_coords[dim] += sign * Np_1d;
+        nodes[index] = grid.get_coords_vert(vert_coords);
+      }
+    }
+  }
 
   inline void get_elem_dof_verts(int elem, int* verts) const {
     grid.get_cell_verts(elem, verts);
@@ -286,24 +370,60 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
     // Create active dof nodes and the mapping to verts
     for (int c = 0; c < ncells; c++) {
       if (!active_cells[c]) continue;
+      elem_cells.push_back(c);
       int verts[Grid::nverts_per_cell];
       grid.get_cell_verts(c, verts);
       for (int i = 0; i < Grid::nverts_per_cell; i++) {
-        dof_nodes_set.insert(verts[i]);
+        active_verts_set.insert(verts[i]);
       }
     }
 
-    dof_nodes.resize(dof_nodes_set.size());
-    std::copy(dof_nodes_set.begin(), dof_nodes_set.end(), dof_nodes.begin());
+    node_verts.resize(active_verts_set.size());
+    std::copy(active_verts_set.begin(), active_verts_set.end(),
+              node_verts.begin());
+
+    // For each cell, get the push direction for the outlying ground stencil
+    // vertices
+    dir_cells = std::vector<int>(ncells, -1);  // val | direction
+                                               // 0   | +x
+                                               // 1   | -x
+                                               // 2   | +y
+                                               // 3   | -y
+                                               // 4   | +z
+                                               // 5   | -z
+
+    for (int c = 0; c < ncells; c++) {
+      T xloc[spatial_dim];
+      grid.get_cell_coords(c, xloc);
+      auto grad = lsf.grad(xloc);
+
+      double tmp = 0.0;
+      int dim = -1;
+      for (int d = 0; d < spatial_dim; d++) {
+        if (fabs(grad[d]) > tmp) {
+          tmp = fabs(grad[d]);
+          dim = d;
+        }
+      }
+      dir_cells[c] = 2 * dim + grad[dim] > 0 ? 0 : 1;
+    }
   }
 
   const Grid& grid;
   int num_nodes = -1;
   int num_elements = -1;
   bool has_lsf = false;
-  std::vector<int> dof_nodes;  // nodes that have active degrees of freedom
-  std::vector<int> dof_elems;  // elements that have active degrees of freedom
-  std::set<int> dof_nodes_set;
+
+  // indices of vertices that are dof nodes, i.e. vertices that have active
+  // degrees of freedom
+  std::set<int> active_verts_set;
+  std::vector<int> node_verts;  // node -> vert
+
+  // indices of cells that are dof elements, i.e. cells that have active degrees
+  // of freedom
+  std::vector<int> elem_cells;  // elem -> cell
+
+  std::vector<int> dir_cells;
 };
 
 #endif  // XCGD_GD_COMMONS_H
