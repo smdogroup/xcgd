@@ -1,5 +1,6 @@
 .vscode
 *.dSYM
+.DS_Store
 
 # build
 build/*

@@ -158,7 +158,8 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
    * Note: Within the analysis domain, lsf <= 0
    */
   template <class Func>
-  GDMesh2D(const Grid& grid, const Func& lsf) : grid(grid), has_lsf(true) {
+  GDMesh2D(const Grid& grid, const Func& lsf)
+      : grid(grid), has_lsf(true), lsf_verts(grid.get_num_verts()) {
     check_grid_compatibility(grid);
     init_dofs_from_lsf(lsf);
     num_nodes = node_verts.size();
@@ -270,6 +271,15 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
     return nodes;
   }
 
+  std::vector<T> get_lsf_nodes() const {
+    std::vector<T> lsf_nodes(get_num_nodes());
+    for (auto kv : node_verts) {
+      // lsf_nodes[node] = lsf_verts[vert]
+      lsf_nodes[kv.first] = lsf_verts[kv.second];
+    }
+    return lsf_nodes;
+  }
+
  private:
   void check_grid_compatibility(const Grid& grid) const {
     const int* nxy = grid.get_nxy();
@@ -291,15 +301,14 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
     // dof values which might only be associated with part of the ground grid
     // verts (i.e. nodes)
     int nverts = grid.get_num_verts();
-    std::vector<T> lsf_dof(nverts);
 
     // Populate lsf values
     std::vector<bool> active_lsf_verts(nverts, false);
     for (int i = 0; i < nverts; i++) {
       algoim::uvector<T, spatial_dim> xloc;
       grid.get_vert_xloc(i, xloc.data());
-      lsf_dof[i] = lsf(xloc);
-      if (lsf_dof[i] <= T(0.0)) {
+      lsf_verts[i] = lsf(xloc);
+      if (lsf_verts[i] <= T(0.0)) {
         active_lsf_verts[i] = true;
       }
     }
@@ -432,6 +441,9 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
   int num_elements = -1;
   bool has_lsf = false;
 
+  // level set function values at vertices of the ground grid
+  std::vector<T> lsf_verts;
+
   // indices of vertices that are dof nodes, i.e. vertices that have active
   // degrees of freedom
   std::unordered_map<int, int> node_verts;  // node -> vert
@@ -441,6 +453,7 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
   // of freedom
   std::vector<int> elem_cells;  // elem -> cell
 
+  // push direction for each cell
   std::vector<int> dir_cells;
 };
 

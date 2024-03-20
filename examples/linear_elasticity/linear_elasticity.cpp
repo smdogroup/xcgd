@@ -90,6 +90,7 @@ void solve_linear_elasticity(T E, T nu, Basis &basis, std::string name) {
   // Write to vtk
   ToVTK<T, typename Basis::Mesh> vtk(basis.mesh, name + ".vtk");
   vtk.write_mesh();
+  vtk.write_sol("lsf", basis.mesh.get_lsf_nodes().data());
   vtk.write_vec("rhs", rhs.data());
   vtk.write_vec("sol", sol.data());
 }

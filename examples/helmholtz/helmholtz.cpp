@@ -188,6 +188,7 @@ void solve_helmholtz_gd() {
   ToVTK<T, Basis::Mesh> vtk(mesh, "gd_mesh.vtk");
   vtk.write_mesh();
 
+  // // Visualize stencil for each element (resulting very large vtk file!)
   // for (int elem = 0; elem < mesh.get_num_elements(); elem++) {
   //   std::vector<T> dof(mesh.get_num_nodes(), 0.0);
   //   int nodes[Basis::Mesh::nodes_per_element];
