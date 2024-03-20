@@ -3,10 +3,10 @@
 
 #include "physics_commons.h"
 
-template <typename T, int spatial_dim_>
-class PoissonPhysics final : public PhysicsBase<T, spatial_dim_, 0, 1> {
+template <typename T, int spatial_dim>
+class PoissonPhysics final : public PhysicsBase<T, spatial_dim, 0, 1> {
  private:
-  using PhysicsBase = PhysicsBase<T, spatial_dim_, 0, 1>;
+  using PhysicsBase = PhysicsBase<T, spatial_dim, 0, 1>;
 
  public:
   using PhysicsBase::data_per_node;

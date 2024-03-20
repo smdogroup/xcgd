@@ -9,6 +9,7 @@
 #include "elements/fe_tetrahedral.h"
 #include "elements/gd_vandermonde.h"
 #include "physics/helmholtz.h"
+#include "physics/linear_elasticity.h"
 #include "physics/neohookean.h"
 #include "physics/poisson.h"
 #include "sparse_utils/sparse_utils.h"
@@ -169,6 +170,14 @@ void test_neohookean(std::tuple<Quadrature *, Basis *> tuple, double h = 1e-30,
 }
 
 template <class Quadrature, class Basis>
+void test_elasticity(std::tuple<Quadrature *, Basis *> tuple, double h = 1e-30,
+                     double tol = 1e-14) {
+  T mu = 0.4, lambda = 1.2;
+  LinearElasticity<T, Basis::spatial_dim> physics(mu, lambda);
+  test_physics(tuple, physics, h, tol);
+}
+
+template <class Quadrature, class Basis>
 void test_poisson(std::tuple<Quadrature *, Basis *> tuple, double h = 1e-30,
                   double tol = 1e-14) {
   using Physics = PoissonPhysics<T, Basis::spatial_dim>;
@@ -194,5 +203,13 @@ TEST(physics, PoissonTet) { test_poisson(create_tet_basis()); }
 TEST(physics, PoissonGD) { test_poisson(create_gd_basis(), 1e-8, 1e-6); }
 
 TEST(physics, HelmholtzQuad) { test_helmholtz(create_quad_basis()); }
-TEST(physics, HelmholtzTet) { test_helmholtz(create_tet_basis(), 1e-30, 1e-13); }
+TEST(physics, HelmholtzTet) {
+  test_helmholtz(create_tet_basis(), 1e-30, 1e-13);
+}
 TEST(physics, HelmholtzGD) { test_helmholtz(create_gd_basis(), 1e-8, 1e-6); }
+
+TEST(physics, LinearElasticityQuad) { test_elasticity(create_quad_basis()); }
+TEST(physics, LinearElasticityTet) { test_elasticity(create_tet_basis()); }
+TEST(physics, LinearElasticityGD) {
+  test_elasticity(create_gd_basis(), 1e-8, 1e-8);
+}
