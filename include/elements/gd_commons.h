@@ -79,7 +79,7 @@ class StructuredGrid2D final {
   // cell -> verts
   void get_cell_verts(int cell, int* verts) const {
     if (verts) {
-      int nij[spatial_dim] = {cell % nxy[0], cell / nxy[1]};
+      int nij[spatial_dim] = {cell % nxy[0], cell / nxy[0]};
       verts[0] = get_coords_vert(nij);   //  3-------2
       verts[1] = verts[0] + 1;           //  |       |
       verts[2] = verts[1] + nxy[0] + 1;  //  |       |
@@ -247,6 +247,20 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
     const int* nxy = grid.get_nxy();
     for (int j = 0; j < nxy[1] + 1; j++) {
       int coords[2] = {0, j};
+      int node = grid.get_coords_vert(coords);
+      if (has_lsf and vert_nodes.count(node)) {
+        node = vert_nodes.at(node);
+      }
+      nodes.push_back(node);
+    }
+    return nodes;
+  }
+
+  std::vector<int> get_right_boundary_nodes() const {
+    std::vector<int> nodes;
+    const int* nxy = grid.get_nxy();
+    for (int j = 0; j < nxy[1] + 1; j++) {
+      int coords[2] = {nxy[0], j};
       int node = grid.get_coords_vert(coords);
       if (has_lsf and vert_nodes.count(node)) {
         node = vert_nodes.at(node);

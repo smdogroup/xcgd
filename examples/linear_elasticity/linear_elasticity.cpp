@@ -40,9 +40,6 @@ void solve_linear_elasticity(T E, T nu, Basis &basis, std::string name) {
   std::vector<T> dof(ndof, 0.0);
   analysis.jacobian(nullptr, dof.data(), jac_bsr);
 
-  // Store right hand size to sol
-  std::vector<T> sol(ndof, 0.0);
-
   // Set boundary conditions
   std::vector<int> bc_nodes = basis.mesh.get_left_boundary_nodes();
   std::vector<int> bc_dof;
@@ -58,34 +55,71 @@ void solve_linear_elasticity(T E, T nu, Basis &basis, std::string name) {
   CSCMat *jac_csc = SparseUtils::bsr_to_csc(jac_bsr);
   jac_csc->zero_columns(bc_dof.size(), bc_dof.data());
   jac_csc->write_mtx("K_" + name + ".mtx");
-  return;  // TODO: finish from here
 
-  // std::vector<T> rhs = sol;
+  // Set rhs
+  std::vector<int> force_nodes = basis.mesh.get_right_boundary_nodes();
+  std::vector<T> rhs(ndof, 0.0);
 
-  // // solve
-  // SparseUtils::CholOrderingType order = SparseUtils::CholOrderingType::ND;
-  // SparseUtils::SparseCholesky<T> *chol =
-  //     new SparseUtils::SparseCholesky<T>(jac_csc);
-  // chol->factor();
-  // chol->solve(sol.data());
+  for (int node : force_nodes) {
+    rhs[Physics::spatial_dim * node + 1] = -1.0;  // unit nodal force on -y
+  }
 
-  // // Check error
-  // // res = Ku - rhs
-  // std::vector<T> Ku(sol.size());
-  // jac_bsr->axpy(sol.data(), Ku.data());
-  // T err = 0.0;
-  // for (int i = 0; i < Ku.size(); i++) {
-  //   err += (Ku[i] - rhs[i]) * (Ku[i] - rhs[i]);
-  // }
-  // std::printf("||Ku - f||: %25.15e\n", sqrt(err));
+  for (int i : bc_dof) {
+    rhs[i] = 0.0;
+  }
 
-  // // Write to vtk
-  // ToVTK<T, typename Basis::Mesh> vtk(basis.mesh, name + ".vtk");
-  // vtk.write_mesh();
-  // vtk.write_sol("x", x.data());
-  // vtk.write_sol("u", sol.data());
-  // vtk.write_sol("rhs", rhs.data());
+  std::vector<T> sol = rhs;
+
+  // solve
+  SparseUtils::CholOrderingType order = SparseUtils::CholOrderingType::ND;
+  SparseUtils::SparseCholesky<T> *chol =
+      new SparseUtils::SparseCholesky<T>(jac_csc);
+  chol->factor();
+  chol->solve(sol.data());
+
+  // Check error
+  // res = Ku - rhs
+  std::vector<T> Ku(sol.size());
+  jac_bsr->axpy(sol.data(), Ku.data());
+  T err = 0.0;
+  for (int i = 0; i < Ku.size(); i++) {
+    err += (Ku[i] - rhs[i]) * (Ku[i] - rhs[i]);
+  }
+  std::printf("||Ku - f||: %25.15e\n", sqrt(err));
+
+  // Write to vtk
+  ToVTK<T, typename Basis::Mesh> vtk(basis.mesh, name + ".vtk");
+  vtk.write_mesh();
+  vtk.write_vec("rhs", rhs.data());
+  vtk.write_vec("sol", sol.data());
 }
+
+template <typename T>
+class Circle {
+ public:
+  Circle(T *center, T radius, bool flip = false) {
+    x0[0] = center[0];
+    x0[1] = center[1];
+    r = radius;
+    if (flip) {
+      sign = -1.0;
+    }
+  }
+
+  T operator()(const algoim::uvector<T, 2> &x) const {
+    return sign * ((x(0) - x0[0]) * (x(0) - x0[0]) +
+                   (x(1) - x0[1]) * (x(1) - x0[1]) - r * r);
+  }
+  algoim::uvector<T, 2> grad(const algoim::uvector<T, 2> &x) const {
+    return algoim::uvector<T, 2>(2.0 * sign * (x(0) - x0[0]),
+                                 2.0 * sign * (x(1) - x0[1]));
+  }
+
+ private:
+  T x0[2];
+  T r;
+  double sign = 1.0;
+};
 
 void solve_linear_elasticity_gd() {
   using T = double;
@@ -93,11 +127,16 @@ void solve_linear_elasticity_gd() {
   using Grid = StructuredGrid2D<T>;
   using Quadrature = GDQuadrature2D<T, Np_1d>;
   using Basis = GDBasis2D<T, Np_1d>;
-  int nxy[2] = {4, 4};
-  T lxy[2] = {1.0, 1.0};
+  int nxy[2] = {96, 64};
+  T lxy[2] = {1.5, 1.0};
+
+  T center[2] = {0.75, 0.5};
+  T r = 0.3;
+
+  Circle lsf(center, r, true);
 
   Grid grid(nxy, lxy);
-  Basis::Mesh mesh(grid);
+  Basis::Mesh mesh(grid, lsf);
   Basis basis(mesh);
 
   T E = 30.0, nu = 0.3;

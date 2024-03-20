@@ -54,11 +54,11 @@ struct VTK_NVERTS {
 };
 
 void write_real_val(std::FILE* fp, double val) {
-  std::fprintf(fp, "%-20.15f", val);
+  std::fprintf(fp, "%-25.15e", val);
 }
 
 void write_real_val(std::FILE* fp, std::complex<double> val) {
-  std::fprintf(fp, "%-20.15f", val.real());
+  std::fprintf(fp, "%-25.15e", val.real());
 }
 
 // VTK writer for 2d and 3d mesh
@@ -195,6 +195,30 @@ class ToVTK {
     // Write data
     for (int i = 0; i < mesh.get_num_nodes(); i++) {
       write_real_val(fp, sol_vec[i]);
+      std::fprintf(fp, "\n");
+    }
+  }
+
+  // Write nodal vectors
+  void write_vec(const std::string sol_name, const T* vec) {
+    // Write header
+    if (!vtk_has_sol_header) {
+      std::fprintf(fp, "POINT_DATA %d\n", mesh.get_num_nodes());
+      vtk_has_sol_header = true;
+    }
+    std::fprintf(fp, "VECTORS %s double\n", sol_name.c_str());
+
+    // Write data
+    for (int i = 0; i < mesh.get_num_nodes(); i++) {
+      if constexpr (spatial_dim == 2) {
+        write_real_val(fp, vec[spatial_dim * i]);
+        write_real_val(fp, vec[spatial_dim * i + 1]);
+        write_real_val(fp, 0.0);
+      } else {
+        write_real_val(fp, vec[spatial_dim * i]);
+        write_real_val(fp, vec[spatial_dim * i + 1]);
+        write_real_val(fp, vec[spatial_dim * i + 2]);
+      }
       std::fprintf(fp, "\n");
     }
   }
