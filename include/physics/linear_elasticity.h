@@ -14,7 +14,10 @@ class LinearElasticity final
   using PhysicsBase::dof_per_node;
   using PhysicsBase::spatial_dim;
 
-  LinearElasticity(T mu, T lambda) : mu(mu), lambda(lambda) {}
+  LinearElasticity(T E, T nu) {
+    mu = 0.5 * E / (1.0 + nu);
+    lambda = E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu));
+  }
 
   T energy(T weight, T _, const A2D::Mat<T, spatial_dim, spatial_dim>& J,
            A2D::Vec<T, dof_per_node>& __,

@@ -172,8 +172,8 @@ void test_neohookean(std::tuple<Quadrature *, Basis *> tuple, double h = 1e-30,
 template <class Quadrature, class Basis>
 void test_elasticity(std::tuple<Quadrature *, Basis *> tuple, double h = 1e-30,
                      double tol = 1e-14) {
-  T mu = 0.4, lambda = 1.2;
-  LinearElasticity<T, Basis::spatial_dim> physics(mu, lambda);
+  T E = 30.0, nu = 0.3;
+  LinearElasticity<T, Basis::spatial_dim> physics(E, nu);
   test_physics(tuple, physics, h, tol);
 }
 

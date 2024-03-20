@@ -242,6 +242,20 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
     }
   }
 
+  std::vector<int> get_left_boundary_nodes() const {
+    std::vector<int> nodes;
+    const int* nxy = grid.get_nxy();
+    for (int j = 0; j < nxy[1] + 1; j++) {
+      int coords[2] = {0, j};
+      int node = grid.get_coords_vert(coords);
+      if (has_lsf and vert_nodes.count(node)) {
+        node = vert_nodes.at(node);
+      }
+      nodes.push_back(node);
+    }
+    return nodes;
+  }
+
  private:
   void check_grid_compatibility(const Grid& grid) const {
     const int* nxy = grid.get_nxy();
