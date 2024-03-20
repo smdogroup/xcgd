@@ -11,9 +11,8 @@
 #include "utils/mesh.h"
 #include "utils/vtk.h"
 
-template <typename T, class Quadrature, class Basis>
-void solve_helmholtz(T *lxy, T *pt0, T r, T r0, Basis &basis,
-                     std::string name) {
+template <typename T, class Quadrature, class Basis, class Func>
+void solve_helmholtz(T r0, const Func &xfunc, Basis &basis, std::string name) {
   using Physics = HelmholtzPhysics<T, Basis::spatial_dim>;
   using Analysis = GalerkinAnalysis<T, Quadrature, Basis, Physics>;
   using BSRMat = GalerkinBSRMat<T, Physics::dof_per_node>;
@@ -43,11 +42,7 @@ void solve_helmholtz(T *lxy, T *pt0, T r, T r0, Basis &basis,
   for (int i = 0; i < basis.mesh.get_num_nodes(); i++) {
     T xloc[Basis::spatial_dim];
     basis.mesh.get_node_xloc(i, xloc);
-    if ((xloc[0] - pt0[0]) * (xloc[0] - pt0[0]) +
-            (xloc[1] - pt0[1]) * (xloc[1] - pt0[1]) <
-        r * r) {
-      x[i] = 1.0;
-    }
+    x[i] = xfunc(xloc);
   }
 
   // Compute Jacobian matrix
@@ -119,8 +114,46 @@ void solve_helmholtz_fem() {
   Basis::Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
   Basis basis(mesh);
 
-  solve_helmholtz<T, Quadrature, Basis>(lxy, pt0, r, r0, basis, "fe");
+  auto xfunc = [pt0, r](T *xloc) {
+    T rx2 = (xloc[0] - pt0[0]) * (xloc[0] - pt0[0]) +
+            (xloc[1] - pt0[1]) * (xloc[1] - pt0[1]);
+    T r2 = r * r;
+    if (rx2 < r2) {
+      return sqrt(rx2 / r2);
+    } else {
+      return 0.0;
+    }
+  };
+
+  solve_helmholtz<T, Quadrature, Basis>(r0, xfunc, basis, "fe");
 }
+
+template <typename T>
+class Circle {
+ public:
+  Circle(T *center, T radius, bool flip = false) {
+    x0[0] = center[0];
+    x0[1] = center[1];
+    r = radius;
+    if (flip) {
+      sign = -1.0;
+    }
+  }
+
+  T operator()(const algoim::uvector<T, 2> &x) const {
+    return sign * ((x(0) - x0[0]) * (x(0) - x0[0]) +
+                   (x(1) - x0[1]) * (x(1) - x0[1]) - r * r);
+  }
+  algoim::uvector<T, 2> grad(const algoim::uvector<T, 2> &x) const {
+    return algoim::uvector<T, 2>(2.0 * sign * (x(0) - x0[0]),
+                                 2.0 * sign * (x(1) - x0[1]));
+  }
+
+ private:
+  T x0[2];
+  T r;
+  double sign = 1.0;
+};
 
 void solve_helmholtz_gd() {
   using T = double;
@@ -129,14 +162,43 @@ void solve_helmholtz_gd() {
   using Quadrature = GDQuadrature2D<T, Np_1d>;
   using Basis = GDBasis2D<T, Np_1d>;
   int nxy[2] = {64, 64};
-  T lxy[2] = {3.0, 3.0};
-  T pt0[2] = {1.5, 1.5};
-  T r = 1.0, r0 = 5.0;
+  T lxy[2] = {1.0, 1.0};
+  T pt0[2] = {0.5, 0.5};
+  T r = 0.5;
   Grid grid(nxy, lxy);
-  Basis::Mesh mesh(grid);
+  Circle lsf(pt0, r);
+  Basis::Mesh mesh(grid, lsf);
   Basis basis(mesh);
 
-  solve_helmholtz<T, Quadrature, Basis>(lxy, pt0, r, r0, basis, "gd");
+  auto xfunc = [pt0, r](T *xloc) {
+    T rx2 = (xloc[0] - pt0[0]) * (xloc[0] - pt0[0]) +
+            (xloc[1] - pt0[1]) * (xloc[1] - pt0[1]);
+    T r2 = r * r;
+    if (rx2 < r2) {
+      return sqrt(rx2 / r2);
+    } else {
+      return 0.0;
+    }
+  };
+
+  T r0 = 5.0;
+  solve_helmholtz<T, Quadrature, Basis>(r0, xfunc, basis, "gd");
+
+  // Test
+  ToVTK<T, Basis::Mesh> vtk(mesh, "gd_mesh.vtk");
+  vtk.write_mesh();
+
+  // for (int elem = 0; elem < mesh.get_num_elements(); elem++) {
+  //   std::vector<T> dof(mesh.get_num_nodes(), 0.0);
+  //   int nodes[Basis::Mesh::nodes_per_element];
+  //   mesh.get_elem_dof_nodes(elem, nodes);
+  //   for (int i = 0; i < Basis::Mesh::nodes_per_element; i++) {
+  //     dof[nodes[i]] = 1.0;
+  //   }
+  //   char name[256];
+  //   std::snprintf(name, 256, "elem_%05d", elem);
+  //   vtk.write_sol(name, dof.data());
+  // }
 }
 
 int main(int argc, char *argv[]) {

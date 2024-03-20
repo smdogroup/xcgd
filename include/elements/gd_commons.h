@@ -23,12 +23,11 @@ class StructuredGrid2D final {
   StructuredGrid2D(const int* nxy_, const T* lxy_, const T* xy0_ = nullptr) {
     for (int d = 0; d < spatial_dim; d++) {
       nxy[d] = nxy_[d];
+      lxy[d] = lxy_[d];
       if (xy0_) {
         xy0[d] = xy0_[d];
-        lxy[d] = lxy_[d] - xy0_[d];
       } else {
         xy0[d] = 0.0;
-        lxy[d] = lxy_[d];
       }
     }
   }
@@ -185,7 +184,7 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
    */
   void get_elem_dof_nodes(int elem, int* nodes) const {
     if (has_lsf) {
-      int cell = elem_cells[elem];
+      int cell = elem_cells.at(elem);
       get_cell_ground_stencil(cell, nodes);
       adjust_stencil(cell, nodes);
       for (int i = 0; i < nodes_per_element; i++) {
@@ -198,7 +197,7 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
 
   inline void get_elem_corner_nodes(int elem, int* nodes) const {
     if (has_lsf) {
-      grid.get_cell_verts(elem_cells[elem], nodes);
+      grid.get_cell_verts(elem_cells.at(elem), nodes);
       for (int i = 0; i < corner_nodes_per_element; i++) {
         nodes[i] = vert_nodes.at(nodes[i]);
       }
@@ -236,7 +235,11 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
   }
 
   inline void get_elem_vert_ranges(int elem, T* xloc_min, T* xloc_max) const {
-    grid.get_cell_vert_ranges(elem, xloc_min, xloc_max);
+    if (has_lsf) {
+      grid.get_cell_vert_ranges(elem_cells.at(elem), xloc_min, xloc_max);
+    } else {
+      grid.get_cell_vert_ranges(elem, xloc_min, xloc_max);
+    }
   }
 
  private:

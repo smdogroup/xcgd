@@ -34,27 +34,30 @@ TEST(mesh, GDMeshStructured) {
   }
 }
 
+template <typename T>
 class Circle {
  public:
-  Circle(bool flip = false) {
+  Circle(T* center, T radius, bool flip = false) {
+    x0[0] = center[0];
+    x0[1] = center[1];
+    r = radius;
     if (flip) {
       sign = -1.0;
     }
   }
 
-  template <typename T>
   T operator()(const algoim::uvector<T, 2>& x) const {
-    return sign *
-           ((x(0) - 0.5) * (x(0) - 0.5) + (x(1) - 0.5) * (x(1) - 0.5) - 0.25);
+    return sign * ((x(0) - x0[0]) * (x(0) - x0[0]) +
+                   (x(1) - x0[1]) * (x(1) - x0[1]) - r * r);
   }
-
-  template <typename T>
   algoim::uvector<T, 2> grad(const algoim::uvector<T, 2>& x) const {
-    return algoim::uvector<T, 2>(sign * (2.0 * x(0) - 1.0),
-                                 sign * (2.0 * x(1) - 1.0));
+    return algoim::uvector<T, 2>(2.0 * sign * (x(0) - x0[0]),
+                                 2.0 * sign * (x(1) - x0[1]));
   }
 
  private:
+  T x0[2];
+  T r;
   double sign = 1.0;
 };
 
@@ -68,7 +71,10 @@ void generate_lsf_mesh(bool flip = false) {
   T lxy[2] = {2.0, 2.0};
   T xy0[2] = {-1.0, -1.0};
 
-  Circle lsf(flip);
+  T center[2] = {0.0, 0.0};
+  T r = 0.5;
+
+  Circle lsf(center, r, flip);
 
   Grid grid(nxy, lxy, xy0);
   Mesh mesh(grid, lsf);

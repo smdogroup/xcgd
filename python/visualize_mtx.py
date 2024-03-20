@@ -6,6 +6,7 @@ import numpy as np
 p = argparse.ArgumentParser()
 p.add_argument("mtx", nargs="*")
 p.add_argument("--matshow", action="store_true")
+p.add_argument("--check-symmetry", action="store_true")
 args = p.parse_args()
 
 mat_list = []
@@ -32,5 +33,11 @@ if len(mat_list) == 2:
 
     fig, ax = plt.subplots()
     ax.matshow((mat1 - mat2).todense())
+
+# Check symmetry
+if args.check_symmetry:
+    print("max(mat - mat.T): %20.10e" % (mat - mat.T).max())
+    print("min(mat - mat.T): %20.10e" % (mat - mat.T).min())
+
 
 plt.show()
