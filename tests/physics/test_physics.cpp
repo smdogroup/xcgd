@@ -145,11 +145,11 @@ create_tet_basis() {
 }
 
 template <int Np_1d = 4>
-std::tuple<GDQuadrature2D<T, Np_1d> *, GDBasis2D<T, Np_1d> *>
+std::tuple<GDGaussQuadrature2D<T, Np_1d> *, GDBasis2D<T, Np_1d> *>
 create_gd_basis() {
   int constexpr nx = 5, ny = 7;
   using Grid = StructuredGrid2D<T>;
-  using Quadrature = GDQuadrature2D<T, Np_1d>;
+  using Quadrature = GDGaussQuadrature2D<T, Np_1d>;
   using Basis = GDBasis2D<T, Np_1d>;
   using Mesh = typename Basis::Mesh;
 

@@ -159,7 +159,7 @@ void solve_helmholtz_gd() {
   using T = double;
   int constexpr Np_1d = 4;
   using Grid = StructuredGrid2D<T>;
-  using Quadrature = GDQuadrature2D<T, Np_1d>;
+  using Quadrature = GDGaussQuadrature2D<T, Np_1d>;
   using Basis = GDBasis2D<T, Np_1d>;
   int nxy[2] = {64, 64};
   T lxy[2] = {1.0, 1.0};

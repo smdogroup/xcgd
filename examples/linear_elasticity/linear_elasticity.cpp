@@ -126,7 +126,7 @@ void solve_linear_elasticity_gd() {
   using T = double;
   int constexpr Np_1d = 2;
   using Grid = StructuredGrid2D<T>;
-  using Quadrature = GDQuadrature2D<T, Np_1d>;
+  using Quadrature = GDGaussQuadrature2D<T, Np_1d>;
   using Basis = GDBasis2D<T, Np_1d>;
   int nxy[2] = {96, 64};
   T lxy[2] = {1.5, 1.0};

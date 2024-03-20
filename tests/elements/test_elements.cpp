@@ -18,7 +18,7 @@ TEST(elements, GalerkinDiff2D) {
   using T = std::complex<double>;
   using Grid = StructuredGrid2D<T>;
   using Mesh = GDMesh2D<T, Np_1d>;
-  using Quadrature = GDQuadrature2D<T, Np_1d>;
+  using Quadrature = GDGaussQuadrature2D<T, Np_1d>;
   using Basis = GDBasis2D<T, Np_1d>;
   int constexpr num_quadrature_pts = Quadrature::num_quadrature_pts;
 
@@ -167,7 +167,7 @@ TEST(elements, IntergrationGD2D_Np2) {
   using T = double;
   constexpr int Np_1d = 2;
 
-  using Quadrature = GDQuadrature2D<T, Np_1d>;
+  using Quadrature = GDGaussQuadrature2D<T, Np_1d>;
   using Basis = GDBasis2D<T, Np_1d>;
   using Grid = StructuredGrid2D<T>;
 
@@ -186,7 +186,7 @@ TEST(elements, IntergrationGD2D_Np4) {
   using T = double;
   constexpr int Np_1d = 4;
 
-  using Quadrature = GDQuadrature2D<T, Np_1d>;
+  using Quadrature = GDGaussQuadrature2D<T, Np_1d>;
   using Basis = GDBasis2D<T, Np_1d>;
   using Grid = StructuredGrid2D<T>;
 

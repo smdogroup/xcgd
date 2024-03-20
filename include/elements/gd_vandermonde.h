@@ -16,7 +16,8 @@
 #include "utils/misc.h"
 
 template <typename T, int Np_1d, class Mesh_ = GDMesh2D<T, Np_1d>>
-class GDQuadrature2D final : public QuadratureBase<T, Np_1d * Np_1d, Mesh_> {
+class GDGaussQuadrature2D final
+    : public QuadratureBase<T, Np_1d * Np_1d, Mesh_> {
  private:
   using QuadratureBase = QuadratureBase<T, Np_1d * Np_1d, Mesh_>;
 
@@ -24,7 +25,7 @@ class GDQuadrature2D final : public QuadratureBase<T, Np_1d * Np_1d, Mesh_> {
   using QuadratureBase::num_quadrature_pts;
   using typename QuadratureBase::Mesh;
 
-  GDQuadrature2D(const Mesh& mesh) : QuadratureBase(mesh) {
+  GDGaussQuadrature2D(const Mesh& mesh) : QuadratureBase(mesh) {
     for (int i = 0; i < Np_1d; i++) {
       pts_1d[i] = algoim::GaussQuad::x(Np_1d, i);  // in [0, 1]
       wts_1d[i] = algoim::GaussQuad::w(Np_1d, i);
