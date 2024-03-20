@@ -6,17 +6,21 @@
 #include "fe_commons.h"
 
 template <typename T, class Mesh_ = FEMesh<T, 3, 10>>
-class TetrahedralQuadrature final : public QuadratureBase<T, 5, Mesh_> {
+class TetrahedralQuadrature final : public QuadratureBase<T, Mesh_> {
  private:
-  using QuadratureBase = QuadratureBase<T, 5, Mesh_>;
+  using QuadratureBase = QuadratureBase<T, Mesh_>;
+  static constexpr int num_quad_pts = 5;
 
  public:
-  using QuadratureBase::num_quadrature_pts;
   using typename QuadratureBase::Mesh;
 
   TetrahedralQuadrature(const Mesh& mesh) : QuadratureBase(mesh) {}
 
-  void get_quadrature_pts(int _, T pts[], T wts[]) const {
+  int get_quadrature_pts(int _, std::vector<T>& pts,
+                         std::vector<T>& wts) const {
+    pts.resize(Mesh::spatial_dim * num_quad_pts);
+    wts.resize(num_quad_pts);
+
     pts[0] = 0.25;
     pts[1] = 0.25;
     pts[2] = 0.25;
@@ -38,6 +42,8 @@ class TetrahedralQuadrature final : public QuadratureBase<T, 5, Mesh_> {
     wts[2] = 3.0 / 40;
     wts[3] = 3.0 / 40;
     wts[4] = 3.0 / 40;
+
+    return num_quad_pts;
   }
 };
 
@@ -53,67 +59,63 @@ class TetrahedralBasis final : public BasisBase<T, Mesh_> {
 
   TetrahedralBasis(const Mesh& mesh) : BasisBase(mesh) {}
 
-  template <int num_quadrature_pts>
-  void eval_basis_grad(int _, const T* pts, T* N, T* Nxi) const {
-    for (int q = 0; q < num_quadrature_pts; q++) {
+  void eval_basis_grad(int _, const std::vector<T>& pts, std::vector<T>& N,
+                       std::vector<T>& Nxi) const {
+    int num_quad_pts = pts.size() / spatial_dim;
+    N.resize(nodes_per_element * num_quad_pts);
+    Nxi.resize(nodes_per_element * num_quad_pts * spatial_dim);
+
+    for (int q = 0; q < num_quad_pts; q++) {
       int offset_n = q * nodes_per_element;
       int offset_nxi = q * nodes_per_element * spatial_dim;
-      if (N) {
-        N[offset_n] =
-            2.0 * (pts[0] + pts[1] + pts[2]) * (pts[0] + pts[1] + pts[2]) -
-            3.0 * (pts[0] + pts[1] + pts[2]) + 1.0;
-        N[offset_n + 1] = -pts[0] + 2.0 * pts[0] * pts[0];
-        N[offset_n + 2] = -pts[1] + 2.0 * pts[1] * pts[1];
-        N[offset_n + 3] = -pts[2] + 2.0 * pts[2] * pts[2];
-        N[offset_n + 4] = 4.0 * pts[0] * (1.0 - pts[0] - pts[1] - pts[2]);
-        N[offset_n + 5] = 4.0 * pts[1] * (1.0 - pts[0] - pts[1] - pts[2]);
-        N[offset_n + 6] = 4.0 * pts[2] * (1.0 - pts[0] - pts[1] - pts[2]);
-        N[offset_n + 7] = 4.0 * pts[0] * pts[1];
-        N[offset_n + 8] = 4.0 * pts[0] * pts[2];
-        N[offset_n + 9] = 4.0 * pts[1] * pts[2];
-      }
+
+      N[offset_n] =
+          2.0 * (pts[0] + pts[1] + pts[2]) * (pts[0] + pts[1] + pts[2]) -
+          3.0 * (pts[0] + pts[1] + pts[2]) + 1.0;
+      N[offset_n + 1] = -pts[0] + 2.0 * pts[0] * pts[0];
+      N[offset_n + 2] = -pts[1] + 2.0 * pts[1] * pts[1];
+      N[offset_n + 3] = -pts[2] + 2.0 * pts[2] * pts[2];
+      N[offset_n + 4] = 4.0 * pts[0] * (1.0 - pts[0] - pts[1] - pts[2]);
+      N[offset_n + 5] = 4.0 * pts[1] * (1.0 - pts[0] - pts[1] - pts[2]);
+      N[offset_n + 6] = 4.0 * pts[2] * (1.0 - pts[0] - pts[1] - pts[2]);
+      N[offset_n + 7] = 4.0 * pts[0] * pts[1];
+      N[offset_n + 8] = 4.0 * pts[0] * pts[2];
+      N[offset_n + 9] = 4.0 * pts[1] * pts[2];
 
       // Corner node derivatives
-      if (Nxi) {
-        Nxi[offset_nxi] = 4.0 * pts[0] + 4.0 * pts[1] + 4.0 * pts[2] - 3.0;
-        Nxi[offset_nxi + 1] = 4.0 * pts[0] + 4.0 * pts[1] + 4.0 * pts[2] - 3.0;
-        Nxi[offset_nxi + 2] = 4.0 * pts[0] + 4.0 * pts[1] + 4.0 * pts[2] - 3.0;
+      Nxi[offset_nxi] = 4.0 * pts[0] + 4.0 * pts[1] + 4.0 * pts[2] - 3.0;
+      Nxi[offset_nxi + 1] = 4.0 * pts[0] + 4.0 * pts[1] + 4.0 * pts[2] - 3.0;
+      Nxi[offset_nxi + 2] = 4.0 * pts[0] + 4.0 * pts[1] + 4.0 * pts[2] - 3.0;
 
-        Nxi[offset_nxi + 3] = 4.0 * pts[0] - 1.0;
-        Nxi[offset_nxi + 4] = 0.0;
-        Nxi[offset_nxi + 5] = 0.0;
-        Nxi[offset_nxi + 6] = 0.0;
-        Nxi[offset_nxi + 7] = 4.0 * pts[1] - 1.0;
-        Nxi[offset_nxi + 8] = 0.0;
-        Nxi[offset_nxi + 9] = 0.0;
-        Nxi[offset_nxi + 10] = 0.0;
-        Nxi[offset_nxi + 11] = 4.0 * pts[2] - 1.0;
+      Nxi[offset_nxi + 3] = 4.0 * pts[0] - 1.0;
+      Nxi[offset_nxi + 4] = 0.0;
+      Nxi[offset_nxi + 5] = 0.0;
+      Nxi[offset_nxi + 6] = 0.0;
+      Nxi[offset_nxi + 7] = 4.0 * pts[1] - 1.0;
+      Nxi[offset_nxi + 8] = 0.0;
+      Nxi[offset_nxi + 9] = 0.0;
+      Nxi[offset_nxi + 10] = 0.0;
+      Nxi[offset_nxi + 11] = 4.0 * pts[2] - 1.0;
 
-        // Mid node derivatives
-        Nxi[offset_nxi + 12] = -4.0 * (2.0 * pts[0] + pts[1] + pts[2] - 1.0);
-        Nxi[offset_nxi + 13] = -4.0 * pts[0];
-        Nxi[offset_nxi + 14] = -4.0 * pts[0];
-
-        Nxi[offset_nxi + 15] = 4.0 * pts[1];
-        Nxi[offset_nxi + 16] = 4.0 * pts[0];
-        Nxi[offset_nxi + 17] = 0.0;
-
-        Nxi[offset_nxi + 18] = -4.0 * pts[1];
-        Nxi[offset_nxi + 19] = -4.0 * (pts[0] + 2.0 * pts[1] + pts[2] - 1.0);
-        Nxi[offset_nxi + 20] = -4.0 * pts[1];
-
-        Nxi[offset_nxi + 21] = -4.0 * pts[2];
-        Nxi[offset_nxi + 22] = -4.0 * pts[2];
-        Nxi[offset_nxi + 23] = -4.0 * (pts[0] + pts[1] + 2.0 * pts[2] - 1.0);
-
-        Nxi[offset_nxi + 24] = 4.0 * pts[2];
-        Nxi[offset_nxi + 25] = 0.0;
-        Nxi[offset_nxi + 26] = 4.0 * pts[0];
-
-        Nxi[offset_nxi + 27] = 0.0;
-        Nxi[offset_nxi + 28] = 4.0 * pts[2];
-        Nxi[offset_nxi + 29] = 4.0 * pts[1];
-      }
+      // Mid node derivatives
+      Nxi[offset_nxi + 12] = -4.0 * (2.0 * pts[0] + pts[1] + pts[2] - 1.0);
+      Nxi[offset_nxi + 13] = -4.0 * pts[0];
+      Nxi[offset_nxi + 14] = -4.0 * pts[0];
+      Nxi[offset_nxi + 15] = 4.0 * pts[1];
+      Nxi[offset_nxi + 16] = 4.0 * pts[0];
+      Nxi[offset_nxi + 17] = 0.0;
+      Nxi[offset_nxi + 18] = -4.0 * pts[1];
+      Nxi[offset_nxi + 19] = -4.0 * (pts[0] + 2.0 * pts[1] + pts[2] - 1.0);
+      Nxi[offset_nxi + 20] = -4.0 * pts[1];
+      Nxi[offset_nxi + 21] = -4.0 * pts[2];
+      Nxi[offset_nxi + 22] = -4.0 * pts[2];
+      Nxi[offset_nxi + 23] = -4.0 * (pts[0] + pts[1] + 2.0 * pts[2] - 1.0);
+      Nxi[offset_nxi + 24] = 4.0 * pts[2];
+      Nxi[offset_nxi + 25] = 0.0;
+      Nxi[offset_nxi + 26] = 4.0 * pts[0];
+      Nxi[offset_nxi + 27] = 0.0;
+      Nxi[offset_nxi + 28] = 4.0 * pts[2];
+      Nxi[offset_nxi + 29] = 4.0 * pts[1];
     }
   }
 };

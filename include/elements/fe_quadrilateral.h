@@ -4,17 +4,21 @@
 #include "fe_commons.h"
 
 template <typename T, class Mesh_ = FEMesh<T, 2, 4>>
-class QuadrilateralQuadrature final : public QuadratureBase<T, 4, Mesh_> {
+class QuadrilateralQuadrature final : public QuadratureBase<T, Mesh_> {
  private:
-  using QuadratureBase = QuadratureBase<T, 4, Mesh_>;
+  using QuadratureBase = QuadratureBase<T, Mesh_>;
+  static constexpr int num_quad_pts = 4;
 
  public:
-  using QuadratureBase::num_quadrature_pts;
   using typename QuadratureBase::Mesh;
 
   QuadrilateralQuadrature(const Mesh& mesh) : QuadratureBase(mesh) {}
 
-  void get_quadrature_pts(int _, T pts[], T wts[]) const {
+  int get_quadrature_pts(int _, std::vector<T>& pts,
+                         std::vector<T>& wts) const {
+    pts.resize(Mesh::spatial_dim * num_quad_pts);
+    wts.resize(num_quad_pts);
+
     pts[0] = -0.5773502692;
     pts[1] = -0.5773502692;
     pts[2] = 0.5773502692;
@@ -28,6 +32,8 @@ class QuadrilateralQuadrature final : public QuadratureBase<T, 4, Mesh_> {
     wts[1] = 1.0;
     wts[2] = 1.0;
     wts[3] = 1.0;
+
+    return num_quad_pts;
   }
 };
 
@@ -43,28 +49,30 @@ class QuadrilateralBasis final : public BasisBase<T, Mesh_> {
 
   QuadrilateralBasis(const Mesh& mesh) : BasisBase(mesh) {}
 
-  template <int num_quadrature_pts>
-  void eval_basis_grad(int _, const T* pts, T* N, T* Nxi) const {
-    for (int q = 0; q < num_quadrature_pts; q++) {
+  void eval_basis_grad(int _, const std::vector<T>& pts, std::vector<T>& N,
+                       std::vector<T>& Nxi) const {
+    int num_quad_pts = pts.size() / spatial_dim;
+    N.resize(nodes_per_element * num_quad_pts);
+    Nxi.resize(nodes_per_element * num_quad_pts * spatial_dim);
+
+    for (int q = 0; q < num_quad_pts; q++) {
       int offset = q * spatial_dim;
       int offset_n = q * nodes_per_element;
       int offset_nxi = q * nodes_per_element * spatial_dim;
-      if (N) {
-        N[offset_n] = 0.25 * (1.0 - pts[offset]) * (1.0 - pts[offset + 1]);
-        N[offset_n + 1] = 0.25 * (1.0 + pts[offset]) * (1.0 - pts[offset + 1]);
-        N[offset_n + 2] = 0.25 * (1.0 + pts[offset]) * (1.0 + pts[offset + 1]);
-        N[offset_n + 3] = 0.25 * (1.0 - pts[offset]) * (1.0 + pts[offset + 1]);
-      }
-      if (Nxi) {
-        Nxi[offset_nxi] = -0.25 * (1.0 - pts[offset + 1]);
-        Nxi[offset_nxi + 1] = -0.25 * (1.0 - pts[offset]);
-        Nxi[offset_nxi + 2] = 0.25 * (1.0 - pts[offset + 1]);
-        Nxi[offset_nxi + 3] = -0.25 * (1.0 + pts[offset]);
-        Nxi[offset_nxi + 4] = 0.25 * (1.0 + pts[offset + 1]);
-        Nxi[offset_nxi + 5] = 0.25 * (1.0 + pts[offset]);
-        Nxi[offset_nxi + 6] = -0.25 * (1.0 + pts[offset + 1]);
-        Nxi[offset_nxi + 7] = 0.25 * (1.0 - pts[offset]);
-      }
+
+      N[offset_n] = 0.25 * (1.0 - pts[offset]) * (1.0 - pts[offset + 1]);
+      N[offset_n + 1] = 0.25 * (1.0 + pts[offset]) * (1.0 - pts[offset + 1]);
+      N[offset_n + 2] = 0.25 * (1.0 + pts[offset]) * (1.0 + pts[offset + 1]);
+      N[offset_n + 3] = 0.25 * (1.0 - pts[offset]) * (1.0 + pts[offset + 1]);
+
+      Nxi[offset_nxi] = -0.25 * (1.0 - pts[offset + 1]);
+      Nxi[offset_nxi + 1] = -0.25 * (1.0 - pts[offset]);
+      Nxi[offset_nxi + 2] = 0.25 * (1.0 - pts[offset + 1]);
+      Nxi[offset_nxi + 3] = -0.25 * (1.0 + pts[offset]);
+      Nxi[offset_nxi + 4] = 0.25 * (1.0 + pts[offset + 1]);
+      Nxi[offset_nxi + 5] = 0.25 * (1.0 + pts[offset]);
+      Nxi[offset_nxi + 6] = -0.25 * (1.0 + pts[offset + 1]);
+      Nxi[offset_nxi + 7] = 0.25 * (1.0 - pts[offset]);
     }
   }
 };

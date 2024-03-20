@@ -20,7 +20,6 @@ TEST(elements, GalerkinDiff2D) {
   using Mesh = GDMesh2D<T, Np_1d>;
   using Quadrature = GDGaussQuadrature2D<T, Np_1d>;
   using Basis = GDBasis2D<T, Np_1d>;
-  int constexpr num_quadrature_pts = Quadrature::num_quadrature_pts;
 
   int constexpr nx = 10, ny = 10;
   int nxy[2] = {nx, ny};
@@ -28,16 +27,16 @@ TEST(elements, GalerkinDiff2D) {
   Grid grid(nxy, lxy);
   Mesh mesh(grid);
 
-  std::vector<T> N(Nk * num_quadrature_pts);
-  std::vector<T> Nxi(grid.spatial_dim * Nk * num_quadrature_pts);
-
   double h = 1e-7;
   std::vector<double> p = {0.4385123, 0.742383};
   std::vector<double> pt = {0.39214122, -0.24213123};
 
-  std::vector<T> pts(num_quadrature_pts * Grid::spatial_dim);
+  std::vector<T> t1, t2;
+  Quadrature quadrature(mesh);
+  int num_quad_pts = quadrature.get_quadrature_pts(0, t1, t2);
 
-  for (int q = 0; q < num_quadrature_pts; q++) {
+  std::vector<T> pts(num_quad_pts * Grid::spatial_dim);
+  for (int q = 0; q < num_quad_pts; q++) {
     pts[Grid::spatial_dim * q] = T(pt[0], h * p[0]);
     pts[Grid::spatial_dim * q + 1] = T(pt[1], h * p[1]);
   }
@@ -59,8 +58,8 @@ TEST(elements, GalerkinDiff2D) {
   Basis basis(mesh);
 
   for (int elem = 0; elem < nx * ny; elem++) {
-    basis.template eval_basis_grad<num_quadrature_pts>(elem, pts.data(),
-                                                       N.data(), Nxi.data());
+    std::vector<T> N, Nxi;
+    basis.eval_basis_grad(elem, pts, N, Nxi);
 
     for (int i = 0; i < Nk; i++) {
       double nxi_cs = N[i].imag() / h;

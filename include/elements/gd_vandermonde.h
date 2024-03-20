@@ -16,13 +16,12 @@
 #include "utils/misc.h"
 
 template <typename T, int Np_1d, class Mesh_ = GDMesh2D<T, Np_1d>>
-class GDGaussQuadrature2D final
-    : public QuadratureBase<T, Np_1d * Np_1d, Mesh_> {
+class GDGaussQuadrature2D final : public QuadratureBase<T, Mesh_> {
  private:
-  using QuadratureBase = QuadratureBase<T, Np_1d * Np_1d, Mesh_>;
+  using QuadratureBase = QuadratureBase<T, Mesh_>;
+  static constexpr int num_quad_pts = Np_1d * Np_1d;
 
  public:
-  using QuadratureBase::num_quadrature_pts;
   using typename QuadratureBase::Mesh;
 
   GDGaussQuadrature2D(const Mesh& mesh) : QuadratureBase(mesh) {
@@ -32,8 +31,12 @@ class GDGaussQuadrature2D final
     }
   }
 
-  void get_quadrature_pts(int elem, T pts[], T wts[]) const {
+  int get_quadrature_pts(int elem, std::vector<T>& pts,
+                         std::vector<T>& wts) const {
     int constexpr spatial_dim = Mesh::spatial_dim;
+    pts.resize(spatial_dim * num_quad_pts);
+    wts.resize(num_quad_pts);
+
     T xy_min[spatial_dim], xy_max[spatial_dim];
     T uv_min[spatial_dim], uv_max[spatial_dim];
     this->mesh.get_elem_node_ranges(elem, xy_min, xy_max);
@@ -48,13 +51,15 @@ class GDGaussQuadrature2D final
     T cy = (2.0 * uv_min[1] - xy_min[1] - xy_max[1]) / (xy_max[1] - xy_min[1]);
     T dy = 2.0 * hy;
 
-    for (int q = 0; q < num_quadrature_pts; q++) {  // q = i * Np_1d + j
+    for (int q = 0; q < num_quad_pts; q++) {  // q = i * Np_1d + j
       int i = q / Np_1d;
       int j = q % Np_1d;
       pts[q * spatial_dim] = cx + dx * pts_1d[i];
       pts[q * spatial_dim + 1] = cy + dy * pts_1d[j];
       wts[q] = wt * wts_1d[i] * wts_1d[j];
     }
+
+    return num_quad_pts;
   }
 
  private:
@@ -86,9 +91,11 @@ class GDBasis2D final : public BasisBase<T, Mesh_> {
  public:
   GDBasis2D(Mesh& mesh) : BasisBase(mesh) {}
 
-  template <int num_quadrature_pts>
-  void eval_basis_grad(int elem, const T* pts, T* N, T* Nxi) const {
-    if (!N and !Nxi) return;
+  void eval_basis_grad(int elem, const std::vector<T>& pts, std::vector<T>& N,
+                       std::vector<T>& Nxi) const {
+    int num_quad_pts = pts.size() / spatial_dim;
+    N.resize(nodes_per_element * num_quad_pts);
+    Nxi.resize(nodes_per_element * num_quad_pts * spatial_dim);
 
     T Ck[Nk * Np];
     std::vector<T> xpows(Np_1d), ypows(Np_1d);
@@ -125,7 +132,7 @@ class GDBasis2D final : public BasisBase<T, Mesh_> {
     std::vector<T> dxpows(Np_1d);
     std::vector<T> dypows(Np_1d);
 
-    for (int q = 0; q < num_quadrature_pts; q++) {
+    for (int q = 0; q < num_quad_pts; q++) {
       int offset_n = q * nodes_per_element;
       int offset_nxi = q * nodes_per_element * spatial_dim;
 
@@ -140,26 +147,19 @@ class GDBasis2D final : public BasisBase<T, Mesh_> {
       }
 
       for (int i = 0; i < Nk; i++) {
-        if (N) {
-          N[offset_n + i] = 0.0;
-        }
-        if (Nxi) {
-          Nxi[offset_nxi + spatial_dim * i] = 0.0;
-          Nxi[offset_nxi + spatial_dim * i + 1] = 0.0;
-        }
+        N[offset_n + i] = 0.0;
+        Nxi[offset_nxi + spatial_dim * i] = 0.0;
+        Nxi[offset_nxi + spatial_dim * i + 1] = 0.0;
 
         for (int j = 0; j < Np_1d; j++) {
           for (int k = 0; k < Np_1d; k++) {
             int idx = j * Np_1d + k;
-            if (N) {
-              N[offset_n + i] += Ck[idx + Nk * i] * xpows[j] * ypows[k];
-            }
-            if (Nxi) {
-              Nxi[offset_nxi + spatial_dim * i] +=
-                  Ck[idx + Nk * i] * dxpows[j] * ypows[k];
-              Nxi[offset_nxi + spatial_dim * i + 1] +=
-                  Ck[idx + Nk * i] * xpows[j] * dypows[k];
-            }
+
+            N[offset_n + i] += Ck[idx + Nk * i] * xpows[j] * ypows[k];
+            Nxi[offset_nxi + spatial_dim * i] +=
+                Ck[idx + Nk * i] * dxpows[j] * ypows[k];
+            Nxi[offset_nxi + spatial_dim * i + 1] +=
+                Ck[idx + Nk * i] * xpows[j] * dypows[k];
           }
         }
       }

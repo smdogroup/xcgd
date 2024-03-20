@@ -1,6 +1,8 @@
 #ifndef XCGD_ELEMENT_COMMONS_H
 #define XCGD_ELEMENT_COMMONS_H
 
+#include <vector>
+
 #include "a2dcore.h"
 
 /**
@@ -22,15 +24,15 @@ class MeshBase {
   virtual void get_elem_corner_nodes(int elem, int* nodes) const = 0;
 };
 
-template <typename T, int num_quadrature_pts_, class Mesh_>
+template <typename T, class Mesh_>
 class QuadratureBase {
  public:
   using Mesh = Mesh_;
-  static constexpr int num_quadrature_pts = num_quadrature_pts_;
 
   QuadratureBase(const Mesh& mesh) : mesh(mesh) {}
 
-  virtual void get_quadrature_pts(int elem, T pts[], T wts[]) const = 0;
+  virtual int get_quadrature_pts(int elem, std::vector<T>& pts,
+                                 std::vector<T>& wts) const = 0;
 
   const Mesh& mesh;
 };
@@ -53,8 +55,9 @@ class BasisBase {
 
   BasisBase(const Mesh& mesh) : mesh(mesh) {}
 
-  template <int num_quadrature_pts>
-  void eval_basis_grad(int elem, const T* pts, T* N, T* Nxi) const {};
+  virtual void eval_basis_grad(int elem, const std::vector<T>& pts,
+                               std::vector<T>& N,
+                               std::vector<T>& Nxi) const = 0;
 
   const Mesh& mesh;
 };

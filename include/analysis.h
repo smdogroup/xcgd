@@ -1,6 +1,8 @@
 #ifndef XCGD_ANALYSIS_H
 #define XCGD_ANALYSIS_H
 
+#include <vector>
+
 #include "a2dcore.h"
 #include "elements/element_commons.h"
 #include "sparse_utils/sparse_matrix.h"
@@ -12,9 +14,6 @@ class GalerkinAnalysis final {
   // Static data taken from the element basis
   static constexpr int spatial_dim = Basis::spatial_dim;
   static constexpr int nodes_per_element = Basis::nodes_per_element;
-
-  // Static data from the quadrature
-  static constexpr int num_quadrature_pts = Quadrature::num_quadrature_pts;
 
   // Static data taken from the physics
   static constexpr int dof_per_node = Physics::dof_per_node;
@@ -76,15 +75,13 @@ class GalerkinAnalysis final {
       T element_dof[dof_per_element];
       get_element_vars<dof_per_node>(i, dof, element_dof);
 
-      T pts[spatial_dim * num_quadrature_pts];
-      T wts[num_quadrature_pts];
-      quadrature.get_quadrature_pts(i, pts, wts);
+      std::vector<T> pts, wts;
+      int num_quad_pts = quadrature.get_quadrature_pts(i, pts, wts);
 
-      T N[nodes_per_element * num_quadrature_pts];
-      T Nxi[spatial_dim * nodes_per_element * num_quadrature_pts];
-      basis.template eval_basis_grad<num_quadrature_pts>(i, pts, N, Nxi);
+      std::vector<T> N, Nxi;
+      basis.eval_basis_grad(i, pts, N, Nxi);
 
-      for (int j = 0; j < num_quadrature_pts; j++) {
+      for (int j = 0; j < num_quad_pts; j++) {
         int offset_n = j * nodes_per_element;
         int offset_nxi = j * nodes_per_element * spatial_dim;
 
@@ -136,15 +133,13 @@ class GalerkinAnalysis final {
         element_res[j] = 0.0;
       }
 
-      T pts[spatial_dim * num_quadrature_pts];
-      T wts[num_quadrature_pts];
-      quadrature.get_quadrature_pts(i, pts, wts);
+      std::vector<T> pts, wts;
+      int num_quad_pts = quadrature.get_quadrature_pts(i, pts, wts);
 
-      T N[nodes_per_element * num_quadrature_pts];
-      T Nxi[spatial_dim * nodes_per_element * num_quadrature_pts];
-      basis.template eval_basis_grad<num_quadrature_pts>(i, pts, N, Nxi);
+      std::vector<T> N, Nxi;
+      basis.eval_basis_grad(i, pts, N, Nxi);
 
-      for (int j = 0; j < num_quadrature_pts; j++) {
+      for (int j = 0; j < num_quad_pts; j++) {
         int offset_n = j * nodes_per_element;
         int offset_nxi = j * nodes_per_element * spatial_dim;
 
@@ -207,15 +202,13 @@ class GalerkinAnalysis final {
         element_res[j] = 0.0;
       }
 
-      T pts[spatial_dim * num_quadrature_pts];
-      T wts[num_quadrature_pts];
-      quadrature.get_quadrature_pts(i, pts, wts);
+      std::vector<T> pts, wts;
+      int num_quad_pts = quadrature.get_quadrature_pts(i, pts, wts);
 
-      T N[nodes_per_element * num_quadrature_pts];
-      T Nxi[spatial_dim * nodes_per_element * num_quadrature_pts];
-      basis.template eval_basis_grad<num_quadrature_pts>(i, pts, N, Nxi);
+      std::vector<T> N, Nxi;
+      basis.eval_basis_grad(i, pts, N, Nxi);
 
-      for (int j = 0; j < num_quadrature_pts; j++) {
+      for (int j = 0; j < num_quad_pts; j++) {
         int offset_n = j * nodes_per_element;
         int offset_nxi = j * nodes_per_element * spatial_dim;
 
@@ -282,15 +275,13 @@ class GalerkinAnalysis final {
         element_jac[j] = 0.0;
       }
 
-      T pts[spatial_dim * num_quadrature_pts];
-      T wts[num_quadrature_pts];
-      quadrature.get_quadrature_pts(i, pts, wts);
+      std::vector<T> pts, wts;
+      int num_quad_pts = quadrature.get_quadrature_pts(i, pts, wts);
 
-      T N[nodes_per_element * num_quadrature_pts];
-      T Nxi[spatial_dim * nodes_per_element * num_quadrature_pts];
-      basis.template eval_basis_grad<num_quadrature_pts>(i, pts, N, Nxi);
+      std::vector<T> N, Nxi;
+      basis.eval_basis_grad(i, pts, N, Nxi);
 
-      for (int j = 0; j < num_quadrature_pts; j++) {
+      for (int j = 0; j < num_quad_pts; j++) {
         int offset_n = j * nodes_per_element;
         int offset_nxi = j * nodes_per_element * spatial_dim;
 
