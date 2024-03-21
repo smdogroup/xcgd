@@ -44,8 +44,7 @@ class SamplerGD final : public QuadratureBase<T, Mesh_> {
   }
 
  private:
-  void get_computational_coordinates_limits(int elem, T* xymin,
-                                            T* xymax) const {
+  T get_computational_coordinates_limits(int elem, T* xymin, T* xymax) const {
     int constexpr spatial_dim = Mesh::spatial_dim;
     T xy_min[spatial_dim], xy_max[spatial_dim];
     T uv_min[spatial_dim], uv_max[spatial_dim];
@@ -65,6 +64,8 @@ class SamplerGD final : public QuadratureBase<T, Mesh_> {
     xymin[1] = cy;
     xymax[0] = cx + dx;
     xymax[1] = cy + dy;
+
+    return wt;
   }
 };
 

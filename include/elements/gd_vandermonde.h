@@ -12,6 +12,7 @@
 #include "element_commons.h"
 #include "gaussquad.hpp"
 #include "gd_commons.h"
+#include "quadrature_general.hpp"
 #include "utils/linalg.h"
 #include "utils/misc.h"
 
@@ -36,7 +37,26 @@ class GDGaussQuadrature2D final : public QuadratureBase<T, Mesh_> {
     int constexpr spatial_dim = Mesh::spatial_dim;
     pts.resize(spatial_dim * num_quad_pts);
     wts.resize(num_quad_pts);
+    T xymin[spatial_dim], xymax[spatial_dim];
+    T wt = get_computational_coordinates_limits(elem, xymin, xymax);
+    T cx = xymin[0];
+    T cy = xymin[1];
+    T dx = xymax[0] - cx;
+    T dy = xymax[1] - cy;
+    for (int q = 0; q < num_quad_pts; q++) {  // q = i * Np_1d + j
+      int i = q / Np_1d;
+      int j = q % Np_1d;
+      pts[q * spatial_dim] = cx + dx * pts_1d[i];
+      pts[q * spatial_dim + 1] = cy + dy * pts_1d[j];
+      wts[q] = wt * wts_1d[i] * wts_1d[j];
+    }
 
+    return num_quad_pts;
+  }
+
+ private:
+  T get_computational_coordinates_limits(int elem, T* xymin, T* xymax) const {
+    int constexpr spatial_dim = Mesh::spatial_dim;
     T xy_min[spatial_dim], xy_max[spatial_dim];
     T uv_min[spatial_dim], uv_max[spatial_dim];
     this->mesh.get_elem_node_ranges(elem, xy_min, xy_max);
@@ -51,19 +71,76 @@ class GDGaussQuadrature2D final : public QuadratureBase<T, Mesh_> {
     T cy = (2.0 * uv_min[1] - xy_min[1] - xy_max[1]) / (xy_max[1] - xy_min[1]);
     T dy = 2.0 * hy;
 
-    for (int q = 0; q < num_quad_pts; q++) {  // q = i * Np_1d + j
-      int i = q / Np_1d;
-      int j = q % Np_1d;
-      pts[q * spatial_dim] = cx + dx * pts_1d[i];
-      pts[q * spatial_dim + 1] = cy + dy * pts_1d[j];
-      wts[q] = wt * wts_1d[i] * wts_1d[j];
+    xymin[0] = cx;
+    xymin[1] = cy;
+    xymax[0] = cx + dx;
+    xymax[1] = cy + dy;
+
+    return wt;
+  }
+
+  std::array<T, Np_1d> pts_1d, wts_1d;
+};
+
+template <typename T, int Np_1d, class Func, class Mesh_ = GDMesh2D<T, Np_1d>>
+class GDLSFQuadrature2D final : public QuadratureBase<T, Mesh_> {
+ private:
+  using QuadratureBase = QuadratureBase<T, Mesh_>;
+
+ public:
+  using typename QuadratureBase::Mesh;
+
+  GDLSFQuadrature2D(const Mesh& mesh, const Func& lsf)
+      : QuadratureBase(mesh), lsf(lsf) {}
+
+  int get_quadrature_pts(int elem, std::vector<T>& pts,
+                         std::vector<T>& wts) const {
+    int constexpr spatial_dim = Mesh::spatial_dim;
+    algoim::uvector<T, spatial_dim> xmin, xmax;
+    get_computational_coordinates_limits(elem, xmin.data(), xmax.data());
+    auto quad = algoim::quadGen<spatial_dim>(
+        lsf, algoim::HyperRectangle<T, spatial_dim>(xmin, xmax), -1, -1, Np_1d);
+
+    int num_quad_pts = quad.nodes.size();
+    pts.resize(spatial_dim * num_quad_pts);
+    wts.resize(num_quad_pts);
+
+    for (int q = 0; q < num_quad_pts; q++) {
+      wts[q] = quad.nodes[q].w;
+      for (int d = 0; d < spatial_dim; d++) {
+        pts[spatial_dim * q + d] = quad.nodes[q].x(d);
+      }
     }
 
     return num_quad_pts;
   }
 
  private:
-  std::array<T, Np_1d> pts_1d, wts_1d;
+  T get_computational_coordinates_limits(int elem, T* xymin, T* xymax) const {
+    int constexpr spatial_dim = Mesh::spatial_dim;
+    T xy_min[spatial_dim], xy_max[spatial_dim];
+    T uv_min[spatial_dim], uv_max[spatial_dim];
+    this->mesh.get_elem_node_ranges(elem, xy_min, xy_max);
+    this->mesh.get_elem_vert_ranges(elem, uv_min, uv_max);
+
+    T hx = (uv_max[0] - uv_min[0]) / (xy_max[0] - xy_min[0]);
+    T hy = (uv_max[1] - uv_min[1]) / (xy_max[1] - xy_min[1]);
+    T wt = 4.0 * hx * hy;
+
+    T cx = (2.0 * uv_min[0] - xy_min[0] - xy_max[0]) / (xy_max[0] - xy_min[0]);
+    T dx = 2.0 * hx;
+    T cy = (2.0 * uv_min[1] - xy_min[1] - xy_max[1]) / (xy_max[1] - xy_min[1]);
+    T dy = 2.0 * hy;
+
+    xymin[0] = cx;
+    xymin[1] = cy;
+    xymax[0] = cx + dx;
+    xymax[1] = cy + dy;
+
+    return wt;
+  }
+
+  const Func& lsf;
 };
 
 /**

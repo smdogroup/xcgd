@@ -11,13 +11,13 @@
 #include "utils/vtk.h"
 
 template <typename T, class Quadrature, class Basis>
-void solve_linear_elasticity(T E, T nu, Basis &basis, std::string name) {
+void solve_linear_elasticity(T E, T nu, Quadrature &quadrature, Basis &basis,
+                             std::string name) {
   using Physics = LinearElasticity<T, Basis::spatial_dim>;
   using Analysis = GalerkinAnalysis<T, Quadrature, Basis, Physics>;
   using BSRMat = GalerkinBSRMat<T, Physics::dof_per_node>;
   using CSCMat = SparseUtils::CSCMat<T>;
 
-  Quadrature quadrature(basis.mesh);
   Physics physics(E, nu);
   Analysis analysis(quadrature, basis, physics);
 
@@ -95,30 +95,35 @@ void solve_linear_elasticity(T E, T nu, Basis &basis, std::string name) {
   vtk.write_vec("sol", sol.data());
 }
 
-template <typename T>
+template <int spatial_dim>
 class Circle {
  public:
-  Circle(T *center, T radius, bool flip = false) {
-    x0[0] = center[0];
-    x0[1] = center[1];
+  Circle(double *center, double radius, bool flip = false) {
+    for (int d = 0; d < spatial_dim; d++) {
+      x0[d] = center[d];
+    }
     r = radius;
     if (flip) {
       sign = -1.0;
     }
   }
 
-  T operator()(const algoim::uvector<T, 2> &x) const {
+  template <typename T>
+  T operator()(const algoim::uvector<T, spatial_dim> &x) const {
     return sign * ((x(0) - x0[0]) * (x(0) - x0[0]) +
                    (x(1) - x0[1]) * (x(1) - x0[1]) - r * r);
   }
-  algoim::uvector<T, 2> grad(const algoim::uvector<T, 2> &x) const {
-    return algoim::uvector<T, 2>(2.0 * sign * (x(0) - x0[0]),
-                                 2.0 * sign * (x(1) - x0[1]));
+
+  template <typename T>
+  algoim::uvector<T, spatial_dim> grad(
+      const algoim::uvector<T, spatial_dim> &x) const {
+    return algoim::uvector<T, spatial_dim>(2.0 * sign * (x(0) - x0[0]),
+                                           2.0 * sign * (x(1) - x0[1]));
   }
 
  private:
-  T x0[2];
-  T r;
+  double x0[spatial_dim];
+  double r;
   double sign = 1.0;
 };
 
@@ -126,22 +131,24 @@ void solve_linear_elasticity_gd() {
   using T = double;
   int constexpr Np_1d = 2;
   using Grid = StructuredGrid2D<T>;
-  using Quadrature = GDGaussQuadrature2D<T, Np_1d>;
+  using LSF = Circle<Grid::spatial_dim>;
+  using Quadrature = GDLSFQuadrature2D<T, Np_1d, LSF>;
   using Basis = GDBasis2D<T, Np_1d>;
   int nxy[2] = {96, 64};
   T lxy[2] = {1.5, 1.0};
 
-  T center[2] = {0.75, 0.5};
-  T r = 0.3;
+  double center[2] = {0.75, 0.5};
+  double r = 0.3;
 
-  Circle lsf(center, r, true);
+  LSF lsf(center, r, true);
 
   Grid grid(nxy, lxy);
   Basis::Mesh mesh(grid, lsf);
   Basis basis(mesh);
+  Quadrature quadrature(mesh, lsf);
 
   T E = 30.0, nu = 0.3;
-  solve_linear_elasticity<T, Quadrature, Basis>(E, nu, basis, "gd");
+  solve_linear_elasticity<T, Quadrature, Basis>(E, nu, quadrature, basis, "gd");
 }
 
 int main() { solve_linear_elasticity_gd(); }
