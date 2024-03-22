@@ -8,17 +8,17 @@
 #include "elements/fe_quadrilateral.h"
 #include "elements/gd_vandermonde.h"
 #include "sparse_utils/sparse_utils.h"
-#include "utils/mesh.h"
+#include "utils/mesher.h"
 #include "utils/vtk.h"
 
 template <typename T, class Quadrature, class Basis, class Func>
-void solve_helmholtz(T r0, const Func &xfunc, Basis &basis, std::string name) {
+void solve_helmholtz(T r0, const Func &xfunc, Quadrature &quadrature,
+                     Basis &basis, std::string name) {
   using Physics = HelmholtzPhysics<T, Basis::spatial_dim>;
   using Analysis = GalerkinAnalysis<T, Quadrature, Basis, Physics>;
   using BSRMat = GalerkinBSRMat<T, Physics::dof_per_node>;
   using CSCMat = SparseUtils::CSCMat<T>;
 
-  Quadrature quadrature(basis.mesh);
   Physics physics(r0);
   Analysis analysis(quadrature, basis, physics);
 
@@ -112,6 +112,7 @@ void solve_helmholtz_fem() {
                            &xloc);
 
   Basis::Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
+  Quadrature quadrature;
   Basis basis(mesh);
 
   auto xfunc = [pt0, r](T *xloc) {
@@ -125,7 +126,7 @@ void solve_helmholtz_fem() {
     }
   };
 
-  solve_helmholtz<T, Quadrature, Basis>(r0, xfunc, basis, "fe");
+  solve_helmholtz(r0, xfunc, quadrature, basis, "fe");
 }
 
 template <typename T>
@@ -168,6 +169,7 @@ void solve_helmholtz_gd() {
   Grid grid(nxy, lxy);
   Circle lsf(pt0, r);
   Basis::Mesh mesh(grid, lsf);
+  Quadrature quadrature(mesh);
   Basis basis(mesh);
 
   auto xfunc = [pt0, r](T *xloc) {
@@ -182,7 +184,7 @@ void solve_helmholtz_gd() {
   };
 
   T r0 = 5.0;
-  solve_helmholtz<T, Quadrature, Basis>(r0, xfunc, basis, "gd");
+  solve_helmholtz(r0, xfunc, quadrature, basis, "gd");
 
   // // Visualize stencil for each element (resulting very large vtk file!)
   // ToVTK<T, Basis::Mesh> vtk(mesh, "gd_mesh.vtk");

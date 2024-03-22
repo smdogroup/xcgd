@@ -2,7 +2,7 @@
 
 #include "elements/fe_tetrahedral.h"
 #include "elements/gd_vandermonde.h"
-#include "utils/mesh.h"
+#include "utils/mesher.h"
 #include "utils/vtk.h"
 
 void write_tet_to_vtk() {

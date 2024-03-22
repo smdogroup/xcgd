@@ -24,17 +24,12 @@ class MeshBase {
   virtual void get_elem_corner_nodes(int elem, int* nodes) const = 0;
 };
 
-template <typename T, class Mesh_>
+// A quadrature class needs to implement the following method
+template <typename T>
 class QuadratureBase {
  public:
-  using Mesh = Mesh_;
-
-  QuadratureBase(const Mesh& mesh) : mesh(mesh) {}
-
   virtual int get_quadrature_pts(int elem, std::vector<T>& pts,
                                  std::vector<T>& wts) const = 0;
-
-  const Mesh& mesh;
 };
 
 /**

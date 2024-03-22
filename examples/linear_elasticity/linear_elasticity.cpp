@@ -7,7 +7,7 @@
 #include "elements/fe_quadrilateral.h"
 #include "elements/gd_vandermonde.h"
 #include "sparse_utils/sparse_utils.h"
-#include "utils/mesh.h"
+#include "utils/mesher.h"
 #include "utils/vtk.h"
 
 template <typename T, class Quadrature, class Basis>
@@ -132,7 +132,7 @@ void solve_linear_elasticity_gd() {
   int constexpr Np_1d = 2;
   using Grid = StructuredGrid2D<T>;
   using LSF = Circle<Grid::spatial_dim>;
-  using Quadrature = GDLSFQuadrature2D<T, Np_1d, LSF>;
+  using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
   using Basis = GDBasis2D<T, Np_1d>;
   int nxy[2] = {96, 64};
   T lxy[2] = {1.5, 1.0};
@@ -145,7 +145,7 @@ void solve_linear_elasticity_gd() {
   Grid grid(nxy, lxy);
   Basis::Mesh mesh(grid, lsf);
   Basis basis(mesh);
-  Quadrature quadrature(mesh, lsf);
+  Quadrature quadrature(mesh, basis);
 
   T E = 30.0, nu = 0.3;
   solve_linear_elasticity<T, Quadrature, Basis>(E, nu, quadrature, basis, "gd");

@@ -7,7 +7,7 @@
 #include "physics/neohookean.h"
 #include "sparse_utils/sparse_utils.h"
 #include "utils/linalg.h"
-#include "utils/mesh.h"
+#include "utils/mesher.h"
 #include "utils/timer.h"
 #include "utils/vtk.h"
 
@@ -31,7 +31,7 @@ int main(int argc, char *argv[]) {
                              &ndof_bcs, &dof_bcs);
 
   Basis::Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
-  Quadrature quadrature(mesh);
+  Quadrature quadrature;
 
   ToVTK<T, typename Basis::Mesh> vtk(mesh);
 

@@ -14,7 +14,7 @@
 #include "physics/poisson.h"
 #include "sparse_utils/sparse_utils.h"
 #include "test_commons.h"
-#include "utils/mesh.h"
+#include "utils/mesher.h"
 
 using T = std::complex<double>;
 
@@ -124,7 +124,7 @@ create_quad_basis() {
   using Basis = QuadrilateralBasis<T>;
   using Mesh = typename Basis::Mesh;
   Mesh *mesh = new Mesh(num_elements, num_nodes, element_nodes, xloc);
-  return {new Quadrature(*mesh), new Basis(*mesh)};
+  return {new Quadrature, new Basis(*mesh)};
 }
 
 std::tuple<TetrahedralQuadrature<T> *, TetrahedralBasis<T> *>
@@ -141,7 +141,7 @@ create_tet_basis() {
   using Basis = TetrahedralBasis<T>;
   using Mesh = typename Basis::Mesh;
   Mesh *mesh = new Mesh(num_elements, num_nodes, element_nodes, xloc);
-  return {new Quadrature(*mesh), new Basis(*mesh)};
+  return {new Quadrature, new Basis(*mesh)};
 }
 
 template <int Np_1d = 4>

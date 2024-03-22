@@ -5,31 +5,31 @@
 
 #include "analysis.h"
 #include "element_commons.h"
-#include "gd_commons.h"
+#include "gd_mesh.h"
 #include "physics/physics_commons.h"
 #include "utils/vtk.h"
 
-template <typename T, int samples_1d_, class GDMesh>
-class GDSampler2D final : public QuadratureBase<T, GDMesh> {
+template <typename T, int Np_1d, int samples_1d>
+class GDSampler2D final : public QuadratureBase<T> {
  private:
-  using QuadratureBase = QuadratureBase<T, GDMesh>;
+  using Mesh =
+      GDMesh2D<T, Np_1d>;  // Np_1d and samples_1d can be different, which is
+                           // the whole point of using this Sampler clas
+  static constexpr int spatial_dim = Mesh::spatial_dim;
+  static constexpr int samples = samples_1d * samples_1d;
 
  public:
-  static constexpr int samples_1d = samples_1d_;
-  static constexpr int samples = samples_1d * samples_1d;
-  using typename QuadratureBase::Mesh;
-
-  GDSampler2D(const Mesh& mesh) : QuadratureBase(mesh) {}
+  GDSampler2D(const Mesh& mesh) : mesh(mesh) {}
 
   int get_quadrature_pts(int elem, std::vector<T>& pts,
                          std::vector<T>& _) const {
-    pts.resize(Mesh::spatial_dim * samples);
+    pts.resize(spatial_dim * samples);
 
     T xymin[2], xymax[2];
     get_computational_coordinates_limits(elem, xymin, xymax);
 
     T lxy[2], xy0[2];
-    for (int d = 0; d < Mesh::spatial_dim; d++) {
+    for (int d = 0; d < spatial_dim; d++) {
       xy0[d] = xymin[d] + 0.05 * (xymax[d] - xymin[d]);
       lxy[d] = 0.95 * (xymax[d] - xymin[d]);
     }
@@ -39,7 +39,7 @@ class GDSampler2D final : public QuadratureBase<T, GDMesh> {
     T* pts_ptr = pts.data();
     for (int i = 0; i < samples; i++) {
       grid.get_vert_xloc(i, pts_ptr);
-      pts_ptr += Mesh::spatial_dim;
+      pts_ptr += spatial_dim;
     }
 
     return samples;
@@ -69,6 +69,8 @@ class GDSampler2D final : public QuadratureBase<T, GDMesh> {
 
     return wt;
   }
+
+  const Mesh& mesh;
 };
 
 /**

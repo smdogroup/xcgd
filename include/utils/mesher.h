@@ -1,5 +1,5 @@
-#ifndef XCGD_MESH_H
-#define XCGD_MESH_H
+#ifndef XCGD_MESHER_H
+#define XCGD_MESHER_H
 
 #include <algorithm>
 #include <fstream>
@@ -445,4 +445,4 @@ struct GetElementNodes {
   const int *element_nodes;
 };
 
-#endif  // XCGD_MESH_H
+#endif  // XCGD_MESHER_H

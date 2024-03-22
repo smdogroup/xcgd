@@ -1,19 +1,15 @@
 #ifndef XCGD_FE_QUADRILATERAL_H
 #define XCGD_FE_QUADRILATERAL_H
 
-#include "fe_commons.h"
+#include "fe_mesh.h"
 
-template <typename T, class Mesh_ = FEMesh<T, 2, 4>>
-class QuadrilateralQuadrature final : public QuadratureBase<T, Mesh_> {
+template <typename T>
+class QuadrilateralQuadrature final : public QuadratureBase<T> {
  private:
-  using QuadratureBase = QuadratureBase<T, Mesh_>;
   static constexpr int num_quad_pts = 4;
+  using Mesh = FEMesh<T, 2, 4>;
 
  public:
-  using typename QuadratureBase::Mesh;
-
-  QuadrilateralQuadrature(const Mesh& mesh) : QuadratureBase(mesh) {}
-
   int get_quadrature_pts(int _, std::vector<T>& pts,
                          std::vector<T>& wts) const {
     pts.resize(Mesh::spatial_dim * num_quad_pts);

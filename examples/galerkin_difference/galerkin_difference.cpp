@@ -6,18 +6,18 @@
 #include "elements/gd_vandermonde.h"
 #include "physics/poisson.h"
 #include "sparse_utils/sparse_utils.h"
-#include "utils/mesh.h"
+#include "utils/mesher.h"
 #include "utils/vtk.h"
 
 template <typename T, class Quadrature, class Basis>
-void solve_poisson(T *lxy, Basis &basis, std::string name) {
+void solve_poisson(T *lxy, Quadrature &quadrature, Basis &basis,
+                   std::string name) {
   using Physics = PoissonPhysics<T, Basis::spatial_dim>;
   using Analysis = GalerkinAnalysis<T, Quadrature, Basis, Physics>;
   using BSRMat = GalerkinBSRMat<T, Physics::dof_per_node>;
   using CSCMat = SparseUtils::CSCMat<T>;
 
   Physics physics;
-  Quadrature quadrature(basis.mesh);
   Analysis analysis(quadrature, basis, physics);
 
   int ndof = Basis::spatial_dim * basis.mesh.get_num_nodes();
@@ -111,9 +111,10 @@ void solve_poisson_fem() {
                            &xloc);
 
   Basis::Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
+  Quadrature quadrature;
   Basis basis(mesh);
 
-  solve_poisson<T, Quadrature, Basis>(lxy, basis, "fe");
+  solve_poisson(lxy, quadrature, basis, "fe");
 }
 
 void solve_poisson_gd() {
@@ -126,9 +127,10 @@ void solve_poisson_gd() {
   T lxy[2] = {1.0, 1.0};
   Grid grid(nxy, lxy);
   Basis::Mesh mesh(grid);
+  Quadrature quadrature(mesh);
   Basis basis(mesh);
 
-  solve_poisson<T, Quadrature, Basis>(lxy, basis, "gd");
+  solve_poisson(lxy, quadrature, basis, "gd");
 }
 
 int main(int argc, char *argv[]) {

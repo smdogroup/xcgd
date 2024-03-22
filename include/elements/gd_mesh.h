@@ -1,5 +1,5 @@
-#ifndef XCGD_GD_COMMONS_H
-#define XCGD_GD_COMMONS_H
+#ifndef XCGD_GD_MESH_H
+#define XCGD_GD_MESH_H
 
 #include <algorithm>
 #include <map>
@@ -159,7 +159,7 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
    */
   template <class Func>
   GDMesh2D(const Grid& grid, const Func& lsf)
-      : grid(grid), has_lsf(true), lsf_verts(grid.get_num_verts()) {
+      : grid(grid), has_lsf(true), lsf_dof(grid.get_num_verts()) {
     check_grid_compatibility(grid);
     init_dofs_from_lsf(lsf);
     num_nodes = node_verts.size();
@@ -274,8 +274,8 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
   std::vector<T> get_lsf_nodes() const {
     std::vector<T> lsf_nodes(get_num_nodes());
     for (auto kv : node_verts) {
-      // lsf_nodes[node] = lsf_verts[vert]
-      lsf_nodes[kv.first] = lsf_verts[kv.second];
+      // lsf_nodes[node] = lsf_dof[vert]
+      lsf_nodes[kv.first] = lsf_dof[kv.second];
     }
     return lsf_nodes;
   }
@@ -307,8 +307,8 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
     for (int i = 0; i < nverts; i++) {
       algoim::uvector<T, spatial_dim> xloc;
       grid.get_vert_xloc(i, xloc.data());
-      lsf_verts[i] = lsf(xloc);
-      if (lsf_verts[i] <= T(0.0)) {
+      lsf_dof[i] = lsf(xloc);
+      if (lsf_dof[i] <= T(0.0)) {
         active_lsf_verts[i] = true;
       }
     }
@@ -442,7 +442,7 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
   bool has_lsf = false;
 
   // level set function values at vertices of the ground grid
-  std::vector<T> lsf_verts;
+  std::vector<T> lsf_dof;
 
   // indices of vertices that are dof nodes, i.e. vertices that have active
   // degrees of freedom
@@ -457,4 +457,4 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
   std::vector<int> dir_cells;
 };
 
-#endif  // XCGD_GD_COMMONS_H
+#endif  // XCGD_GD_MESH_H

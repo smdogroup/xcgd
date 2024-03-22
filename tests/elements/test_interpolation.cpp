@@ -4,7 +4,7 @@
 #include "elements/fe_quadrilateral.h"
 #include "elements/gd_vandermonde.h"
 #include "test_commons.h"
-#include "utils/mesh.h"
+#include "utils/mesher.h"
 #include "utils/vtk.h"
 
 class Line {
@@ -71,7 +71,7 @@ TEST(elements, SampleGDGaussLSF) {
   using Basis = GDBasis2D<T, Np_1d>;
   using Mesh = Basis::Mesh;
   using LSF = Line;
-  using Quadrature = GDSampler2D<T, samples_1d, Mesh>;
+  using Quadrature = GDSampler2D<T, Np_1d, samples_1d>;
 
   int nxy[2] = {5, 5};
   T lxy[2] = {1.0, 1.0};
@@ -113,7 +113,7 @@ TEST(elements, QuadGDLSFLSF) {
   using Basis = GDBasis2D<T, Np_1d>;
   using Mesh = Basis::Mesh;
   using LSF = Line;
-  using Quadrature = GDLSFQuadrature2D<T, Np_1d, LSF>;
+  using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
 
   int nxy[2] = {5, 5};
   T lxy[2] = {1.0, 1.0};
@@ -122,7 +122,7 @@ TEST(elements, QuadGDLSFLSF) {
   Grid grid(nxy, lxy);
   Mesh mesh(grid, lsf);
   Basis basis(mesh);
-  Quadrature quadrature(mesh, lsf);
+  Quadrature quadrature(mesh, basis);
 
   interpolate_dof_at_quadratures<T>(quadrature, basis, "quad_gd_lsf_lsf");
 }

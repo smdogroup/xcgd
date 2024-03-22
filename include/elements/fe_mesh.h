@@ -1,5 +1,5 @@
-#ifndef XCGD_FE_COMMONS_H
-#define XCGD_FE_COMMONS_H
+#ifndef XCGD_FE_MESH_H
+#define XCGD_FE_MESH_H
 
 #include "element_commons.h"
 
@@ -45,4 +45,4 @@ class FEMesh final
   T* xloc;
 };
 
-#endif  // XCGD_FE_COMMONS_H
+#endif  // XCGD_FE_MESH_H

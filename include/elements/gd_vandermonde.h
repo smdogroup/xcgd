@@ -11,21 +11,19 @@
 
 #include "element_commons.h"
 #include "gaussquad.hpp"
-#include "gd_commons.h"
+#include "gd_mesh.h"
 #include "quadrature_general.hpp"
 #include "utils/linalg.h"
 #include "utils/misc.h"
 
-template <typename T, int Np_1d, class Mesh_ = GDMesh2D<T, Np_1d>>
-class GDGaussQuadrature2D final : public QuadratureBase<T, Mesh_> {
+template <typename T, int Np_1d>
+class GDGaussQuadrature2D final : public QuadratureBase<T> {
  private:
-  using QuadratureBase = QuadratureBase<T, Mesh_>;
   static constexpr int num_quad_pts = Np_1d * Np_1d;
+  using Mesh = GDMesh2D<T, Np_1d>;
 
  public:
-  using typename QuadratureBase::Mesh;
-
-  GDGaussQuadrature2D(const Mesh& mesh) : QuadratureBase(mesh) {
+  GDGaussQuadrature2D(const Mesh& mesh) : mesh(mesh) {
     for (int i = 0; i < Np_1d; i++) {
       pts_1d[i] = algoim::GaussQuad::x(Np_1d, i);  // in [0, 1]
       wts_1d[i] = algoim::GaussQuad::w(Np_1d, i);
@@ -79,19 +77,23 @@ class GDGaussQuadrature2D final : public QuadratureBase<T, Mesh_> {
     return wt;
   }
 
+  const Mesh& mesh;
   std::array<T, Np_1d> pts_1d, wts_1d;
 };
 
-template <typename T, int Np_1d, class Func, class Mesh_ = GDMesh2D<T, Np_1d>>
-class GDLSFQuadrature2D final : public QuadratureBase<T, Mesh_> {
+// Forward declaration
+template <typename T, int Np_1d, class Mesh_ = GDMesh2D<T, Np_1d>>
+class GDBasis2D;
+
+template <typename T, int Np_1d>
+class GDLSFQuadrature2D final : public QuadratureBase<T> {
  private:
-  using QuadratureBase = QuadratureBase<T, Mesh_>;
+  using Mesh = GDMesh2D<T, Np_1d>;
+  using Basis = GDBasis2D<T, Np_1d>;
 
  public:
-  using typename QuadratureBase::Mesh;
-
-  GDLSFQuadrature2D(const Mesh& mesh, const Func& lsf)
-      : QuadratureBase(mesh), lsf(lsf) {}
+  GDLSFQuadrature2D(const Mesh& mesh, const Basis& basis)
+      : mesh(mesh), basis(basis), lsf(basis) {}
 
   int get_quadrature_pts(int elem, std::vector<T>& pts,
                          std::vector<T>& wts) const {
@@ -116,6 +118,28 @@ class GDLSFQuadrature2D final : public QuadratureBase<T, Mesh_> {
   }
 
  private:
+  template <class Basis_>
+  class Functor {
+   private:
+    static constexpr int spatial_dim = Basis::spatial_dim;
+
+   public:
+    Functor(const Basis_& basis) : basis(basis) {}
+
+    void initialize(int e) { elem = e; }
+
+    template <typename T2>
+    T2 operator()(const algoim::uvector<T2, spatial_dim>& x) const {}
+
+    template <typename T2>
+    algoim::uvector<T2, spatial_dim> grad(
+        const algoim::uvector<T2, spatial_dim>& x) const {}
+
+   private:
+    const Basis_& basis;
+    int elem = -1;
+  };
+
   T get_computational_coordinates_limits(int elem, T* xymin, T* xymax) const {
     int constexpr spatial_dim = Mesh::spatial_dim;
     T xy_min[spatial_dim], xy_max[spatial_dim];
@@ -140,7 +164,9 @@ class GDLSFQuadrature2D final : public QuadratureBase<T, Mesh_> {
     return wt;
   }
 
-  const Func& lsf;
+  const Mesh& mesh;
+  const Basis& basis;
+  Functor<Basis> lsf;
 };
 
 /**
@@ -149,7 +175,7 @@ class GDLSFQuadrature2D final : public QuadratureBase<T, Mesh_> {
  * @tparam Np_1d number of nodes along one dimension, number of stencil nodes
  *               should be Np_1d^2, Np_1d >= 2, Np_1d should be even
  */
-template <typename T, int Np_1d, class Mesh_ = GDMesh2D<T, Np_1d>>
+template <typename T, int Np_1d, class Mesh_>
 class GDBasis2D final : public BasisBase<T, Mesh_> {
  private:
   // algoim limit, see gaussquad.hpp

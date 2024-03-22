@@ -3,7 +3,7 @@
 #include "analysis.h"
 #include "elements/fe_tetrahedral.h"
 #include "physics/neohookean.h"
-#include "utils/mesh.h"
+#include "utils/mesher.h"
 
 int main(int argc, char *argv[]) {
   using T = double;
@@ -21,7 +21,7 @@ int main(int argc, char *argv[]) {
   load_mesh<T>(filename, &num_elements, &num_nodes, &element_nodes, &xloc);
 
   Basis::Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
-  Quadrature quadrature(mesh);
+  Quadrature quadrature;
   Basis basis(mesh);
 
   // Set the number of degrees of freeom

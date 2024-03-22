@@ -3,19 +3,15 @@
 
 #include <vector>
 
-#include "fe_commons.h"
+#include "fe_mesh.h"
 
-template <typename T, class Mesh_ = FEMesh<T, 3, 10>>
-class TetrahedralQuadrature final : public QuadratureBase<T, Mesh_> {
+template <typename T>
+class TetrahedralQuadrature final : public QuadratureBase<T> {
  private:
-  using QuadratureBase = QuadratureBase<T, Mesh_>;
   static constexpr int num_quad_pts = 5;
+  using Mesh = FEMesh<T, 3, 10>;
 
  public:
-  using typename QuadratureBase::Mesh;
-
-  TetrahedralQuadrature(const Mesh& mesh) : QuadratureBase(mesh) {}
-
   int get_quadrature_pts(int _, std::vector<T>& pts,
                          std::vector<T>& wts) const {
     pts.resize(Mesh::spatial_dim * num_quad_pts);
