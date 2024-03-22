@@ -200,77 +200,87 @@ class GDBasis2D final : public BasisBase<T, GDMesh2D<T, Np_1d>> {
     N.resize(nodes_per_element * num_quad_pts);
     Nxi.resize(nodes_per_element * num_quad_pts * spatial_dim);
 
-    T Ck[Nk * Np];
-    std::vector<T> xpows(Np_1d), ypows(Np_1d);
-
-    int nodes[Nk];
-    mesh.get_elem_dof_nodes(elem, nodes);
-
-    T xloc_min[spatial_dim], xloc_max[spatial_dim];
-    mesh.get_elem_node_ranges(elem, xloc_min, xloc_max);
-
-    for (int i = 0; i < Nk; i++) {
-      T xloc[spatial_dim];
-      mesh.get_node_xloc(nodes[i], xloc);
-
-      // x, y in [-1, 1]
-      T x = -1.0 + 2.0 * (xloc[0] - xloc_min[0]) / (xloc_max[0] - xloc_min[0]);
-      T y = -1.0 + 2.0 * (xloc[1] - xloc_min[1]) / (xloc_max[1] - xloc_min[1]);
-
-      for (int ii = 0; ii < Np_1d; ii++) {
-        xpows[ii] = pow(x, ii);
-        ypows[ii] = pow(y, ii);
-      }
-
-      for (int j = 0; j < Np_1d; j++) {
-        for (int k = 0; k < Np_1d; k++) {
-          int idx = j * Np_1d + k;
-          Ck[i + Np * idx] = xpows[j] * ypows[k];  // (i, idx) entry
-        }
-      }
-    }
-
-    direct_inverse(Nk, Ck);
-
-    std::vector<T> dxpows(Np_1d);
-    std::vector<T> dypows(Np_1d);
+    Evaluator eval(mesh, elem);
 
     for (int q = 0; q < num_quad_pts; q++) {
       int offset_n = q * nodes_per_element;
       int offset_nxi = q * nodes_per_element * spatial_dim;
+      eval(&pts[spatial_dim * q], N.data() + offset_n, Nxi.data() + offset_nxi);
+    }
+  }
 
-      T x = pts[spatial_dim * q];
-      T y = pts[spatial_dim * q + 1];
+  class Evaluator {
+   private:
+    static constexpr int spatial_dim = Mesh::spatial_dim;
+
+   public:
+    Evaluator(const Mesh& mesh, int elem) {
+      int nodes[Nk];
+      std::vector<T> xpows(Np_1d), ypows(Np_1d);
+
+      mesh.get_elem_dof_nodes(elem, nodes);
+
+      T xloc_min[spatial_dim], xloc_max[spatial_dim];
+      mesh.get_elem_node_ranges(elem, xloc_min, xloc_max);
+
+      for (int i = 0; i < Nk; i++) {
+        T xloc[spatial_dim];
+        mesh.get_node_xloc(nodes[i], xloc);
+
+        // make x, y in [-1, 1]
+        T x =
+            -1.0 + 2.0 * (xloc[0] - xloc_min[0]) / (xloc_max[0] - xloc_min[0]);
+        T y =
+            -1.0 + 2.0 * (xloc[1] - xloc_min[1]) / (xloc_max[1] - xloc_min[1]);
+
+        for (int ii = 0; ii < Np_1d; ii++) {
+          xpows[ii] = pow(x, ii);
+          ypows[ii] = pow(y, ii);
+        }
+
+        for (int j = 0; j < Np_1d; j++) {
+          for (int k = 0; k < Np_1d; k++) {
+            int idx = j * Np_1d + k;
+            Ck[i + Np * idx] = xpows[j] * ypows[k];  // (i, idx) entry
+          }
+        }
+      }
+      direct_inverse(Nk, Ck);
+    }
+
+    // Evaluate the shape function and derivatives given a quadrature point
+    void operator()(const T* pt, T* N, T* Nxi) const {
+      std::vector<T> xpows(Np_1d), ypows(Np_1d), dxpows(Np_1d), dypows(Np_1d);
 
       for (int ii = 0; ii < Np_1d; ii++) {
-        xpows[ii] = pow(x, ii);
-        ypows[ii] = pow(y, ii);
-        dxpows[ii] = T(ii) * pow(x, ii - 1);
-        dypows[ii] = T(ii) * pow(y, ii - 1);
+        xpows[ii] = pow(pt[0], ii);
+        ypows[ii] = pow(pt[1], ii);
+        dxpows[ii] = T(ii) * pow(pt[0], ii - 1);
+        dypows[ii] = T(ii) * pow(pt[1], ii - 1);
       }
 
       for (int i = 0; i < Nk; i++) {
-        N[offset_n + i] = 0.0;
-        Nxi[offset_nxi + spatial_dim * i] = 0.0;
-        Nxi[offset_nxi + spatial_dim * i + 1] = 0.0;
+        N[i] = 0.0;
+        Nxi[spatial_dim * i] = 0.0;
+        Nxi[spatial_dim * i + 1] = 0.0;
 
         for (int j = 0; j < Np_1d; j++) {
           for (int k = 0; k < Np_1d; k++) {
             int idx = j * Np_1d + k;
 
-            N[offset_n + i] += Ck[idx + Nk * i] * xpows[j] * ypows[k];
-            Nxi[offset_nxi + spatial_dim * i] +=
-                Ck[idx + Nk * i] * dxpows[j] * ypows[k];
-            Nxi[offset_nxi + spatial_dim * i + 1] +=
-                Ck[idx + Nk * i] * xpows[j] * dypows[k];
+            N[i] += Ck[idx + Nk * i] * xpows[j] * ypows[k];
+            Nxi[spatial_dim * i] += Ck[idx + Nk * i] * dxpows[j] * ypows[k];
+            Nxi[spatial_dim * i + 1] += Ck[idx + Nk * i] * xpows[j] * dypows[k];
           }
         }
       }
     }
-  }
 
-  private:
-   const Mesh& mesh;
+   private:
+    T Ck[Nk * Np];
+  };
+
+  const Mesh& mesh;
 };
 
 #endif  // XCGD_GALERKIN_DIFFERENCE_H
