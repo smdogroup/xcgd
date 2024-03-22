@@ -8,7 +8,7 @@
 #include "sparse_utils/sparse_matrix.h"
 #include "utils/linalg.h"
 
-template <typename T, class Quadrature, class Basis, class Physics>
+template <typename T, class Mesh, class Quadrature, class Basis, class Physics>
 class GalerkinAnalysis final {
  public:
   // Static data taken from the element basis
@@ -21,15 +21,15 @@ class GalerkinAnalysis final {
   // Derived static data
   static constexpr int dof_per_element = dof_per_node * nodes_per_element;
 
-  GalerkinAnalysis(const Quadrature& quadrature, const Basis& basis,
-                   const Physics& physics)
-      : quadrature(quadrature), basis(basis), physics(physics) {}
+  GalerkinAnalysis(const Mesh& mesh, const Quadrature& quadrature,
+                   const Basis& basis, const Physics& physics)
+      : mesh(mesh), quadrature(quadrature), basis(basis), physics(physics) {}
 
   void get_element_xloc(int e, T element_xloc[]) const {
     int nodes[nodes_per_element];
-    basis.mesh.get_elem_dof_nodes(e, nodes);
+    mesh.get_elem_dof_nodes(e, nodes);
     for (int j = 0; j < nodes_per_element; j++) {
-      basis.mesh.get_node_xloc(nodes[j], element_xloc);
+      mesh.get_node_xloc(nodes[j], element_xloc);
       element_xloc += spatial_dim;
     }
   }
@@ -37,7 +37,7 @@ class GalerkinAnalysis final {
   template <int dim>
   void get_element_vars(int e, const T dof[], T element_dof[]) const {
     int nodes[nodes_per_element];
-    basis.mesh.get_elem_dof_nodes(e, nodes);
+    mesh.get_elem_dof_nodes(e, nodes);
     for (int j = 0; j < nodes_per_element; j++) {
       for (int k = 0; k < dim; k++, element_dof++) {
         element_dof[0] = dof[dim * nodes[j] + k];
@@ -48,7 +48,7 @@ class GalerkinAnalysis final {
   template <int dim>
   void add_element_res(int e, const T element_res[], T res[]) const {
     int nodes[nodes_per_element];
-    basis.mesh.get_elem_dof_nodes(e, nodes);
+    mesh.get_elem_dof_nodes(e, nodes);
     for (int j = 0; j < nodes_per_element; j++) {
       for (int k = 0; k < dim; k++, element_res++) {
         res[dim * nodes[j] + k] += element_res[0];
@@ -61,7 +61,7 @@ class GalerkinAnalysis final {
     T xq = 0.0;
     std::vector<T> element_x(nodes_per_element);
 
-    for (int i = 0; i < basis.mesh.get_num_elements(); i++) {
+    for (int i = 0; i < mesh.get_num_elements(); i++) {
       // Get the element node locations
       T element_xloc[spatial_dim * nodes_per_element];
       get_element_xloc(i, element_xloc);
@@ -113,7 +113,7 @@ class GalerkinAnalysis final {
     T xq = 0.0;
     std::vector<T> element_x(nodes_per_element);
 
-    for (int i = 0; i < basis.mesh.get_num_elements(); i++) {
+    for (int i = 0; i < mesh.get_num_elements(); i++) {
       // Get the element node locations
       T element_xloc[spatial_dim * nodes_per_element];
       get_element_xloc(i, element_xloc);
@@ -178,7 +178,7 @@ class GalerkinAnalysis final {
     T xq = 0.0;
     std::vector<T> element_x(nodes_per_element);
 
-    for (int i = 0; i < basis.mesh.get_num_elements(); i++) {
+    for (int i = 0; i < mesh.get_num_elements(); i++) {
       // Get the element node locations
       T element_xloc[spatial_dim * nodes_per_element];
       get_element_xloc(i, element_xloc);
@@ -255,7 +255,7 @@ class GalerkinAnalysis final {
     T xq = 0.0;
     std::vector<T> element_x(nodes_per_element);
 
-    for (int i = 0; i < basis.mesh.get_num_elements(); i++) {
+    for (int i = 0; i < mesh.get_num_elements(); i++) {
       // Get the element node locations
       T element_xloc[spatial_dim * nodes_per_element];
       get_element_xloc(i, element_xloc);
@@ -312,11 +312,12 @@ class GalerkinAnalysis final {
                              jac_grad, element_jac);
       }
 
-      mat->add_block_values(i, nodes_per_element, basis, element_jac);
+      mat->add_block_values(i, nodes_per_element, mesh, element_jac);
     }
   }
 
  private:
+  const Mesh& mesh;
   const Quadrature& quadrature;
   const Basis& basis;
   const Physics& physics;

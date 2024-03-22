@@ -57,8 +57,8 @@ class GDGaussQuadrature2D final : public QuadratureBase<T> {
     int constexpr spatial_dim = Mesh::spatial_dim;
     T xy_min[spatial_dim], xy_max[spatial_dim];
     T uv_min[spatial_dim], uv_max[spatial_dim];
-    this->mesh.get_elem_node_ranges(elem, xy_min, xy_max);
-    this->mesh.get_elem_vert_ranges(elem, uv_min, uv_max);
+    mesh.get_elem_node_ranges(elem, xy_min, xy_max);
+    mesh.get_elem_vert_ranges(elem, uv_min, uv_max);
 
     T hx = (uv_max[0] - uv_min[0]) / (xy_max[0] - xy_min[0]);
     T hy = (uv_max[1] - uv_min[1]) / (xy_max[1] - xy_min[1]);
@@ -82,7 +82,7 @@ class GDGaussQuadrature2D final : public QuadratureBase<T> {
 };
 
 // Forward declaration
-template <typename T, int Np_1d, class Mesh_ = GDMesh2D<T, Np_1d>>
+template <typename T, int Np_1d>
 class GDBasis2D;
 
 template <typename T, int Np_1d>
@@ -144,8 +144,8 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
     int constexpr spatial_dim = Mesh::spatial_dim;
     T xy_min[spatial_dim], xy_max[spatial_dim];
     T uv_min[spatial_dim], uv_max[spatial_dim];
-    this->mesh.get_elem_node_ranges(elem, xy_min, xy_max);
-    this->mesh.get_elem_vert_ranges(elem, uv_min, uv_max);
+    mesh.get_elem_node_ranges(elem, xy_min, xy_max);
+    mesh.get_elem_vert_ranges(elem, uv_min, uv_max);
 
     T hx = (uv_max[0] - uv_min[0]) / (xy_max[0] - xy_min[0]);
     T hy = (uv_max[1] - uv_min[1]) / (xy_max[1] - xy_min[1]);
@@ -175,12 +175,12 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
  * @tparam Np_1d number of nodes along one dimension, number of stencil nodes
  *               should be Np_1d^2, Np_1d >= 2, Np_1d should be even
  */
-template <typename T, int Np_1d, class Mesh_>
-class GDBasis2D final : public BasisBase<T, Mesh_> {
+template <typename T, int Np_1d>
+class GDBasis2D final : public BasisBase<T, GDMesh2D<T, Np_1d>> {
  private:
   // algoim limit, see gaussquad.hpp
   static_assert(Np_1d <= algoim::GaussQuad::p_max);  // algoim limit
-  using BasisBase = BasisBase<T, Mesh_>;
+  using BasisBase = BasisBase<T, GDMesh2D<T, Np_1d>>;
 
  public:
   using BasisBase::nodes_per_element;
@@ -192,7 +192,7 @@ class GDBasis2D final : public BasisBase<T, Mesh_> {
   static constexpr int Nk = Mesh::nodes_per_element;
 
  public:
-  GDBasis2D(Mesh& mesh) : BasisBase(mesh) {}
+  GDBasis2D(Mesh& mesh) : mesh(mesh) {}
 
   void eval_basis_grad(int elem, const std::vector<T>& pts, std::vector<T>& N,
                        std::vector<T>& Nxi) const {
@@ -204,14 +204,14 @@ class GDBasis2D final : public BasisBase<T, Mesh_> {
     std::vector<T> xpows(Np_1d), ypows(Np_1d);
 
     int nodes[Nk];
-    this->mesh.get_elem_dof_nodes(elem, nodes);
+    mesh.get_elem_dof_nodes(elem, nodes);
 
     T xloc_min[spatial_dim], xloc_max[spatial_dim];
-    this->mesh.get_elem_node_ranges(elem, xloc_min, xloc_max);
+    mesh.get_elem_node_ranges(elem, xloc_min, xloc_max);
 
     for (int i = 0; i < Nk; i++) {
       T xloc[spatial_dim];
-      this->mesh.get_node_xloc(nodes[i], xloc);
+      mesh.get_node_xloc(nodes[i], xloc);
 
       // x, y in [-1, 1]
       T x = -1.0 + 2.0 * (xloc[0] - xloc_min[0]) / (xloc_max[0] - xloc_min[0]);
@@ -268,6 +268,9 @@ class GDBasis2D final : public BasisBase<T, Mesh_> {
       }
     }
   }
+
+  private:
+   const Mesh& mesh;
 };
 
 #endif  // XCGD_GALERKIN_DIFFERENCE_H

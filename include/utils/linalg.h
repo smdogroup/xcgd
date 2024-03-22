@@ -65,12 +65,12 @@ class GalerkinBSRMat final : public SparseUtils::BSRMat<T, M, M> {
       : SparseUtils::BSRMat<T, M, M>(nbrows, nbrows, nnz, rowp_, cols_, vals_) {
   }
 
-  template <class Basis>
-  void add_block_values(int elem, const int m, const Basis &basis, T mat[]) {
+  template <class Mesh>
+  void add_block_values(int elem, const int m, const Mesh &mesh, T mat[]) {
     int n = m;
     constexpr int N = M;
     int nodes[m];
-    basis.mesh.get_elem_dof_nodes(elem, nodes);
+    mesh.get_elem_dof_nodes(elem, nodes);
     for (int ii = 0; ii < m; ii++) {
       int block_row = nodes[ii];
 

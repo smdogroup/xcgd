@@ -10,38 +10,35 @@
 #include "utils/mesher.h"
 #include "utils/vtk.h"
 
-template <typename T, class Quadrature, class Basis>
-void solve_linear_elasticity(T E, T nu, Quadrature &quadrature, Basis &basis,
-                             std::string name) {
+template <typename T, class Mesh, class Quadrature, class Basis>
+void solve_linear_elasticity(T E, T nu, Mesh &mesh, Quadrature &quadrature,
+                             Basis &basis, std::string name) {
   using Physics = LinearElasticity<T, Basis::spatial_dim>;
-  using Analysis = GalerkinAnalysis<T, Quadrature, Basis, Physics>;
+  using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
   using BSRMat = GalerkinBSRMat<T, Physics::dof_per_node>;
   using CSCMat = SparseUtils::CSCMat<T>;
 
   Physics physics(E, nu);
-  Analysis analysis(quadrature, basis, physics);
+  Analysis analysis(mesh, quadrature, basis, physics);
 
-  int ndof = Physics::dof_per_node * basis.mesh.get_num_nodes();
+  int ndof = Physics::dof_per_node * mesh.get_num_nodes();
 
   // Set up Jacobian matrix
   int *rowp = nullptr, *cols = nullptr;
   SparseUtils::CSRFromConnectivityFunctor(
-      basis.mesh.get_num_nodes(), basis.mesh.get_num_elements(),
-      basis.mesh.nodes_per_element,
-      [&basis](int elem, int *nodes) {
-        basis.mesh.get_elem_dof_nodes(elem, nodes);
-      },
+      mesh.get_num_nodes(), mesh.get_num_elements(), mesh.nodes_per_element,
+      [&mesh](int elem, int *nodes) { mesh.get_elem_dof_nodes(elem, nodes); },
       &rowp, &cols);
 
-  int nnz = rowp[basis.mesh.get_num_nodes()];
-  BSRMat *jac_bsr = new BSRMat(basis.mesh.get_num_nodes(), nnz, rowp, cols);
+  int nnz = rowp[mesh.get_num_nodes()];
+  BSRMat *jac_bsr = new BSRMat(mesh.get_num_nodes(), nnz, rowp, cols);
 
   // Compute Jacobian matrix
   std::vector<T> dof(ndof, 0.0);
   analysis.jacobian(nullptr, dof.data(), jac_bsr);
 
   // Set boundary conditions
-  std::vector<int> bc_nodes = basis.mesh.get_left_boundary_nodes();
+  std::vector<int> bc_nodes = mesh.get_left_boundary_nodes();
   std::vector<int> bc_dof;
   bc_dof.reserve(Physics::spatial_dim * bc_nodes.size());
   for (int node : bc_nodes) {
@@ -57,7 +54,7 @@ void solve_linear_elasticity(T E, T nu, Quadrature &quadrature, Basis &basis,
   jac_csc->write_mtx("K_" + name + ".mtx");
 
   // Set rhs
-  std::vector<int> force_nodes = basis.mesh.get_right_boundary_nodes();
+  std::vector<int> force_nodes = mesh.get_right_boundary_nodes();
   std::vector<T> rhs(ndof, 0.0);
 
   for (int node : force_nodes) {
@@ -88,9 +85,9 @@ void solve_linear_elasticity(T E, T nu, Quadrature &quadrature, Basis &basis,
   std::printf("||Ku - f||: %25.15e\n", sqrt(err));
 
   // Write to vtk
-  ToVTK<T, typename Basis::Mesh> vtk(basis.mesh, name + ".vtk");
+  ToVTK<T, typename Basis::Mesh> vtk(mesh, name + ".vtk");
   vtk.write_mesh();
-  vtk.write_sol("lsf", basis.mesh.get_lsf_nodes().data());
+  vtk.write_sol("lsf", mesh.get_lsf_nodes().data());
   vtk.write_vec("rhs", rhs.data());
   vtk.write_vec("sol", sol.data());
 }
@@ -148,7 +145,7 @@ void solve_linear_elasticity_gd() {
   Quadrature quadrature(mesh, basis);
 
   T E = 30.0, nu = 0.3;
-  solve_linear_elasticity<T, Quadrature, Basis>(E, nu, quadrature, basis, "gd");
+  solve_linear_elasticity(E, nu, mesh, quadrature, basis, "gd");
 }
 
 int main() { solve_linear_elasticity_gd(); }

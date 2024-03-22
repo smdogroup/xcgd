@@ -10,7 +10,7 @@ int main(int argc, char *argv[]) {
   using Basis = TetrahedralBasis<T>;
   using Quadrature = TetrahedralQuadrature<T>;
   using Physics = NeohookeanPhysics<T, 3>;
-  using Analysis = GalerkinAnalysis<T, Quadrature, Basis, Physics>;
+  using Analysis = GalerkinAnalysis<T, Basis::Mesh, Quadrature, Basis, Physics>;
 
   int num_elements, num_nodes;
   int *element_nodes;
@@ -22,7 +22,7 @@ int main(int argc, char *argv[]) {
 
   Basis::Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
   Quadrature quadrature;
-  Basis basis(mesh);
+  Basis basis;
 
   // Set the number of degrees of freeom
   int ndof = 3 * num_nodes;
@@ -43,7 +43,7 @@ int main(int argc, char *argv[]) {
   T C1 = 0.01;
   T D1 = 0.5;
   Physics physics(C1, D1);
-  Analysis analysis(quadrature, basis, physics);
+  Analysis analysis(mesh, quadrature, basis, physics);
 
   // Allocate space for the residual
   T energy = analysis.energy(nullptr, dof);

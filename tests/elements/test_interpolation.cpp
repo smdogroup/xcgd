@@ -26,13 +26,12 @@ class Line {
   double k, b;
 };
 
-template <typename T, class Quadrature, class Basis>
-void interpolate_dof_at_quadratures(const Quadrature& quadrature,
+template <typename T, class Mesh, class Quadrature, class Basis>
+void interpolate_dof_at_quadratures(const Mesh& mesh,
+                                    const Quadrature& quadrature,
                                     const Basis& basis,
                                     const std::string& name) {
   using Interpolator = Interpolator<T, Quadrature, Basis>;
-  using Mesh = typename Basis::Mesh;
-  const Mesh& mesh = basis.mesh;
 
   // Write mesh
   ToVTK<T, Mesh> vtk(mesh, name + "_mesh.vtk");
@@ -56,7 +55,7 @@ void interpolate_dof_at_quadratures(const Quadrature& quadrature,
   }
 
   // Write interpolation field
-  Interpolator interpolator(quadrature, basis);
+  Interpolator interpolator(mesh, quadrature, basis);
   interpolator.to_vtk(name + "_field.vtk", dof.data());
 }
 
@@ -82,7 +81,8 @@ TEST(elements, SampleGDGaussLSF) {
   Basis basis(mesh);
   Quadrature quadrature(mesh);
 
-  interpolate_dof_at_quadratures<T>(quadrature, basis, "sample_gd_gauss_lsf");
+  interpolate_dof_at_quadratures<T>(mesh, quadrature, basis,
+                                    "sample_gd_gauss_lsf");
 }
 
 TEST(elements, QuadGDGaussLSF) {
@@ -103,7 +103,8 @@ TEST(elements, QuadGDGaussLSF) {
   Basis basis(mesh);
   Quadrature quadrature(mesh);
 
-  interpolate_dof_at_quadratures<T>(quadrature, basis, "quad_gd_gauss_lsf");
+  interpolate_dof_at_quadratures<T>(mesh, quadrature, basis,
+                                    "quad_gd_gauss_lsf");
 }
 
 TEST(elements, QuadGDLSFLSF) {
@@ -124,5 +125,5 @@ TEST(elements, QuadGDLSFLSF) {
   Basis basis(mesh);
   Quadrature quadrature(mesh, basis);
 
-  interpolate_dof_at_quadratures<T>(quadrature, basis, "quad_gd_lsf_lsf");
+  interpolate_dof_at_quadratures<T>(mesh, quadrature, basis, "quad_gd_lsf_lsf");
 }

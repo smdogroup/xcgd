@@ -48,13 +48,9 @@ class BasisBase {
   static constexpr int spatial_dim = Mesh::spatial_dim;
   static constexpr int nodes_per_element = Mesh::nodes_per_element;
 
-  BasisBase(const Mesh& mesh) : mesh(mesh) {}
-
   virtual void eval_basis_grad(int elem, const std::vector<T>& pts,
                                std::vector<T>& N,
                                std::vector<T>& Nxi) const = 0;
-
-  const Mesh& mesh;
 };
 
 template <typename T, class Basis, int dim>

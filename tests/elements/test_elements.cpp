@@ -89,9 +89,10 @@ class Integration final : public PhysicsBase<T, spatial_dim, 0, 1> {
 
 template <typename T, class Quadrature, class Basis>
 T hypercircle_area(typename Basis::Mesh& mesh, Quadrature& quadrature,
-                   const T pt0[Basis::spatial_dim]) {
+                   Basis& basis, const T pt0[Basis::spatial_dim]) {
   using Physics = Integration<T, Basis::spatial_dim>;
-  using Analysis = GalerkinAnalysis<T, Quadrature, Basis, Physics>;
+  using Analysis =
+      GalerkinAnalysis<T, typename Basis::Mesh, Quadrature, Basis, Physics>;
   constexpr int spatial_dim = Basis::spatial_dim;
 
   std::vector<double> dof(mesh.get_num_nodes() * Physics::dof_per_node, 0.0);
@@ -109,9 +110,8 @@ T hypercircle_area(typename Basis::Mesh& mesh, Quadrature& quadrature,
     }
   }
 
-  Basis basis(mesh);
   Physics physics;
-  Analysis analysis(quadrature, basis, physics);
+  Analysis analysis(mesh, quadrature, basis, physics);
 
   return analysis.energy(nullptr, dof.data());
 }
@@ -133,9 +133,9 @@ TEST(elements, IntegrationQuad) {
 
   typename Basis::Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
   Quadrature quadrature;
+  Basis basis;
 
-  double pi =
-      hypercircle_area<double, Quadrature, Basis>(mesh, quadrature, pt0);
+  double pi = hypercircle_area(mesh, quadrature, basis, pt0);
   double relerr = (pi - PI) / PI;
   EXPECT_NEAR(relerr, 0.0, 1e-2);
 }
@@ -157,10 +157,9 @@ TEST(elements, IntegrationTet) {
 
   typename Basis::Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
   Quadrature quadrature;
+  Basis basis;
 
-  double pi =
-      hypercircle_area<double, Quadrature, Basis>(mesh, quadrature, pt0) * 3.0 /
-      4.0;
+  double pi = hypercircle_area(mesh, quadrature, basis, pt0) * 3.0 / 4.0;
   double relerr = (pi - PI) / PI;
   EXPECT_NEAR(relerr, 0.0, 1e-2);
 }
@@ -179,9 +178,9 @@ TEST(elements, IntergrationGD2D_Np2) {
   Grid grid(nxy, lxy);
   typename Basis::Mesh mesh(grid);
   Quadrature quadrature(mesh);
+  Basis basis(mesh);
 
-  double pi =
-      hypercircle_area<double, Quadrature, Basis>(mesh, quadrature, pt0);
+  double pi = hypercircle_area(mesh, quadrature, basis, pt0);
   double relerr = (pi - PI) / PI;
   EXPECT_NEAR(relerr, 0.0, 1e-2);
 }
@@ -200,9 +199,9 @@ TEST(elements, IntergrationGD2D_Np4) {
   Grid grid(nxy, lxy);
   typename Basis::Mesh mesh(grid);
   Quadrature quadrature(mesh);
+  Basis basis(mesh);
 
-  double pi =
-      hypercircle_area<double, Quadrature, Basis>(mesh, quadrature, pt0);
+  double pi = hypercircle_area(mesh, quadrature, basis, pt0);
   double relerr = (pi - PI) / PI;
   EXPECT_NEAR(relerr, 0.0, 1e-2);
 }

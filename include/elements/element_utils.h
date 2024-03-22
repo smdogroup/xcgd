@@ -50,8 +50,8 @@ class GDSampler2D final : public QuadratureBase<T> {
     int constexpr spatial_dim = Mesh::spatial_dim;
     T xy_min[spatial_dim], xy_max[spatial_dim];
     T uv_min[spatial_dim], uv_max[spatial_dim];
-    this->mesh.get_elem_node_ranges(elem, xy_min, xy_max);
-    this->mesh.get_elem_vert_ranges(elem, uv_min, uv_max);
+    mesh.get_elem_node_ranges(elem, xy_min, xy_max);
+    mesh.get_elem_vert_ranges(elem, uv_min, uv_max);
 
     T hx = (uv_max[0] - uv_min[0]) / (xy_max[0] - xy_min[0]);
     T hy = (uv_max[1] - uv_min[1]) / (xy_max[1] - xy_min[1]);
@@ -87,14 +87,14 @@ class Interpolator final {
   static int constexpr spatial_dim = Mesh::spatial_dim;
 
   using Physics = PhysicsBase<T, spatial_dim, data_per_node, dof_per_node>;
-  using Analysis = GalerkinAnalysis<T, Sampler, Basis, Physics>;
+  using Analysis = GalerkinAnalysis<T, Mesh, Sampler, Basis, Physics>;
 
  public:
-  Interpolator(const Sampler& sampler, const Basis& basis)
-      : mesh(basis.mesh),
+  Interpolator(const Mesh& mesh, const Sampler& sampler, const Basis& basis)
+      : mesh(mesh),
         basis(basis),
         sampler(sampler),
-        analysis(sampler, basis, physics) {}
+        analysis(mesh, sampler, basis, physics) {}
 
   void to_vtk(const std::string name, T* dof) const {
     FieldToVTK<T, spatial_dim> field_vtk(name);

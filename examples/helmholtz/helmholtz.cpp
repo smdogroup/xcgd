@@ -11,37 +11,34 @@
 #include "utils/mesher.h"
 #include "utils/vtk.h"
 
-template <typename T, class Quadrature, class Basis, class Func>
-void solve_helmholtz(T r0, const Func &xfunc, Quadrature &quadrature,
-                     Basis &basis, std::string name) {
+template <typename T, class Mesh, class Quadrature, class Basis, class Func>
+void solve_helmholtz(T r0, const Func &xfunc, Mesh &mesh,
+                     Quadrature &quadrature, Basis &basis, std::string name) {
   using Physics = HelmholtzPhysics<T, Basis::spatial_dim>;
-  using Analysis = GalerkinAnalysis<T, Quadrature, Basis, Physics>;
+  using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
   using BSRMat = GalerkinBSRMat<T, Physics::dof_per_node>;
   using CSCMat = SparseUtils::CSCMat<T>;
 
   Physics physics(r0);
-  Analysis analysis(quadrature, basis, physics);
+  Analysis analysis(mesh, quadrature, basis, physics);
 
-  int ndof = basis.mesh.get_num_nodes();
+  int ndof = mesh.get_num_nodes();
 
   // Set up Jacobian matrix
   int *rowp = nullptr, *cols = nullptr;
   SparseUtils::CSRFromConnectivityFunctor(
-      basis.mesh.get_num_nodes(), basis.mesh.get_num_elements(),
-      basis.mesh.nodes_per_element,
-      [&basis](int elem, int *nodes) {
-        basis.mesh.get_elem_dof_nodes(elem, nodes);
-      },
+      mesh.get_num_nodes(), mesh.get_num_elements(), mesh.nodes_per_element,
+      [&mesh](int elem, int *nodes) { mesh.get_elem_dof_nodes(elem, nodes); },
       &rowp, &cols);
 
-  int nnz = rowp[basis.mesh.get_num_nodes()];
-  BSRMat *jac_bsr = new BSRMat(basis.mesh.get_num_nodes(), nnz, rowp, cols);
+  int nnz = rowp[mesh.get_num_nodes()];
+  BSRMat *jac_bsr = new BSRMat(mesh.get_num_nodes(), nnz, rowp, cols);
 
   // set x
   std::vector<T> x(ndof, 0.0);
-  for (int i = 0; i < basis.mesh.get_num_nodes(); i++) {
+  for (int i = 0; i < mesh.get_num_nodes(); i++) {
     T xloc[Basis::spatial_dim];
-    basis.mesh.get_node_xloc(i, xloc);
+    mesh.get_node_xloc(i, xloc);
     x[i] = xfunc(xloc);
   }
 
@@ -89,7 +86,7 @@ void solve_helmholtz(T r0, const Func &xfunc, Quadrature &quadrature,
   std::printf("||Ku - f||: %25.15e\n", sqrt(err));
 
   // Write to vtk
-  ToVTK<T, typename Basis::Mesh> vtk(basis.mesh, name + ".vtk");
+  ToVTK<T, typename Basis::Mesh> vtk(mesh, name + ".vtk");
   vtk.write_mesh();
   vtk.write_sol("x", x.data());
   vtk.write_sol("u", sol.data());
@@ -113,7 +110,7 @@ void solve_helmholtz_fem() {
 
   Basis::Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
   Quadrature quadrature;
-  Basis basis(mesh);
+  Basis basis;
 
   auto xfunc = [pt0, r](T *xloc) {
     T rx2 = (xloc[0] - pt0[0]) * (xloc[0] - pt0[0]) +
@@ -126,7 +123,7 @@ void solve_helmholtz_fem() {
     }
   };
 
-  solve_helmholtz(r0, xfunc, quadrature, basis, "fe");
+  solve_helmholtz(r0, xfunc, mesh, quadrature, basis, "fe");
 }
 
 template <typename T>
@@ -184,7 +181,7 @@ void solve_helmholtz_gd() {
   };
 
   T r0 = 5.0;
-  solve_helmholtz(r0, xfunc, quadrature, basis, "gd");
+  solve_helmholtz(r0, xfunc, mesh, quadrature, basis, "gd");
 
   // // Visualize stencil for each element (resulting very large vtk file!)
   // ToVTK<T, Basis::Mesh> vtk(mesh, "gd_mesh.vtk");

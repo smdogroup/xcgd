@@ -9,31 +9,28 @@
 #include "utils/mesher.h"
 #include "utils/vtk.h"
 
-template <typename T, class Quadrature, class Basis>
-void solve_poisson(T *lxy, Quadrature &quadrature, Basis &basis,
+template <typename T, class Mesh, class Quadrature, class Basis>
+void solve_poisson(T *lxy, Mesh &mesh, Quadrature &quadrature, Basis &basis,
                    std::string name) {
   using Physics = PoissonPhysics<T, Basis::spatial_dim>;
-  using Analysis = GalerkinAnalysis<T, Quadrature, Basis, Physics>;
+  using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
   using BSRMat = GalerkinBSRMat<T, Physics::dof_per_node>;
   using CSCMat = SparseUtils::CSCMat<T>;
 
   Physics physics;
-  Analysis analysis(quadrature, basis, physics);
+  Analysis analysis(mesh, quadrature, basis, physics);
 
-  int ndof = Basis::spatial_dim * basis.mesh.get_num_nodes();
+  int ndof = Basis::spatial_dim * mesh.get_num_nodes();
 
   // Set up Jacobian matrix
   int *rowp = nullptr, *cols = nullptr;
   SparseUtils::CSRFromConnectivityFunctor(
-      basis.mesh.get_num_nodes(), basis.mesh.get_num_elements(),
-      basis.mesh.nodes_per_element,
-      [&basis](int elem, int *nodes) {
-        basis.mesh.get_elem_dof_nodes(elem, nodes);
-      },
+      mesh.get_num_nodes(), mesh.get_num_elements(), mesh.nodes_per_element,
+      [&mesh](int elem, int *nodes) { mesh.get_elem_dof_nodes(elem, nodes); },
       &rowp, &cols);
 
-  int nnz = rowp[basis.mesh.get_num_nodes()];
-  BSRMat *jac_bsr = new BSRMat(basis.mesh.get_num_nodes(), nnz, rowp, cols);
+  int nnz = rowp[mesh.get_num_nodes()];
+  BSRMat *jac_bsr = new BSRMat(mesh.get_num_nodes(), nnz, rowp, cols);
 
   // Compute Jacobian matrix
   std::vector<T> dof(ndof, 0.0);
@@ -49,9 +46,9 @@ void solve_poisson(T *lxy, Quadrature &quadrature, Basis &basis,
   // Set up bcs
   std::vector<int> dof_bcs;
   double tol = 1e-6;
-  for (int i = 0; i < basis.mesh.get_num_nodes(); i++) {
+  for (int i = 0; i < mesh.get_num_nodes(); i++) {
     T xloc[Basis::spatial_dim];
-    basis.mesh.get_node_xloc(i, xloc);
+    mesh.get_node_xloc(i, xloc);
     if (freal(xloc[0]) < freal(tol) or freal(xloc[1]) < freal(tol) or
         freal(xloc[0]) > freal(lxy[0] - tol) or
         freal(xloc[1]) > freal(lxy[1] - tol)) {
@@ -92,7 +89,7 @@ void solve_poisson(T *lxy, Quadrature &quadrature, Basis &basis,
   std::printf("||Ku - f||: %25.15e\n", sqrt(err));
 
   // Write to vtk
-  ToVTK<T, typename Basis::Mesh> vtk(basis.mesh, name + ".vtk");
+  ToVTK<T, typename Basis::Mesh> vtk(mesh, name + ".vtk");
   vtk.write_mesh();
   vtk.write_sol("u", sol.data());
 }
@@ -112,9 +109,9 @@ void solve_poisson_fem() {
 
   Basis::Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
   Quadrature quadrature;
-  Basis basis(mesh);
+  Basis basis;
 
-  solve_poisson(lxy, quadrature, basis, "fe");
+  solve_poisson(lxy, mesh, quadrature, basis, "fe");
 }
 
 void solve_poisson_gd() {
@@ -130,7 +127,7 @@ void solve_poisson_gd() {
   Quadrature quadrature(mesh);
   Basis basis(mesh);
 
-  solve_poisson(lxy, quadrature, basis, "gd");
+  solve_poisson(lxy, mesh, quadrature, basis, "gd");
 }
 
 int main(int argc, char *argv[]) {

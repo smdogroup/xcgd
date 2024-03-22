@@ -17,7 +17,7 @@ int main(int argc, char *argv[]) {
   using Quadrature = TetrahedralQuadrature<T>;
   using Basis = TetrahedralBasis<T>;
   using Physics = NeohookeanPhysics<T, Basis::spatial_dim>;
-  using Analysis = GalerkinAnalysis<T, Quadrature, Basis, Physics>;
+  using Analysis = GalerkinAnalysis<T, Basis::Mesh, Quadrature, Basis, Physics>;
   using BSRMat = GalerkinBSRMat<T, Physics::dof_per_node>;
   using CSCMat = SparseUtils::CSCMat<T>;
 
@@ -67,8 +67,8 @@ int main(int argc, char *argv[]) {
   Physics physics(C1, D1);
 
   StopWatch watch;
-  Basis basis(mesh);
-  Analysis analysis(quadrature, basis, physics);
+  Basis basis;
+  Analysis analysis(mesh, quadrature, basis, physics);
   analysis.jacobian(nullptr, dof, jac_bsr);
   double t1 = watch.lap();
   std::printf("Jacobian assembly time: %.3e s\n", t1);
