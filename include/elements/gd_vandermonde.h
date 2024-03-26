@@ -10,9 +10,10 @@
 #include <vector>
 
 #include "element_commons.h"
+#include "element_utils.h"
 #include "gaussquad.hpp"
 #include "gd_mesh.h"
-#include "quadrature_general.hpp"
+#include "quadrature_multipoly.hpp"
 #include "utils/linalg.h"
 #include "utils/misc.h"
 
@@ -36,7 +37,7 @@ class GDGaussQuadrature2D final : public QuadratureBase<T> {
     pts.resize(spatial_dim * num_quad_pts);
     wts.resize(num_quad_pts);
     T xymin[spatial_dim], xymax[spatial_dim];
-    T wt = get_computational_coordinates_limits(elem, xymin, xymax);
+    T wt = get_computational_coordinates_limits(mesh, elem, xymin, xymax);
     T cx = xymin[0];
     T cy = xymin[1];
     T dx = xymax[0] - cx;
@@ -53,30 +54,6 @@ class GDGaussQuadrature2D final : public QuadratureBase<T> {
   }
 
  private:
-  T get_computational_coordinates_limits(int elem, T* xymin, T* xymax) const {
-    int constexpr spatial_dim = Mesh::spatial_dim;
-    T xy_min[spatial_dim], xy_max[spatial_dim];
-    T uv_min[spatial_dim], uv_max[spatial_dim];
-    mesh.get_elem_node_ranges(elem, xy_min, xy_max);
-    mesh.get_elem_vert_ranges(elem, uv_min, uv_max);
-
-    T hx = (uv_max[0] - uv_min[0]) / (xy_max[0] - xy_min[0]);
-    T hy = (uv_max[1] - uv_min[1]) / (xy_max[1] - xy_min[1]);
-    T wt = 4.0 * hx * hy;
-
-    T cx = (2.0 * uv_min[0] - xy_min[0] - xy_max[0]) / (xy_max[0] - xy_min[0]);
-    T dx = 2.0 * hx;
-    T cy = (2.0 * uv_min[1] - xy_min[1] - xy_max[1]) / (xy_max[1] - xy_min[1]);
-    T dy = 2.0 * hy;
-
-    xymin[0] = cx;
-    xymin[1] = cy;
-    xymax[0] = cx + dx;
-    xymax[1] = cy + dy;
-
-    return wt;
-  }
-
   const Mesh& mesh;
   std::array<T, Np_1d> pts_1d, wts_1d;
 };
@@ -93,80 +70,68 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
 
  public:
   GDLSFQuadrature2D(const Mesh& mesh, const Basis& basis)
-      : mesh(mesh), basis(basis), lsf(basis) {}
+      : mesh(mesh),
+        basis(basis),
+        lsf_mesh(mesh.get_grid()),
+        lsf_basis(lsf_mesh) {}
 
   int get_quadrature_pts(int elem, std::vector<T>& pts,
                          std::vector<T>& wts) const {
     int constexpr spatial_dim = Mesh::spatial_dim;
+    int constexpr nodes_per_element = Basis::nodes_per_element;
+
+    // Get element LSF dofs
+    const std::vector<T>& lsf_dof = mesh.get_lsf_dof();
+    T element_dof[nodes_per_element];
+    get_element_vars<T, 1, Basis>(lsf_mesh, elem, lsf_dof.data(), element_dof);
+
+    // Get bounds of the hyperrectangle
     algoim::uvector<T, spatial_dim> xmin, xmax;
-    get_computational_coordinates_limits(elem, xmin.data(), xmax.data());
-    auto quad = algoim::quadGen<spatial_dim>(
-        lsf, algoim::HyperRectangle<T, spatial_dim>(xmin, xmax), -1, -1, Np_1d);
+    get_computational_coordinates_limits(lsf_mesh, elem, xmin.data(),
+                                         xmax.data());
 
-    int num_quad_pts = quad.nodes.size();
-    pts.resize(spatial_dim * num_quad_pts);
-    wts.resize(num_quad_pts);
+    // Create the functor that evaluates the interpolation given an arbitrary
+    // point within the computational coordinates
+    typename Basis::Evaluator eval(lsf_mesh, elem);
 
-    for (int q = 0; q < num_quad_pts; q++) {
-      wts[q] = quad.nodes[q].w;
-      for (int d = 0; d < spatial_dim; d++) {
-        pts[spatial_dim * q + d] = quad.nodes[q].x(d);
-      }
-    }
+    // Obtain the Bernstein polynomial representation of the level-set
+    // function
+    T data[Np_1d * Np_1d];
+    algoim::xarray<T, spatial_dim> phi(
+        data, algoim::uvector<int, spatial_dim>(Np_1d, Np_1d));
+    algoim::bernstein::bernsteinInterpolate<spatial_dim>(
+        [&](const algoim::uvector<T, spatial_dim>& x) {
+          T N[nodes_per_element];
+          // T Nxi[nodes_per_element * spatial_dim];
+          eval(x.data(), N, nullptr);
+          return 0.0;
+        },
+        phi);
+
+    int num_quad_pts = 0;
+    // int num_quad_pts = quad.nodes.size();
+    // pts.resize(spatial_dim * num_quad_pts);
+    // wts.resize(num_quad_pts);
+
+    // for (int q = 0; q < num_quad_pts; q++) {
+    //   wts[q] = quad.nodes[q].w;
+    //   for (int d = 0; d < spatial_dim; d++) {
+    //     pts[spatial_dim * q + d] = quad.nodes[q].x(d);
+    //   }
+    // }
 
     return num_quad_pts;
   }
 
  private:
-  template <class Basis_>
-  class Functor {
-   private:
-    static constexpr int spatial_dim = Basis::spatial_dim;
-
-   public:
-    Functor(const Basis_& basis) : basis(basis) {}
-
-    void initialize(int e) { elem = e; }
-
-    template <typename T2>
-    T2 operator()(const algoim::uvector<T2, spatial_dim>& x) const {}
-
-    template <typename T2>
-    algoim::uvector<T2, spatial_dim> grad(
-        const algoim::uvector<T2, spatial_dim>& x) const {}
-
-   private:
-    const Basis_& basis;
-    int elem = -1;
-  };
-
-  T get_computational_coordinates_limits(int elem, T* xymin, T* xymax) const {
-    int constexpr spatial_dim = Mesh::spatial_dim;
-    T xy_min[spatial_dim], xy_max[spatial_dim];
-    T uv_min[spatial_dim], uv_max[spatial_dim];
-    mesh.get_elem_node_ranges(elem, xy_min, xy_max);
-    mesh.get_elem_vert_ranges(elem, uv_min, uv_max);
-
-    T hx = (uv_max[0] - uv_min[0]) / (xy_max[0] - xy_min[0]);
-    T hy = (uv_max[1] - uv_min[1]) / (xy_max[1] - xy_min[1]);
-    T wt = 4.0 * hx * hy;
-
-    T cx = (2.0 * uv_min[0] - xy_min[0] - xy_max[0]) / (xy_max[0] - xy_min[0]);
-    T dx = 2.0 * hx;
-    T cy = (2.0 * uv_min[1] - xy_min[1] - xy_max[1]) / (xy_max[1] - xy_min[1]);
-    T dy = 2.0 * hy;
-
-    xymin[0] = cx;
-    xymin[1] = cy;
-    xymax[0] = cx + dx;
-    xymax[1] = cy + dy;
-
-    return wt;
-  }
-
+  // Mesh and basis for physical dof. Dof nodes is a subset of grid verts due to
+  // LSF-cut.
   const Mesh& mesh;
   const Basis& basis;
-  Functor<Basis> lsf;
+
+  // Mesh and basis for the LSF dof. All grid verts are dof nodes.
+  Mesh lsf_mesh;
+  Basis lsf_basis;
 };
 
 /**
@@ -260,17 +225,25 @@ class GDBasis2D final : public BasisBase<T, GDMesh2D<T, Np_1d>> {
       }
 
       for (int i = 0; i < Nk; i++) {
-        N[i] = 0.0;
-        Nxi[spatial_dim * i] = 0.0;
-        Nxi[spatial_dim * i + 1] = 0.0;
+        if (N) {
+          N[i] = 0.0;
+        }
+        if (Nxi) {
+          Nxi[spatial_dim * i] = 0.0;
+          Nxi[spatial_dim * i + 1] = 0.0;
+        }
 
         for (int j = 0; j < Np_1d; j++) {
           for (int k = 0; k < Np_1d; k++) {
             int idx = j * Np_1d + k;
-
-            N[i] += Ck[idx + Nk * i] * xpows[j] * ypows[k];
-            Nxi[spatial_dim * i] += Ck[idx + Nk * i] * dxpows[j] * ypows[k];
-            Nxi[spatial_dim * i + 1] += Ck[idx + Nk * i] * xpows[j] * dypows[k];
+            if (N) {
+              N[i] += Ck[idx + Nk * i] * xpows[j] * ypows[k];
+            }
+            if (Nxi) {
+              Nxi[spatial_dim * i] += Ck[idx + Nk * i] * dxpows[j] * ypows[k];
+              Nxi[spatial_dim * i + 1] +=
+                  Ck[idx + Nk * i] * xpows[j] * dypows[k];
+            }
           }
         }
       }

@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "quadrature_general.hpp"
+#include "utils/misc.h"
 
 // The structured ground grid
 template <typename T>
@@ -280,6 +281,9 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
     return lsf_nodes;
   }
 
+  const std::vector<T>& get_lsf_dof() const { return lsf_dof; }
+  const Grid& get_grid() const { return grid; }
+
  private:
   void check_grid_compatibility(const Grid& grid) const {
     const int* nxy = grid.get_nxy();
@@ -456,5 +460,51 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
   // push direction for each cell
   std::vector<int> dir_cells;
 };
+
+/**
+ * @brief Helper function: get the limit of computational coordinates (xi, eta,
+ * zeta) given a stencil.
+ *
+ * Note: Defined in the mesh object, for each element there are a set of dof
+ * nodes (stencil nodes) a set of vertices that defines the physical boundary of
+ * an element. For numerical stability for the Vandermonde bases, the dof nodes
+ * need to be mapped onto a [-1, 1]^d hyperrectangle, where d is the spatial
+ * dimension (2 or 3). Based on this bound, this function evaluates the bounds
+ * for the computational coordinates (xi, eta, zeta). For linear element, this
+ * is trivially (-1, 1) too, because all verts are nodes. For higher order
+ * elements, such limits are narrower than [-1, 1].
+ *
+ * @tparam GDMesh a GDMesh type
+ * @param mesh mesh object
+ * @param elem element index
+ * @param xi_min output, lower bounds of computational coordinates
+ * @param xi_max output, upper bounds of computational coordinates
+ * @return T area ratio
+ */
+template <typename T, class GDMesh>
+T get_computational_coordinates_limits(const GDMesh& mesh, int elem, T* xi_min,
+                                       T* xi_max) {
+  int constexpr spatial_dim = GDMesh::spatial_dim;
+  T xy_min[spatial_dim], xy_max[spatial_dim];
+  T uv_min[spatial_dim], uv_max[spatial_dim];
+  mesh.get_elem_node_ranges(elem, xy_min, xy_max);
+  mesh.get_elem_vert_ranges(elem, uv_min, uv_max);
+
+  T hx = (uv_max[0] - uv_min[0]) / (xy_max[0] - xy_min[0]);
+  T hy = (uv_max[1] - uv_min[1]) / (xy_max[1] - xy_min[1]);
+  T wt = 4.0 * hx * hy;
+
+  T cx = (2.0 * uv_min[0] - xy_min[0] - xy_max[0]) / (xy_max[0] - xy_min[0]);
+  T dx = 2.0 * hx;
+  T cy = (2.0 * uv_min[1] - xy_min[1] - xy_max[1]) / (xy_max[1] - xy_min[1]);
+  T dy = 2.0 * hy;
+
+  xi_min[0] = cx;
+  xi_min[1] = cy;
+  xi_max[0] = cx + dx;
+  xi_max[1] = cy + dy;
+
+  return wt;
+}
 
 #endif  // XCGD_GD_MESH_H

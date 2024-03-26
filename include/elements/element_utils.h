@@ -3,11 +3,51 @@
 
 #include <vector>
 
-#include "analysis.h"
 #include "element_commons.h"
 #include "gd_mesh.h"
 #include "physics/physics_commons.h"
 #include "utils/vtk.h"
+
+template <typename T, class Basis>
+void get_element_xloc(const typename Basis::Mesh& mesh, int e,
+                      T element_xloc[]) {
+  int constexpr nodes_per_element = Basis::nodes_per_element;
+  int constexpr spatial_dim = Basis::spatial_dim;
+  int nodes[nodes_per_element];
+  mesh.get_elem_dof_nodes(e, nodes);
+  for (int j = 0; j < nodes_per_element; j++) {
+    mesh.get_node_xloc(nodes[j], element_xloc);
+    element_xloc += spatial_dim;
+  }
+}
+
+template <typename T, int dim, class Basis>
+void get_element_vars(const typename Basis::Mesh& mesh, int e, const T dof[],
+                      T element_dof[]) {
+  int constexpr nodes_per_element = Basis::nodes_per_element;
+  int constexpr spatial_dim = Basis::spatial_dim;
+  int nodes[nodes_per_element];
+  mesh.get_elem_dof_nodes(e, nodes);
+  for (int j = 0; j < nodes_per_element; j++) {
+    for (int k = 0; k < dim; k++, element_dof++) {
+      element_dof[0] = dof[dim * nodes[j] + k];
+    }
+  }
+}
+
+template <typename T, int dim, class Basis>
+void add_element_res(const typename Basis::Mesh& mesh, int e,
+                     const T element_res[], T res[]) {
+  int constexpr nodes_per_element = Basis::nodes_per_element;
+  int constexpr spatial_dim = Basis::spatial_dim;
+  int nodes[nodes_per_element];
+  mesh.get_elem_dof_nodes(e, nodes);
+  for (int j = 0; j < nodes_per_element; j++) {
+    for (int k = 0; k < dim; k++, element_res++) {
+      res[dim * nodes[j] + k] += element_res[0];
+    }
+  }
+}
 
 template <typename T, int Np_1d, int samples_1d>
 class GDSampler2D final : public QuadratureBase<T> {
@@ -26,7 +66,7 @@ class GDSampler2D final : public QuadratureBase<T> {
     pts.resize(spatial_dim * samples);
 
     T xymin[2], xymax[2];
-    get_computational_coordinates_limits(elem, xymin, xymax);
+    get_computational_coordinates_limits(mesh, elem, xymin, xymax);
 
     T lxy[2], xy0[2];
     for (int d = 0; d < spatial_dim; d++) {
@@ -46,30 +86,6 @@ class GDSampler2D final : public QuadratureBase<T> {
   }
 
  private:
-  T get_computational_coordinates_limits(int elem, T* xymin, T* xymax) const {
-    int constexpr spatial_dim = Mesh::spatial_dim;
-    T xy_min[spatial_dim], xy_max[spatial_dim];
-    T uv_min[spatial_dim], uv_max[spatial_dim];
-    mesh.get_elem_node_ranges(elem, xy_min, xy_max);
-    mesh.get_elem_vert_ranges(elem, uv_min, uv_max);
-
-    T hx = (uv_max[0] - uv_min[0]) / (xy_max[0] - xy_min[0]);
-    T hy = (uv_max[1] - uv_min[1]) / (xy_max[1] - xy_min[1]);
-    T wt = 4.0 * hx * hy;
-
-    T cx = (2.0 * uv_min[0] - xy_min[0] - xy_max[0]) / (xy_max[0] - xy_min[0]);
-    T dx = 2.0 * hx;
-    T cy = (2.0 * uv_min[1] - xy_min[1] - xy_max[1]) / (xy_max[1] - xy_min[1]);
-    T dy = 2.0 * hy;
-
-    xymin[0] = cx;
-    xymin[1] = cy;
-    xymax[0] = cx + dx;
-    xymax[1] = cy + dy;
-
-    return wt;
-  }
-
   const Mesh& mesh;
 };
 
@@ -87,25 +103,21 @@ class Interpolator final {
   static int constexpr spatial_dim = Mesh::spatial_dim;
 
   using Physics = PhysicsBase<T, spatial_dim, data_per_node, dof_per_node>;
-  using Analysis = GalerkinAnalysis<T, Mesh, Sampler, Basis, Physics>;
 
  public:
   Interpolator(const Mesh& mesh, const Sampler& sampler, const Basis& basis)
-      : mesh(mesh),
-        basis(basis),
-        sampler(sampler),
-        analysis(mesh, sampler, basis, physics) {}
+      : mesh(mesh), basis(basis), sampler(sampler) {}
 
   void to_vtk(const std::string name, T* dof) const {
     FieldToVTK<T, spatial_dim> field_vtk(name);
 
     for (int elem = 0; elem < mesh.get_num_elements(); elem++) {
       std::vector<T> element_dof(Mesh::nodes_per_element);
-      analysis.template get_element_vars<dof_per_node>(elem, dof,
-                                                       element_dof.data());
+      get_element_vars<T, dof_per_node, Basis>(mesh, elem, dof,
+                                               element_dof.data());
 
       std::vector<T> element_xloc(Mesh::nodes_per_element * Basis::spatial_dim);
-      analysis.get_element_xloc(elem, element_xloc.data());
+      get_element_xloc<T, Basis>(mesh, elem, element_xloc.data());
 
       std::vector<T> pts, wts;
       int nsamples = sampler.get_quadrature_pts(elem, pts, wts);
@@ -139,7 +151,6 @@ class Interpolator final {
   const Basis& basis;
   const Sampler& sampler;
   Physics physics;
-  Analysis analysis;
 };
 
 #endif  // XCGD_ELEMENT_UTILS_H
