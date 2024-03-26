@@ -90,6 +90,11 @@ void solve_linear_elasticity(T E, T nu, Mesh &mesh, Quadrature &quadrature,
   vtk.write_sol("lsf", mesh.get_lsf_nodes().data());
   vtk.write_vec("rhs", rhs.data());
   vtk.write_vec("sol", sol.data());
+
+  // Export quadrature points to vtk
+  using Interpolator = Interpolator<T, Quadrature, Basis>;
+  Interpolator interpolator(mesh, quadrature, basis);
+  interpolator.to_vtk(name + "_pts.vtk", sol.data());
 }
 
 template <int spatial_dim>
@@ -142,7 +147,7 @@ void solve_linear_elasticity_gd() {
   Grid grid(nxy, lxy);
   Basis::Mesh mesh(grid, lsf);
   Basis basis(mesh);
-  Quadrature quadrature(mesh, basis);
+  Quadrature quadrature(mesh);
 
   T E = 30.0, nu = 0.3;
   solve_linear_elasticity(E, nu, mesh, quadrature, basis, "gd");
