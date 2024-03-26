@@ -26,7 +26,7 @@ class GDGaussQuadrature2D final : public QuadratureBase<T> {
  public:
   GDGaussQuadrature2D(const Mesh& mesh) : mesh(mesh) {
     for (int i = 0; i < Np_1d; i++) {
-      pts_1d[i] = algoim::GaussQuad::x(Np_1d, i);  // in [0, 1]
+      pts_1d[i] = algoim::GaussQuad::x(Np_1d, i);  // in (0, 1)
       wts_1d[i] = algoim::GaussQuad::w(Np_1d, i);
     }
   }
@@ -36,12 +36,12 @@ class GDGaussQuadrature2D final : public QuadratureBase<T> {
     int constexpr spatial_dim = Mesh::spatial_dim;
     pts.resize(spatial_dim * num_quad_pts);
     wts.resize(num_quad_pts);
-    T xymin[spatial_dim], xymax[spatial_dim];
-    T wt = get_computational_coordinates_limits(mesh, elem, xymin, xymax);
-    T cx = xymin[0];
-    T cy = xymin[1];
-    T dx = xymax[0] - cx;
-    T dy = xymax[1] - cy;
+    T xi_min[spatial_dim], xi_max[spatial_dim];
+    T wt = get_computational_coordinates_limits(mesh, elem, xi_min, xi_max);
+    T cx = xi_min[0];
+    T cy = xi_min[1];
+    T dx = xi_max[0] - cx;
+    T dy = xi_max[1] - cy;
     for (int q = 0; q < num_quad_pts; q++) {  // q = i * Np_1d + j
       int i = q / Np_1d;
       int j = q % Np_1d;
@@ -69,30 +69,29 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
   using Basis = GDBasis2D<T, Np_1d>;
 
  public:
-  GDLSFQuadrature2D(const Mesh& mesh, const Basis& basis)
-      : mesh(mesh),
-        basis(basis),
-        lsf_mesh(mesh.get_grid()),
-        lsf_basis(lsf_mesh) {}
+  GDLSFQuadrature2D(const Mesh& mesh) : mesh(mesh), lsf_mesh(mesh.get_grid()) {}
 
   int get_quadrature_pts(int elem, std::vector<T>& pts,
                          std::vector<T>& wts) const {
     int constexpr spatial_dim = Mesh::spatial_dim;
     int constexpr nodes_per_element = Basis::nodes_per_element;
 
+    // this is the element index in lsf mesh
+    int cell = mesh.get_elem_cell(elem);
+
     // Get element LSF dofs
     const std::vector<T>& lsf_dof = mesh.get_lsf_dof();
     T element_dof[nodes_per_element];
-    get_element_vars<T, 1, Basis>(lsf_mesh, elem, lsf_dof.data(), element_dof);
+    get_element_vars<T, 1, Basis>(lsf_mesh, cell, lsf_dof.data(), element_dof);
 
     // Get bounds of the hyperrectangle
-    algoim::uvector<T, spatial_dim> xmin, xmax;
-    get_computational_coordinates_limits(lsf_mesh, elem, xmin.data(),
-                                         xmax.data());
+    algoim::uvector<T, spatial_dim> xi_min, xi_max;
+    get_computational_coordinates_limits(lsf_mesh, cell, xi_min.data(),
+                                         xi_max.data());
 
     // Create the functor that evaluates the interpolation given an arbitrary
     // point within the computational coordinates
-    typename Basis::Evaluator eval(lsf_mesh, elem);
+    typename Basis::Evaluator eval(lsf_mesh, cell);
 
     // Obtain the Bernstein polynomial representation of the level-set
     // function
@@ -100,38 +99,43 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
     algoim::xarray<T, spatial_dim> phi(
         data, algoim::uvector<int, spatial_dim>(Np_1d, Np_1d));
     algoim::bernstein::bernsteinInterpolate<spatial_dim>(
-        [&](const algoim::uvector<T, spatial_dim>& x) {
+        [&](const algoim::uvector<T, spatial_dim>& x) {  // x in [0, 1]
           T N[nodes_per_element];
-          // T Nxi[nodes_per_element * spatial_dim];
-          eval(x.data(), N, nullptr);
-          return 0.0;
+          // xi in [xi_min, xi_max]
+          algoim::uvector<T, spatial_dim> xi = xi_min + x * (xi_max - xi_min);
+          eval(xi.data(), N, nullptr);
+          T val;
+          interp_val_grad<T, Basis>(cell, element_dof, N, nullptr, &val,
+                                    nullptr);
+          return val;
         },
         phi);
+    algoim::ImplicitPolyQuadrature<spatial_dim> ipquad(phi);
 
-    int num_quad_pts = 0;
-    // int num_quad_pts = quad.nodes.size();
-    // pts.resize(spatial_dim * num_quad_pts);
-    // wts.resize(num_quad_pts);
+    // Compute quadrature nodes
+    std::vector<algoim::uvector<T, spatial_dim>> quad_nodes;
 
-    // for (int q = 0; q < num_quad_pts; q++) {
-    //   wts[q] = quad.nodes[q].w;
-    //   for (int d = 0; d < spatial_dim; d++) {
-    //     pts[spatial_dim * q + d] = quad.nodes[q].x(d);
-    //   }
-    // }
+    ipquad.integrate(
+        algoim::AutoMixed, Np_1d,
+        [&](const algoim::uvector<T, spatial_dim>& x, T w) {
+          if (algoim::bernstein::evalBernsteinPoly(phi, x) <= 0.0) {
+            for (int d = 0; d < spatial_dim; d++) {
+              pts.push_back(xi_min(d) + x(d) * (xi_max(d) - xi_min(d)));
+            }
+            wts.push_back(w);
+          }
+        });
 
-    return num_quad_pts;
+    return wts.size();
   }
 
  private:
-  // Mesh and basis for physical dof. Dof nodes is a subset of grid verts due to
+  // Mesh for physical dof. Dof nodes is a subset of grid verts due to
   // LSF-cut.
   const Mesh& mesh;
-  const Basis& basis;
 
-  // Mesh and basis for the LSF dof. All grid verts are dof nodes.
+  // Mesh for the LSF dof. All grid verts are dof nodes.
   Mesh lsf_mesh;
-  Basis lsf_basis;
 };
 
 /**
@@ -174,6 +178,8 @@ class GDBasis2D final : public BasisBase<T, GDMesh2D<T, Np_1d>> {
     }
   }
 
+  // This class implements a functor that evaluate basis values and basis
+  // gradients given a set of computational coordinates
   class Evaluator {
    private:
     static constexpr int spatial_dim = Mesh::spatial_dim;

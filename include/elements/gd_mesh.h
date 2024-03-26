@@ -284,6 +284,8 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
   const std::vector<T>& get_lsf_dof() const { return lsf_dof; }
   const Grid& get_grid() const { return grid; }
 
+  int get_elem_cell(int elem) const { return elem_cells[elem]; }
+
  private:
   void check_grid_compatibility(const Grid& grid) const {
     const int* nxy = grid.get_nxy();

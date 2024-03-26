@@ -44,7 +44,6 @@ void quadratures_general() {
 void quadratures_multipoly() {
   using T = double;
   constexpr int spatial_dim = 2;
-  constexpr int quad_pts_1d = 10;
   constexpr int Np_1d = 5;
 
   // Define the LSF functor
@@ -53,8 +52,8 @@ void quadratures_multipoly() {
   };
 
   // Set bounds of the hyperrectangle
-  algoim::uvector<T, spatial_dim> xmin{-1.0, -1.0};
-  algoim::uvector<T, spatial_dim> xmax{1.0, 1.0};
+  algoim::uvector<T, spatial_dim> xmin{-0.7, -0.3};
+  algoim::uvector<T, spatial_dim> xmax{1.2, 0.5};
 
   // Evaluate the bernstein
   T data[Np_1d * Np_1d];
@@ -73,7 +72,7 @@ void quadratures_multipoly() {
   std::vector<algoim::uvector<T, spatial_dim>> phase0,
       phase1;  // stores quadrature nodes for the 'inside' and 'outside'
   std::vector<T> w0, w1;
-  ipquad.integrate(algoim::AutoMixed, quad_pts_1d,
+  ipquad.integrate(algoim::AutoMixed, Np_1d,
                    [&](const algoim::uvector<T, spatial_dim>& x, T w) {
                      if (algoim::bernstein::evalBernsteinPoly(phi, x) < 0) {
                        phase0.push_back(x);
