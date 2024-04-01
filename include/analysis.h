@@ -62,12 +62,12 @@ class GalerkinAnalysis final {
 
         // Evaluate the derivative of the dof in the computational coordinates
         typename Physics::dof_t vals{};
-        typename Physics::grad_t grad{};
+        typename Physics::grad_t grad{}, grad_ref{};
         interp_val_grad<T, Basis>(i, element_dof, &N[offset_n],
-                                  &Nxi[offset_nxi], &vals, &grad);
+                                  &Nxi[offset_nxi], &vals, &grad_ref);
 
         // Transform gradient from ref coordinates to physical coordinates
-        transform(J, grad, grad);
+        transform(J, grad_ref, grad);
 
         // Add the energy contributions
         if (x) {
@@ -123,25 +123,28 @@ class GalerkinAnalysis final {
 
         // Evaluate the derivative of the dof in the computational coordinates
         typename Physics::dof_t vals{};
-        typename Physics::grad_t grad{};
+        typename Physics::grad_t grad{}, grad_ref{};
         interp_val_grad<T, Basis>(i, element_dof, &N[offset_n],
-                                  &Nxi[offset_nxi], &vals, &grad);
+                                  &Nxi[offset_nxi], &vals, &grad_ref);
         if (x) {
           interp_val_grad<T, Basis>(i, element_x.data(), &N[offset_n], nullptr,
                                     &xq, nullptr);
         }
 
         // Transform gradient from ref coordinates to physical coordinates
-        transform(J, grad, grad);
+        transform(J, grad_ref, grad);
 
         // Evaluate the residuals at the quadrature points
         typename Physics::dof_t coef_vals{};
-        typename Physics::grad_t coef_grad{};
+        typename Physics::grad_t coef_grad{}, coef_grad_ref{};
         physics.residual(wts[j], xq, J, vals, grad, coef_vals, coef_grad);
+
+        // Transform gradient from physical coordinates back to ref coordinates
+        rtransform(J, coef_grad, coef_grad_ref);
 
         // Add the contributions to the element residual
         add_grad<T, Basis>(i, &N[offset_n], &Nxi[offset_nxi], coef_vals,
-                           coef_grad, element_res);
+                           coef_grad_ref, element_res);
       }
 
       add_element_res<T, dof_per_node, Basis>(mesh, i, element_res, res);
@@ -195,33 +198,41 @@ class GalerkinAnalysis final {
 
         // Evaluate the derivative of the dof in the computational coordinates
         typename Physics::dof_t vals{};
-        typename Physics::grad_t grad{};
+        typename Physics::grad_t grad{}, grad_ref{};
         interp_val_grad<T, Basis>(i, element_dof, &N[offset_n],
-                                  &Nxi[offset_nxi], &vals, &grad);
+                                  &Nxi[offset_nxi], &vals, &grad_ref);
 
         // Transform gradient from ref coordinates to physical coordinates
-        transform(J, grad, grad);
+        transform(J, grad_ref, grad);
 
         // Evaluate the derivative of the direction in the computational
         // coordinates
         typename Physics::dof_t direct_vals{};
-        typename Physics::grad_t direct_grad{};
+        typename Physics::grad_t direct_grad{}, direct_grad_ref{};
         interp_val_grad<T, Basis>(i, element_direct, &N[offset_n],
-                                  &Nxi[offset_nxi], &direct_vals, &direct_grad);
+                                  &Nxi[offset_nxi], &direct_vals,
+                                  &direct_grad_ref);
 
-        // Evaluate the residuals at the quadrature points
-        typename Physics::dof_t coef_vals{};
-        typename Physics::grad_t coef_grad{};
+        // Transform gradient from ref coordinates to physical coordinates
+        transform(J, direct_grad_ref, direct_grad);
+
         if (x) {
           interp_val_grad<T, Basis>(i, element_x.data(), &N[offset_n], nullptr,
                                     &xq, nullptr);
         }
+
+        // Evaluate the residuals at the quadrature points
+        typename Physics::dof_t coef_vals{};
+        typename Physics::grad_t coef_grad{}, coef_grad_ref{};
         physics.jacobian_product(wts[j], xq, J, vals, grad, direct_vals,
                                  direct_grad, coef_vals, coef_grad);
 
+        // Transform gradient from physical coordinates back to ref coordinates
+        rtransform(J, coef_grad, coef_grad_ref);
+
         // Add the contributions to the element residual
         add_grad<T, Basis>(i, &N[offset_n], &Nxi[offset_nxi], coef_vals,
-                           coef_grad, element_res);
+                           coef_grad_ref, element_res);
       }
 
       add_element_res<T, dof_per_node, Basis>(mesh, i, element_res, res);
@@ -271,26 +282,31 @@ class GalerkinAnalysis final {
 
         // Evaluate the derivative of the dof in the computational coordinates
         typename Physics::dof_t vals{};
-        typename Physics::grad_t grad{};
+        typename Physics::grad_t grad_ref{}, grad{};
         interp_val_grad<T, Basis>(i, element_dof, &N[offset_n],
-                                  &Nxi[offset_nxi], &vals, &grad);
+                                  &Nxi[offset_nxi], &vals, &grad_ref);
+        if (x) {
+          interp_val_grad<T, Basis>(i, element_x.data(), &N[offset_n], nullptr,
+                                    &xq, nullptr);
+        }
 
         // Transform gradient from ref coordinates to physical coordinates
-        transform(J, grad, grad);
+        transform(J, grad_ref, grad);
 
         // Evaluate the residuals at the quadrature points
         typename Physics::jac_t jac_vals{};
         A2D::Mat<T, dof_per_node * spatial_dim, dof_per_node * spatial_dim>
             jac_grad;
-        if (x) {
-          interp_val_grad<T, Basis>(i, element_x.data(), &N[offset_n], nullptr,
-                                    &xq, nullptr);
-        }
+        A2D::Mat<T, dof_per_node * spatial_dim, dof_per_node * spatial_dim>
+            jac_grad_ref;
         physics.jacobian(wts[j], xq, J, vals, grad, jac_vals, jac_grad);
+
+        // Transform hessian from physical coordinates back to ref coordinates
+        jtransform<T, dof_per_node, spatial_dim>(J, jac_grad, jac_grad_ref);
 
         // Add the contributions to the element residual
         add_matrix<T, Basis>(i, &N[offset_n], &Nxi[offset_nxi], jac_vals,
-                             jac_grad, element_jac);
+                             jac_grad_ref, element_jac);
       }
 
       mat->add_block_values(i, nodes_per_element, mesh, element_jac);

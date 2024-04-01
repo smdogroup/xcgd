@@ -12,21 +12,26 @@
 /**
  * @brief Transform gradient from reference coordinates to physical coordinates
  *
- *   ∇_x v = J^{-T} ∇_ξ v
+ *   ∇_x u = J^{-T} ∇_ξ u
+ *
+ * @tparam T numeric type
+ * @tparam spatial_dim spatial dimension
+ * @param J coordinate transformation matrix
+ * @param grad_ref ∇_ξ u
+ * @param grad ∇_x u, output
  */
 template <typename T, int spatial_dim>
 inline void transform(const A2D::Mat<T, spatial_dim, spatial_dim>& J,
-                      const A2D::Vec<T, spatial_dim> grad_ref,
-                      A2D::Vec<T, spatial_dim> grad) {
+                      const A2D::Vec<T, spatial_dim>& grad_ref,
+                      A2D::Vec<T, spatial_dim>& grad) {
   A2D::Mat<T, spatial_dim, spatial_dim> Jinv;
   A2D::MatInv(J, Jinv);
   A2D::MatVecMult<A2D::MatOp::TRANSPOSE>(Jinv, grad_ref, grad);
 }
-
 template <typename T, int dim, int spatial_dim>
 inline void transform(const A2D::Mat<T, spatial_dim, spatial_dim>& J,
-                      const A2D::Mat<T, dim, spatial_dim> grad_ref,
-                      A2D::Mat<T, dim, spatial_dim> grad) {
+                      const A2D::Mat<T, dim, spatial_dim>& grad_ref,
+                      A2D::Mat<T, dim, spatial_dim>& grad) {
   A2D::Mat<T, spatial_dim, spatial_dim> Jinv;
   A2D::MatInv(J, Jinv);
   A2D::MatMatMult(grad_ref, Jinv, grad);
@@ -35,31 +40,67 @@ inline void transform(const A2D::Mat<T, spatial_dim, spatial_dim>& J,
 /**
  * @brief Transform gradient from physical coordinates to reference coordinates
  *
- *   [∂g/∂∇_ξ]^T = J^{-1} [∂g/∂∇_x]^T
+ *   ∂e/∂∇_ξ = ∂e/∂∇_x J^{-T}
+ *
+ * @tparam T numeric type
+ * @tparam spatial_dim spatial dimension
+ * @param J coordinate transformation matrix
+ * @param grad ∂e/∂∇_x
+ * @param grad_ref ∂e/∂∇_ξ, output
  */
 template <typename T, int spatial_dim>
 inline void rtransform(const A2D::Mat<T, spatial_dim, spatial_dim>& J,
-                       const A2D::Vec<T, spatial_dim> grad,
-                       A2D::Vec<T, spatial_dim> grad_ref) {
+                       const A2D::Vec<T, spatial_dim>& grad,
+                       A2D::Vec<T, spatial_dim>& grad_ref) {
   A2D::Mat<T, spatial_dim, spatial_dim> Jinv;
   A2D::MatInv(J, Jinv);
   A2D::MatVecMult(Jinv, grad, grad_ref);
 }
-
+template <typename T, int dim, int spatial_dim>
+inline void rtransform(const A2D::Mat<T, spatial_dim, spatial_dim>& J,
+                       const A2D::Mat<T, dim, spatial_dim>& grad,
+                       A2D::Mat<T, dim, spatial_dim>& grad_ref) {
+  A2D::Mat<T, spatial_dim, spatial_dim> Jinv;
+  A2D::MatInv(J, Jinv);
+  A2D::MatMatMult<A2D::MatOp::NORMAL, A2D::MatOp::TRANSPOSE>(grad, Jinv,
+                                                             grad_ref);
+}
 /**
  * @brief Transform Hessian from physical coordinates to reference coordinates
  *
- *   ∂^2g/∂∇_ξ^2 = J^{-1} ∂^2g/∂∇_x^2 J^{-T}
+ *   ∂^2e/∂∇_ξ^2 = J^{-1} ∂^2e/∂∇_x^2 J^{-T}
+ *
+ * @tparam T numeric type
+ * @tparam spatial_dim spatial dimension
+ * @param J coordinate transformation matrix
+ * @param hess ∂^2e/∂∇_x^2
+ * @param hess_ref ∂^2e/∂∇_ξ^2, output
  */
-template <typename T, int spatial_dim>
-inline void jtransform(const A2D::Mat<T, spatial_dim, spatial_dim>& J,
-                       const A2D::Mat<T, spatial_dim, spatial_dim> hess,
-                       A2D::Mat<T, spatial_dim, spatial_dim> hess_ref) {
+template <typename T, int dim, int spatial_dim>
+inline void jtransform(
+    const A2D::Mat<T, spatial_dim, spatial_dim>& J,
+    const A2D::Mat<T, dim * spatial_dim, dim * spatial_dim>& hess,
+    A2D::Mat<T, dim * spatial_dim, dim * spatial_dim>& hess_ref) {
   A2D::Mat<T, spatial_dim, spatial_dim> Jinv;
   A2D::MatInv(J, Jinv);
-  A2D::MatMatMult<A2D::MatOp::NORMAL, A2D::MatOp::TRANSPOSE>(hess, Jinv,
-                                                             hess_ref);
-  A2D::MatMatMult(Jinv, hess_ref, hess_ref);
+  hess_ref.zero();
+  for (int i = 0; i < dim; i++) {
+    for (int j = 0; j < dim; j++) {
+      for (int ii = 0; ii < spatial_dim; ii++) {
+        for (int jj = 0; jj < spatial_dim; jj++) {
+          for (int kk = 0; kk < spatial_dim; kk++) {
+            for (int ll = 0; ll < spatial_dim; ll++) {
+              // hess(ii, jj) for dof (i, j)
+              hess_ref(spatial_dim * i + ii, spatial_dim * j + jj) +=
+                  Jinv(ii, kk) *
+                  hess(spatial_dim * i + kk, spatial_dim * j + ll) *
+                  Jinv(jj, ll);
+            }
+          }
+        }
+      }
+    }
+  }
 }
 
 template <typename T, class Basis>
@@ -188,28 +229,26 @@ static void interp_val_grad(int elem, const T dof[], const T N[], const T Nxi[],
  *         = ∂e/∂uq * ∂uq/∂u + ∂e/∂(∇uq) * ∂(∇uq)/∂u
  *
  * where u are the element dof, uq, ∇uq are quantities on quadrature points,
- * uq = Nu, ∇uq = ∇Nu, so we have ∂uq/∂u = N, ∂(∇uq)/∂u = ∇N, as a result:
+ * uq = Nu, ∇uq = ∇Nu, so we have ∂uq/∂u = N, ∂(∇uq)/∂u = ∇N, ∇ = ∇_ξ, as a
+ * result:
  *
  *   de/du = ∂e/∂uq * N + ∂e/∂(∇uq) * ∇N
- *
- * Note: ∇ = ∇_ξ
  *
  * @tparam T numeric type
  * @tparam Basis Basis type
  * @tparam dim number of dof components at each dof node
  * @param elem element index
- * @param J Jacobian matrix for coordinate transformation
  * @param N shape function values, size of nodes_per_element
  * @param Nxi shape function gradients w.r.t. computational coordinates ξ, size
  * of nodes_per_element * spatial_dim
  * @param coef_vals ∂e/∂uq
- * @param coef_grad ∂e/∂(∇uq)
+ * @param coef_grad ∂e/∂((∇_ξ)uq)
  * @param elem_res de/du
  */
 template <typename T, class Basis, int dim>
 static void add_grad(int elem, const T N[], const T Nxi[],
                      const A2D::Vec<T, dim>& coef_vals,
-                     const A2D::Mat<T, dim, Basis::spatial_dim>& coef_grad,
+                     A2D::Mat<T, dim, Basis::spatial_dim>& coef_grad,
                      T elem_res[]) {
   static constexpr int spatial_dim = Basis::spatial_dim;
   static constexpr int nodes_per_element = Basis::nodes_per_element;
@@ -240,11 +279,34 @@ static void add_grad(int elem, const T N[], const T Nxi[], const T& coef_val,
   }
 }
 
+/**
+ * @brief  Assemble the total Hessian of the energy functional e:
+ *
+ *   d^2e/du^2 =   [∂uq/∂u]^T    * ∂^2e/∂(uq)^2  * ∂uq/∂u
+ *               + [∂(∇uq)/∂u]^T * ∂^2e/∂(∇uq)^2 * ∂(∇uq)/∂u
+ *
+ * where u are the element dof, uq, ∇uq are quantities on quadrature points,
+ * uq = Nu, ∇uq = ∇Nu, ∇ = ∇_ξ, as a result:
+ *
+ *   d^2e/du^2 =   N^T    * ∂^2e/∂(uq)^2  * N
+ *               + [∇N]^T * ∂^2e/∂(∇uq)^2 * ∇N
+ *
+ * @tparam T numeric type
+ * @tparam Basis Basis type
+ * @tparam dim number of dof components at each dof node
+ * @param elem element index
+ * @param N shape function values, size of nodes_per_element
+ * @param Nxi shape function gradients w.r.t. computational coordinates ξ, size
+ * of nodes_per_element * spatial_dim
+ * @param coef_vals ∂^2e/∂(uq)^2
+ * @param coef_hess ∂^2e/∂((∇_ξ)uq)^2
+ * @param elem_jac d^2e/du^2
+ */
 template <typename T, class Basis, int dim>
 static void add_matrix(int elem, const T N[], const T Nxi[],
                        const A2D::Mat<T, dim, dim>& coef_vals,
                        const A2D::Mat<T, dim * Basis::spatial_dim,
-                                      dim * Basis::spatial_dim>& coef_grad,
+                                      dim * Basis::spatial_dim>& coef_hess,
                        T elem_jac[]) {
   static constexpr int spatial_dim = Basis::spatial_dim;
   static constexpr int nodes_per_element = Basis::nodes_per_element;
@@ -269,7 +331,7 @@ static void add_matrix(int elem, const T N[], const T Nxi[],
           T val = 0.0;
           for (int kk = 0; kk < spatial_dim; kk++) {
             for (int ll = 0; ll < spatial_dim; ll++) {
-              val += coef_grad(spatial_dim * ii + kk, spatial_dim * jj + ll) *
+              val += coef_hess(spatial_dim * ii + kk, spatial_dim * jj + ll) *
                      nxi[kk] * nxj[ll];
             }
           }

@@ -208,7 +208,9 @@ TEST(physics, PoissonQuad) { test_poisson(create_quad_basis()); }
 TEST(physics, PoissonTet) { test_poisson(create_tet_basis()); }
 TEST(physics, PoissonGD) { test_poisson(create_gd_basis(), 1e-8, 1e-6); }
 
-TEST(physics, HelmholtzQuad) { test_helmholtz(create_quad_basis()); }
+TEST(physics, HelmholtzQuad) {
+  test_helmholtz(create_quad_basis(), 1e-30, 1e-13);
+}
 TEST(physics, HelmholtzTet) {
   test_helmholtz(create_tet_basis(), 1e-30, 1e-13);
 }
