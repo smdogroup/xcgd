@@ -33,7 +33,6 @@ class NeohookeanPhysics final
     T detJ;
     A2D::MatDet(J, detJ);
     A2D::MatInv(J, Jinv);
-
     A2D::MatMatMult(grad, Jinv, F);
     A2D::MatSum(F, I, F);
 
