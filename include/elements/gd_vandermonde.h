@@ -115,6 +115,9 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
     // Compute quadrature nodes
     std::vector<algoim::uvector<T, spatial_dim>> quad_nodes;
 
+    pts.clear();
+    wts.clear();
+
     ipquad.integrate(
         algoim::AutoMixed, Np_1d,
         [&](const algoim::uvector<T, spatial_dim>& x, T w) {
@@ -128,6 +131,8 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
 
     return wts.size();
   }
+
+  const Mesh& get_lsf_mesh() const { return lsf_mesh; };
 
  private:
   // Mesh for physical dof. Dof nodes is a subset of grid verts due to
@@ -152,6 +157,7 @@ class GDBasis2D final : public BasisBase<T, GDMesh2D<T, Np_1d>> {
   using BasisBase = BasisBase<T, GDMesh2D<T, Np_1d>>;
 
  public:
+  static constexpr bool is_gd_basis = true;
   using BasisBase::nodes_per_element;
   using BasisBase::spatial_dim;
   using typename BasisBase::Mesh;
@@ -163,6 +169,17 @@ class GDBasis2D final : public BasisBase<T, GDMesh2D<T, Np_1d>> {
  public:
   GDBasis2D(Mesh& mesh) : mesh(mesh) {}
 
+  /**
+   * @brief Given all quadrature points, evaluate the shape function values,
+   * gradients and Hessians w.r.t. computational coordinates
+   *
+   * @param elem element index
+   * @param pts collection of quadrature points
+   * @param N shape function values
+   * @param Nxi shape function gradients, concatenation of (∇_xi N_q, ∇_eta N_q)
+   * @param Nxixi shape function Hessians, concatenation of (∇_xi_xi N_q,
+   * ∇_xi_eta N_q, ∇_eta_xi N_q, ∇_eta_eta N_q)
+   */
   void eval_basis_grad(int elem, const std::vector<T>& pts, std::vector<T>& N,
                        std::vector<T>& Nxi) const {
     int num_quad_pts = pts.size() / spatial_dim;
@@ -175,6 +192,23 @@ class GDBasis2D final : public BasisBase<T, GDMesh2D<T, Np_1d>> {
       int offset_n = q * nodes_per_element;
       int offset_nxi = q * nodes_per_element * spatial_dim;
       eval(&pts[spatial_dim * q], N.data() + offset_n, Nxi.data() + offset_nxi);
+    }
+  }
+  void eval_basis_grad(int elem, const std::vector<T>& pts, std::vector<T>& N,
+                       std::vector<T>& Nxi, std::vector<T>& Nxixi) const {
+    int num_quad_pts = pts.size() / spatial_dim;
+    N.resize(nodes_per_element * num_quad_pts);
+    Nxi.resize(nodes_per_element * num_quad_pts * spatial_dim);
+    Nxixi.resize(nodes_per_element * num_quad_pts * spatial_dim * spatial_dim);
+
+    Evaluator eval(mesh, elem);
+
+    for (int q = 0; q < num_quad_pts; q++) {
+      int offset_n = q * nodes_per_element;
+      int offset_nxi = q * nodes_per_element * spatial_dim;
+      int offset_nxixi = q * nodes_per_element * spatial_dim * spatial_dim;
+      eval(&pts[spatial_dim * q], N.data() + offset_n, Nxi.data() + offset_nxi,
+           Nxixi.data() + offset_nxixi);
     }
   }
 
@@ -220,14 +254,17 @@ class GDBasis2D final : public BasisBase<T, GDMesh2D<T, Np_1d>> {
     }
 
     // Evaluate the shape function and derivatives given a quadrature point
-    void operator()(const T* pt, T* N, T* Nxi) const {
-      std::vector<T> xpows(Np_1d), ypows(Np_1d), dxpows(Np_1d), dypows(Np_1d);
+    void operator()(const T* pt, T* N, T* Nxi, T* Nxixi = nullptr) const {
+      std::vector<T> xpows(Np_1d), ypows(Np_1d), dxpows(Np_1d), dypows(Np_1d),
+          dx2pows(Np_1d), dy2pows(Np_1d);
 
       for (int ii = 0; ii < Np_1d; ii++) {
         xpows[ii] = pow(pt[0], ii);
         ypows[ii] = pow(pt[1], ii);
         dxpows[ii] = T(ii) * pow(pt[0], ii - 1);
         dypows[ii] = T(ii) * pow(pt[1], ii - 1);
+        dx2pows[ii] = T(ii) * T(ii - 1) * pow(pt[0], ii - 2);
+        dy2pows[ii] = T(ii) * T(ii - 1) * pow(pt[1], ii - 2);
       }
 
       for (int i = 0; i < Nk; i++) {
@@ -237,6 +274,12 @@ class GDBasis2D final : public BasisBase<T, GDMesh2D<T, Np_1d>> {
         if (Nxi) {
           Nxi[spatial_dim * i] = 0.0;
           Nxi[spatial_dim * i + 1] = 0.0;
+        }
+        if (Nxixi) {
+          Nxixi[spatial_dim * i] = 0.0;
+          Nxixi[spatial_dim * i + 1] = 0.0;
+          Nxixi[spatial_dim * i + 2] = 0.0;
+          Nxixi[spatial_dim * i + 3] = 0.0;
         }
 
         for (int j = 0; j < Np_1d; j++) {
@@ -249,6 +292,16 @@ class GDBasis2D final : public BasisBase<T, GDMesh2D<T, Np_1d>> {
               Nxi[spatial_dim * i] += Ck[idx + Nk * i] * dxpows[j] * ypows[k];
               Nxi[spatial_dim * i + 1] +=
                   Ck[idx + Nk * i] * xpows[j] * dypows[k];
+            }
+            if (Nxixi) {
+              Nxixi[spatial_dim * i] +=
+                  Ck[idx + Nk * i] * dx2pows[j] * ypows[k];
+              Nxixi[spatial_dim * i + 1] +=
+                  Ck[idx + Nk * i] * dxpows[j] * dypows[k];
+              Nxixi[spatial_dim * i + 2] +=
+                  Ck[idx + Nk * i] * dxpows[j] * dypows[k];
+              Nxixi[spatial_dim * i + 3] +=
+                  Ck[idx + Nk * i] * xpows[j] * dy2pows[k];
             }
           }
         }

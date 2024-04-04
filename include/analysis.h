@@ -313,76 +313,101 @@ class GalerkinAnalysis final {
     }
   }
 
-#if 0
   /*
     Evaluate the matrix vector product dR/dphi * psi, where phi are the
     LSF dof, psi are the adjoint variables
+
+    Note: This only works for Galerkin Difference method combined with the
+    level-set mesh
   */
   void LSF_jacobian_adjoint_product(const T dof[], const T psi[],
                                     T dfdx[]) const {
+    static_assert(Basis::is_gd_basis, "This method only works with GD Basis");
+    if (!mesh.has_lsf()) {
+      throw std::runtime_error(
+          "This method only works with the level-set mesh");
+    }
+
     for (int i = 0; i < mesh.get_num_elements(); i++) {
       // Get the element node locations
       T element_xloc[spatial_dim * nodes_per_element];
       get_element_xloc<T, Basis>(mesh, i, element_xloc);
 
-      // Get the element degrees of freedom
-      T element_dof[dof_per_element];
+      // Get the element states and adjoints
+      T element_dof[dof_per_element], element_psi[dof_per_element];
       get_element_vars<T, dof_per_node, Basis>(mesh, i, dof, element_dof);
+      get_element_vars<T, dof_per_node, Basis>(mesh, i, psi, element_psi);
 
-      // Get the element directions for the Jacobian-vector product
-      T element_direct[dof_per_element];
-      get_element_vars<T, dof_per_node, Basis>(mesh, i, direct, element_direct);
-
-      // Create the element residual
-      T element_res[dof_per_element];
-      for (int j = 0; j < dof_per_element; j++) {
-        element_res[j] = 0.0;
-      }
+      // Create the element dfdx
+      T element_dfdx[dof_per_element];
+      for (int j = 0; j < dof_per_element; j++) element_dfdx[j] = 0.0;
 
       std::vector<T> pts, wts;
       int num_quad_pts = quadrature.get_quadrature_pts(i, pts, wts);
 
-      std::vector<T> N, Nxi;
-      basis.eval_basis_grad(i, pts, N, Nxi);
+      std::vector<T> N, Nxi, Nxixi;
+      basis.eval_basis_grad(i, pts, N, Nxi, Nxixi);
 
       for (int j = 0; j < num_quad_pts; j++) {
         int offset_n = j * nodes_per_element;
         int offset_nxi = j * nodes_per_element * spatial_dim;
+        int offset_nxixi = j * nodes_per_element * spatial_dim * spatial_dim;
 
-        // Evaluate the derivative of the spatial dof in the computational
-        // coordinates
-        A2D::Mat<T, spatial_dim, spatial_dim> J;
+        T detJ, detJb = 1.0;
+        A2D::Mat<T, spatial_dim, spatial_dim> J, Jb;
         interp_val_grad<T, Basis, spatial_dim>(i, element_xloc, nullptr,
                                                &Nxi[offset_nxi], nullptr, &J);
 
+        // Get derivatives of detJ w.r.t. J
+        A2D::ADObj<T&> detJ_obj(detJ, detJb);
+        A2D::ADObj<A2D::Mat<T, spatial_dim, spatial_dim>&> J_obj(J, Jb);
+        auto det_expr = A2D::MatDet(J_obj, detJ_obj);
+        det_expr.reverse();
+
         // Evaluate the derivative of the dof in the computational coordinates
-        typename Physics::dof_t vals{};
-        typename Physics::grad_t grad{};
+        typename Physics::dof_t uq{}, psiq{};           // uq, psiq
+        typename Physics::grad_t ugrad{}, ugrad_ref{};  // (∇_x)uq, (∇_ξ)uq
+        typename Physics::grad_t pgrad{}, pgrad_ref{};  // (∇_x)psiq, (∇_ξ)psiq
+
+        // Interpolate the quantities at the quadrature point
         interp_val_grad<T, Basis>(i, element_dof, &N[offset_n],
-                                  &Nxi[offset_nxi], &vals, &grad);
+                                  &Nxi[offset_nxi], &uq, &ugrad_ref);
+        interp_val_grad<T, Basis>(i, element_psi, &N[offset_n],
+                                  &Nxi[offset_nxi], &psiq, &pgrad_ref);
 
-        // Evaluate the derivative of the direction in the computational
+        transform(J, ugrad_ref, ugrad);
+        transform(J, pgrad_ref, pgrad);
+
+        typename Physics::dof_t coef_uq{};      // ∂e/∂uq
+        typename Physics::grad_t coef_ugrad{};  // ∂e/∂(∇_x)uq
+        typename Physics::dof_t jp_uq{};        // ∂2e/∂uq2 * psiq
+        typename Physics::grad_t jp_ugrad{};  // ∂2e/∂(∇_x)uq2 * (∇_x)psiq
+
+        physics.residual(1.0 / detJ, 0.0, J, uq, ugrad, coef_uq, coef_ugrad);
+        physics.jacobian_product(1.0 / detJ, 0.0, J, uq, ugrad, psiq, pgrad,
+                                 jp_uq, jp_ugrad);
+
+        typename Physics::grad_t coef_ugrad_ref{};  // ∂e/∂(∇_ξ)uq
+        typename Physics::grad_t jp_ugrad_ref{};  // ∂2e/∂(∇_ξ)uq2 * (∇_ξ)psiq
+
+        // Transform gradient from physical coordinates back to ref
         // coordinates
-        typename Physics::dof_t direct_vals{};
-        typename Physics::grad_t direct_grad{};
-        interp_val_grad<T, Basis>(i, element_direct, &N[offset_n],
-                                  &Nxi[offset_nxi], &direct_vals, &direct_grad);
+        rtransform(J, coef_ugrad, coef_ugrad_ref);
+        rtransform(J, jp_ugrad, jp_ugrad_ref);
 
-        // Evaluate the residuals at the quadrature points
-        typename Physics::dof_t coef_vals{};
-        typename Physics::grad_t coef_grad{};
-        physics.jacobian_product(wts[j], xq, J, vals, grad, direct_vals,
-                                 direct_grad, coef_vals, coef_grad);
+        // TODO: finish from here
+        std::vector<T> dwdphi(nodes_per_element, 0.0);
+        std::vector<T> dxidphi(spatial_dim * nodes_per_element, 0.0);
 
-        // Add the contributions to the element residual
-        add_grad<T, Basis>(i, &N[offset_n], &Nxi[offset_nxi], coef_vals,
-                           coef_grad, element_res);
+        add_jac_adj_product<T, Basis>(
+            i, element_xloc, element_dof, Nxixi.data(), dwdphi.data(),
+            dxidphi.data(), wts[j], detJ, Jb, psiq, pgrad_ref, coef_uq, jp_uq,
+            coef_ugrad_ref, jp_ugrad_ref, element_dfdx);
       }
 
-      add_element_res<T, dof_per_node, Basis>(mesh, i, element_res, res);
+      add_element_res<T, dof_per_node, Basis>(mesh, i, element_dfdx, dfdx);
     }
   }
-#endif
 
  private:
   const Mesh& mesh;

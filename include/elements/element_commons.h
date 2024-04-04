@@ -47,6 +47,7 @@ class BasisBase {
   using Mesh = Mesh_;
   static constexpr int spatial_dim = Mesh::spatial_dim;
   static constexpr int nodes_per_element = Mesh::nodes_per_element;
+  static constexpr bool is_gd_basis = false;
 
   virtual void eval_basis_grad(int elem, const std::vector<T>& pts,
                                std::vector<T>& N,

@@ -142,7 +142,7 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
   /**
    * @brief Construct GD Mesh given grid only
    */
-  GDMesh2D(const Grid& grid) : grid(grid), has_lsf(false) {
+  GDMesh2D(const Grid& grid) : grid(grid), b_has_lsf(false) {
     check_grid_compatibility(grid);
     num_nodes = grid.get_num_verts();
     num_elements = grid.get_num_cells();
@@ -160,7 +160,7 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
    */
   template <class Func>
   GDMesh2D(const Grid& grid, const Func& lsf)
-      : grid(grid), has_lsf(true), lsf_dof(grid.get_num_verts()) {
+      : grid(grid), b_has_lsf(true), lsf_dof(grid.get_num_verts()) {
     check_grid_compatibility(grid);
     init_dofs_from_lsf(lsf);
     num_nodes = node_verts.size();
@@ -171,7 +171,7 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
   int get_num_elements() const { return num_elements; }
 
   inline void get_node_xloc(int node, T* xloc) const {
-    if (has_lsf) {
+    if (b_has_lsf) {
       grid.get_vert_xloc(node_verts.at(node), xloc);
     } else {
       grid.get_vert_xloc(node, xloc);
@@ -185,7 +185,7 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
    * @param nodes dof node indices, length: nodes_per_element
    */
   void get_elem_dof_nodes(int elem, int* nodes) const {
-    if (has_lsf) {
+    if (b_has_lsf) {
       int cell = elem_cells.at(elem);
       get_cell_ground_stencil(cell, nodes);
       adjust_stencil(cell, nodes);
@@ -198,7 +198,7 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
   }
 
   inline void get_elem_corner_nodes(int elem, int* nodes) const {
-    if (has_lsf) {
+    if (b_has_lsf) {
       grid.get_cell_verts(elem_cells.at(elem), nodes);
       for (int i = 0; i < corner_nodes_per_element; i++) {
         nodes[i] = vert_nodes.at(nodes[i]);
@@ -237,7 +237,7 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
   }
 
   inline void get_elem_vert_ranges(int elem, T* xloc_min, T* xloc_max) const {
-    if (has_lsf) {
+    if (b_has_lsf) {
       grid.get_cell_vert_ranges(elem_cells.at(elem), xloc_min, xloc_max);
     } else {
       grid.get_cell_vert_ranges(elem, xloc_min, xloc_max);
@@ -250,7 +250,7 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
     for (int j = 0; j < nxy[1] + 1; j++) {
       int coords[2] = {0, j};
       int node = grid.get_coords_vert(coords);
-      if (has_lsf and vert_nodes.count(node)) {
+      if (b_has_lsf and vert_nodes.count(node)) {
         node = vert_nodes.at(node);
       }
       nodes.push_back(node);
@@ -264,7 +264,7 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
     for (int j = 0; j < nxy[1] + 1; j++) {
       int coords[2] = {nxy[0], j};
       int node = grid.get_coords_vert(coords);
-      if (has_lsf and vert_nodes.count(node)) {
+      if (b_has_lsf and vert_nodes.count(node)) {
         node = vert_nodes.at(node);
       }
       nodes.push_back(node);
@@ -285,6 +285,8 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
   const Grid& get_grid() const { return grid; }
 
   int get_elem_cell(int elem) const { return elem_cells[elem]; }
+
+  bool has_lsf() const { return b_has_lsf; }
 
  private:
   void check_grid_compatibility(const Grid& grid) const {
@@ -445,7 +447,7 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
   const Grid& grid;
   int num_nodes = -1;
   int num_elements = -1;
-  bool has_lsf = false;
+  bool b_has_lsf = false;
 
   // level set function values at vertices of the ground grid
   std::vector<T> lsf_dof;
