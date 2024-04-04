@@ -68,4 +68,7 @@ TEST(adjoint, JacPsiProduct) {
   Analysis analysis(mesh, quadrature, basis, physics);
 
   analysis.LSF_jacobian_adjoint_product(dof.data(), psi.data(), dfdx.data());
+
+  std::cout << "dfdx:\n";
+  for (auto v : dfdx) std::cout << v << "\n";
 }

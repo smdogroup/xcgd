@@ -361,8 +361,8 @@ class GalerkinAnalysis final {
         // Get derivatives of detJ w.r.t. J
         A2D::ADObj<T&> detJ_obj(detJ, detJb);
         A2D::ADObj<A2D::Mat<T, spatial_dim, spatial_dim>&> J_obj(J, Jb);
-        auto det_expr = A2D::MatDet(J_obj, detJ_obj);
-        det_expr.reverse();
+        auto stack = A2D::MakeStack(A2D::MatDet(J_obj, detJ_obj));
+        stack.reverse();
 
         // Evaluate the derivative of the dof in the computational coordinates
         typename Physics::dof_t uq{}, psiq{};           // uq, psiq
