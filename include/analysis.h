@@ -396,8 +396,8 @@ class GalerkinAnalysis final {
         rtransform(J, jp_ugrad, jp_ugrad_ref);
 
         // TODO: finish from here
-        std::vector<T> dwdphi(nodes_per_element, 0.0);
-        std::vector<T> dxidphi(spatial_dim * nodes_per_element, 0.0);
+        std::vector<T> dwdphi(nodes_per_element, 1.2);
+        std::vector<T> dxidphi(spatial_dim * nodes_per_element, 3.4);
 
         add_jac_adj_product<T, Basis>(
             i, element_xloc, element_dof, Nxixi.data(), dwdphi.data(),

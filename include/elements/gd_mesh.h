@@ -282,6 +282,8 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
   }
 
   const std::vector<T>& get_lsf_dof() const { return lsf_dof; }
+  std::vector<T>& get_lsf_dof() { return lsf_dof; }
+
   const Grid& get_grid() const { return grid; }
 
   int get_elem_cell(int elem) const { return elem_cells[elem]; }
@@ -316,7 +318,7 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
       algoim::uvector<T, spatial_dim> xloc;
       grid.get_vert_xloc(i, xloc.data());
       lsf_dof[i] = lsf(xloc);
-      if (lsf_dof[i] <= T(0.0)) {
+      if (freal(lsf_dof[i]) <= freal(T(0.0))) {
         active_lsf_verts[i] = true;
       }
     }
@@ -378,7 +380,7 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
           dim = d;
         }
       }
-      dir_cells[c] = 2 * dim + (grad(dim) < 0 ? 0 : 1);
+      dir_cells[c] = 2 * dim + (freal(grad(dim)) < 0.0 ? 0 : 1);
     }
   }
 

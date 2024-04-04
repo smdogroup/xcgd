@@ -146,8 +146,9 @@ void solve_linear_elasticity_gd() {
 
   Grid grid(nxy, lxy);
   Basis::Mesh mesh(grid, lsf);
+  Basis::Mesh lsf_mesh(grid);
   Basis basis(mesh);
-  Quadrature quadrature(mesh);
+  Quadrature quadrature(mesh, lsf_mesh);
 
   T E = 30.0, nu = 0.3;
   solve_linear_elasticity(E, nu, mesh, quadrature, basis, "gd");

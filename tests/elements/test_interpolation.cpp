@@ -122,8 +122,9 @@ TEST(elements, QuadGDLSFLSF) {
 
   Grid grid(nxy, lxy);
   Mesh mesh(grid, lsf);
+  Mesh lsf_mesh(grid);
   Basis basis(mesh);
-  Quadrature quadrature(mesh);
+  Quadrature quadrature(mesh, lsf_mesh);
 
   interpolate_dof_at_quadratures<T>(mesh, quadrature, basis, "quad_gd_lsf_lsf");
 }

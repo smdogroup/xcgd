@@ -5,57 +5,47 @@
 #include "physics/linear_elasticity.h"
 #include "test_commons.h"
 
-template <typename T>
-class Circle {
+class Line {
  public:
-  Circle(T* center, T radius, bool flip = false) {
-    x0[0] = center[0];
-    x0[1] = center[1];
-    r = radius;
-    if (flip) {
-      sign = -1.0;
-    }
+  constexpr static int spatial_dim = 2;
+  Line(double k = 0.9, double b = 0.1) : k(k), b(b) {}
+
+  template <typename T>
+  T operator()(const algoim::uvector<T, spatial_dim>& x) const {
+    return -k * x(0) + x(1) - b;
   }
 
-  T operator()(const algoim::uvector<T, 2>& x) const {
-    return sign * ((x(0) - x0[0]) * (x(0) - x0[0]) +
-                   (x(1) - x0[1]) * (x(1) - x0[1]) - r * r);
-  }
-  algoim::uvector<T, 2> grad(const algoim::uvector<T, 2>& x) const {
-    return algoim::uvector<T, 2>(2.0 * sign * (x(0) - x0[0]),
-                                 2.0 * sign * (x(1) - x0[1]));
+  template <typename T>
+  algoim::uvector<T, spatial_dim> grad(const algoim::uvector<T, 2>& x) const {
+    return algoim::uvector<T, spatial_dim>(-k, 1.0);
   }
 
  private:
-  T x0[2];
-  T r;
-  double sign = 1.0;
+  double k, b;
 };
 
 TEST(adjoint, JacPsiProduct) {
   constexpr int Np_1d = 2;
   using T = double;
+
   using Grid = StructuredGrid2D<T>;
-  using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
   using Basis = GDBasis2D<T, Np_1d>;
-  using Mesh = typename Basis::Mesh;
+  using Mesh = Basis::Mesh;
+  using LSF = Line;
+  using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
+
   using Physics = LinearElasticity<T, Basis::spatial_dim>;
   using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
 
-  int nxy[2] = {2, 2};
-  T lxy[2] = {2.0, 2.0};
-  T xy0[2] = {-1.0, -1.0};
+  int nxy[2] = {5, 5};
+  T lxy[2] = {1.0, 1.0};
+  LSF lsf;
 
-  T center[2] = {0.0, 0.0};
-  T r = 0.5;
-
-  bool flip = false;
-  Circle lsf(center, r, flip);
-
-  Grid grid(nxy, lxy, xy0);
+  Grid grid(nxy, lxy);
   Mesh mesh(grid, lsf);
-  Quadrature quadrature(mesh);
+  Mesh lsf_mesh(grid);
   Basis basis(mesh);
+  Quadrature quadrature(mesh, lsf_mesh);
 
   T E = 30.0, nu = 0.3;
   Physics physics(E, nu);
@@ -65,6 +55,10 @@ TEST(adjoint, JacPsiProduct) {
 
   std::vector<T> dof(ndof), psi(ndof), dfdx(ndof_lsf);
 
+  for (int i = 0; i < ndof; i++) {
+    dof[i] = (T)rand() / RAND_MAX;
+    psi[i] = (T)rand() / RAND_MAX;
+  }
   Analysis analysis(mesh, quadrature, basis, physics);
 
   analysis.LSF_jacobian_adjoint_product(dof.data(), psi.data(), dfdx.data());
