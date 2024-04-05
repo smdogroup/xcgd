@@ -73,42 +73,17 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
   GDLSFQuadrature2D(const Mesh& mesh, const Mesh& lsf_mesh)
       : mesh(mesh), lsf_mesh(lsf_mesh) {}
 
-  int get_quadrature_pts(int elem, std::vector<T>& pts,
-                         std::vector<T>& wts) const {
-    // this is the element index in lsf mesh
-    int cell = mesh.get_elem_cell(elem);
-
-    // Get bounds of the hyperrectangle
-    algoim::uvector<T, Mesh::spatial_dim> xi_min, xi_max;
-    get_computational_coordinates_limits(lsf_mesh, cell, xi_min.data(),
-                                         xi_max.data());
-
-    // Create the functor that evaluates the interpolation given an arbitrary
-    // point within the computational coordinates
-    typename Basis::Evaluator eval(lsf_mesh, cell);
-
-    // Get element LSF dofs
-    const std::vector<T>& lsf_dof = mesh.get_lsf_dof();
-    T element_lsf[Basis::nodes_per_element];
-    get_element_vars<T, 1, Basis>(lsf_mesh, cell, lsf_dof.data(), element_lsf);
-
-    // Get quadrature based onf element lsf values
-    getQuadrature(cell, xi_min, xi_max, element_lsf, eval, pts, wts);
-
-    return wts.size();
-  }
-
   /**
-   * @brief Get derivatives of quadrature points and weights with respect to
-   * element LSF dof
+   * @brief Get the quadrature points and weights
    *
    * @param elem element index
-   * @param pts_grad pts_grad[i] = ∂ξ/∂phi_i
-   * @param wts_grad wts_grad[i] = ∂w/∂phi_i
-   * @return int number of quadrature points
+   * @param pts concatenation of [ξ, η] for each quadrature point, size:
+   * num_quad * spatial_dim
+   * @param wts quadrature weights, size: num_quad
+   * @return int num_quad
    */
-  int get_quadrature_grad(int elem, std::vector<std::vector<T>>& pts_grad,
-                          std::vector<std::vector<T>>& wts_grad) const {
+  int get_quadrature_pts(int elem, std::vector<T>& pts,
+                         std::vector<T>& wts) const {
     constexpr int spatial_dim = Mesh::spatial_dim;
     constexpr int nodes_per_element = Basis::nodes_per_element;
 
@@ -129,6 +104,54 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
     T element_lsf[nodes_per_element];
     get_element_vars<T, 1, Basis>(lsf_mesh, cell, lsf_dof.data(), element_lsf);
 
+    // Get quadrature points and weights
+    getQuadrature(cell, xi_min, xi_max, element_lsf, eval, pts, wts);
+
+    return wts.size();
+  }
+
+  /**
+   * @brief Get the quadrature points and weights and derivatives w.r.t.
+   * element LSF dof
+   *
+   * @param elem element index
+   * @param pts concatenation of [ξ, η] for each quadrature point, size:
+   * num_quad * spatial_dim
+   * @param wts quadrature weights, size: num_quad
+   * @param pts_grad concatenation of [∂ξ/∂φ0, ∂η/∂φ0, ∂ξ/∂φ1, ∂η/∂φ1, ...] for
+   * each quadrature point, size: num_quad * spatial_dim * nodes_per_element
+   * @param wts_grad concatenation of [∂w/∂φ0, ∂w/∂φ1, ...] for each quadrature
+   * point, size: num_quad * nodes_per_element
+   */
+  int get_quadrature_pts_grad(int elem, std::vector<T>& pts,
+                              std::vector<T>& wts, std::vector<T>& pts_grad,
+                              std::vector<T>& wts_grad) const {
+    constexpr int spatial_dim = Mesh::spatial_dim;
+    constexpr int nodes_per_element = Basis::nodes_per_element;
+
+    // this is the element index in lsf mesh
+    int cell = mesh.get_elem_cell(elem);
+
+    // Get bounds of the hyperrectangle
+    algoim::uvector<T, spatial_dim> xi_min, xi_max;
+    get_computational_coordinates_limits(lsf_mesh, cell, xi_min.data(),
+                                         xi_max.data());
+
+    // Create the functor that evaluates the interpolation given an arbitrary
+    // point within the computational coordinates
+    typename Basis::Evaluator eval(lsf_mesh, cell);
+
+    // Get element LSF dofs
+    const std::vector<T>& lsf_dof = mesh.get_lsf_dof();
+    T element_lsf[nodes_per_element];
+    get_element_vars<T, 1, Basis>(lsf_mesh, cell, lsf_dof.data(), element_lsf);
+
+    // Get quadrature points and weights
+    getQuadrature(cell, xi_min, xi_max, element_lsf, eval, pts, wts);
+
+    int num_quad_pts = wts.size();
+
+    // Get quadrature gradients
     duals::dual<T> element_lsf_d[nodes_per_element];
     for (int i = 0; i < nodes_per_element; i++) {
       element_lsf_d[i].rpart(element_lsf[i]);
@@ -137,17 +160,34 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
 
     pts_grad.clear();
     wts_grad.clear();
-    pts_grad.resize(nodes_per_element);
-    wts_grad.resize(nodes_per_element);
+    pts_grad.resize(num_quad_pts * spatial_dim * nodes_per_element);
+    wts_grad.resize(num_quad_pts * nodes_per_element);
 
     for (int i = 0; i < nodes_per_element; i++) {
       element_lsf_d[i].dpart(1.0);
-      getQuadrature(cell, xi_min, xi_max, element_lsf_d, eval, pts_grad[i],
-                    wts_grad[i]);
+      std::vector<T> dpts, dwts;
+      getQuadrature(cell, xi_min, xi_max, element_lsf_d, eval, dpts, dwts);
       element_lsf_d[i].dpart(0.0);
+
+      if (dwts.size() != num_quad_pts) {
+        char msg[256];
+        std::snprintf(
+            msg, 256,
+            "number of quadrature points for ∂pt/∂φ_%d is inconsistent. Got "
+            "%ld, expect %d.",
+            i, dwts.size(), num_quad_pts);
+      }
+
+      for (int q = 0; q < num_quad_pts; q++) {
+        int index = q * nodes_per_element + i;
+        wts_grad[index] = dwts[q];
+        for (int d = 0; d < spatial_dim; d++) {
+          pts_grad[index * spatial_dim + d] = dpts[q * spatial_dim + d];
+        }
+      }
     }
 
-    return wts_grad[0].size();
+    return num_quad_pts;
   }
 
   const Mesh& get_lsf_mesh() const { return lsf_mesh; };

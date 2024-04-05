@@ -342,8 +342,9 @@ class GalerkinAnalysis final {
       T element_dfdx[dof_per_element];
       for (int j = 0; j < dof_per_element; j++) element_dfdx[j] = 0.0;
 
-      std::vector<T> pts, wts;
-      int num_quad_pts = quadrature.get_quadrature_pts(i, pts, wts);
+      std::vector<T> pts, wts, pts_grad, wts_grad;
+      int num_quad_pts =
+          quadrature.get_quadrature_pts_grad(i, pts, wts, pts_grad, wts_grad);
 
       std::vector<T> N, Nxi, Nxixi;
       basis.eval_basis_grad(i, pts, N, Nxi, Nxixi);

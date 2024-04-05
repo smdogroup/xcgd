@@ -38,7 +38,8 @@ TEST(adjoint, GDLSFQuadratureGradient) {
   using Physics = LinearElasticity<T, Basis::spatial_dim>;
   using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
 
-  constexpr int spatial_dim = Basis::spatial_dim;
+  constexpr int spatial_dim = Mesh::spatial_dim;
+  constexpr int nodes_per_element = Basis::nodes_per_element;
 
   int nxy[2] = {5, 5};
   T lxy[2] = {1.0, 1.0};
@@ -53,18 +54,16 @@ TEST(adjoint, GDLSFQuadratureGradient) {
   std::vector<T>& lsf_dof = mesh.get_lsf_dof();
 
   for (int elem = 0; elem < mesh.get_num_elements(); elem++) {
-    std::vector<T> pts, wts;
-    quadrature.get_quadrature_pts(elem, pts, wts);
+    std::vector<T> pts, wts, pts_grad, wts_grad;
+    int num_quad_pts =
+        quadrature.get_quadrature_pts_grad(elem, pts, wts, pts_grad, wts_grad);
 
-    FieldToVTK<T, Mesh::spatial_dim> vtk("quadratures.vtk");
+    FieldToVTK<T, spatial_dim> vtk("quadratures.vtk");
     vtk.add_scalar_field(pts, wts);
     vtk.write_vtk();
 
-    std::vector<std::vector<T>> pts_grad, wts_grad;
-    int num_quad_pts = quadrature.get_quadrature_grad(elem, pts_grad, wts_grad);
-
-    T elem_p[Basis::nodes_per_element];
-    for (int i = 0; i < Basis::nodes_per_element; i++) {
+    T elem_p[nodes_per_element];
+    for (int i = 0; i < nodes_per_element; i++) {
       elem_p[i] = T(rand()) / RAND_MAX;
     }
 
@@ -82,7 +81,7 @@ TEST(adjoint, GDLSFQuadratureGradient) {
     std::vector<T> pts1, wts1;
     int num_quad_pts1 = quadrature.get_quadrature_pts(elem, pts1, wts1);
 
-    FieldToVTK<T, Mesh::spatial_dim> vtk1("quadratures1.vtk");
+    FieldToVTK<T, spatial_dim> vtk1("quadratures1.vtk");
     vtk1.add_scalar_field(pts1, wts1);
     vtk1.write_vtk();
 
@@ -109,16 +108,18 @@ TEST(adjoint, GDLSFQuadratureGradient) {
     std::vector<T> dxidphi_ad(spatial_dim * num_quad_pts, 0.0);
     std::vector<T> dwdphi_ad(num_quad_pts, 0.0);
 
-    for (int i = 0; i < num_quad_pts; i++) {
+    for (int i = 0; i < num_quad_pts1; i++) {
       dwdphi_fd[i] += (wts2[i] - wts1[i]) / (2.0 * h);
-      for (int j = 0; j < Basis::nodes_per_element; j++) {
-        dwdphi_ad[i] += wts_grad[j][i] * elem_p[j];
+      for (int j = 0; j < nodes_per_element; j++) {
+        dwdphi_ad[i] += wts_grad[i * nodes_per_element + j] * elem_p[j];
       }
       for (int d = 0; d < spatial_dim; d++) {
         int index = spatial_dim * i + d;
         dxidphi_fd[index] += (pts2[index] - pts1[index]) / (2.0 * h);
-        for (int j = 0; j < Basis::nodes_per_element; j++) {
-          dxidphi_ad[index] += pts_grad[j][index] * elem_p[j];
+        for (int j = 0; j < nodes_per_element; j++) {
+          dxidphi_ad[index] +=
+              pts_grad[d + spatial_dim * (j + i * nodes_per_element)] *
+              elem_p[j];
         }
       }
     }
