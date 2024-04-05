@@ -195,8 +195,8 @@ void interp_val_grad(int elem, const T dof[], const T N[], const T Nxi[],
 
 // dim == 1
 template <typename T, class Basis>
-void interp_val_grad(int elem, const T dof[], const T N[], const T Nxi[],
-                     T* val, A2D::Vec<T, Basis::spatial_dim>* grad) {
+void interp_val_grad(int elem, const T* dof, const T* N, const T* Nxi, T* val,
+                     A2D::Vec<T, Basis::spatial_dim>* grad) {
   static constexpr int spatial_dim = Basis::spatial_dim;
   static constexpr int nodes_per_element = Basis::nodes_per_element;
 

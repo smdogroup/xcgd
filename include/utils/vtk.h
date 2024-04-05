@@ -230,7 +230,14 @@ class ToVTK {
   bool vtk_has_sol_header = false;
 };
 
-// TODO: finish this
+/**
+ * @brief Scattered data to vtk
+ *
+ * Example usage:
+ *   FieldToVEK<T, spatial_dim> vtk("field.vtk");
+ *   vtk.add_scalar_field(xloc, vals);
+ *   vtk.write_vtk();
+ */
 template <typename T, int spatial_dim>
 class FieldToVTK {
  public:

@@ -4,11 +4,12 @@
 #include "elements/gd_vandermonde.h"
 #include "physics/linear_elasticity.h"
 #include "test_commons.h"
+#include "utils/vtk.h"
 
 class Line {
  public:
   constexpr static int spatial_dim = 2;
-  Line(double k = 0.9, double b = 0.1) : k(k), b(b) {}
+  Line(double k = 0.4, double b = 0.1) : k(k), b(b) {}
 
   template <typename T>
   T operator()(const algoim::uvector<T, spatial_dim>& x) const {
@@ -24,8 +25,8 @@ class Line {
   double k, b;
 };
 
-TEST(adjoint, JacPsiProduct) {
-  constexpr int Np_1d = 2;
+TEST(adjoint, GDLSFQuadratureGradient) {
+  constexpr int Np_1d = 4;
   using T = double;
 
   using Grid = StructuredGrid2D<T>;
@@ -50,51 +51,103 @@ TEST(adjoint, JacPsiProduct) {
   Quadrature quadrature(mesh, lsf_mesh);
 
   std::vector<T>& lsf_dof = mesh.get_lsf_dof();
-  std::vector<T> p(lsf_dof.size());
 
-  int elem = 0;
+  for (int elem = 0; elem < mesh.get_num_elements(); elem++) {
+    std::vector<T> pts, wts;
+    quadrature.get_quadrature_pts(elem, pts, wts);
 
-  std::vector<T> pts, wts;
-  quadrature.get_quadrature_pts(elem, pts, wts);
+    FieldToVTK<T, Mesh::spatial_dim> vtk("quadratures.vtk");
+    vtk.add_scalar_field(pts, wts);
+    vtk.write_vtk();
 
-  for (int i = 0; i < p.size(); i++) {
-    p[i] = T(rand()) / RAND_MAX;
-  }
+    std::vector<std::vector<T>> pts_grad, wts_grad;
+    int num_quad_pts = quadrature.get_quadrature_grad(elem, pts_grad, wts_grad);
 
-  double h = 1e-6;
-
-  for (int i = 0; i < p.size(); i++) {
-    lsf_dof[i] -= h * p[i];
-  }
-
-  std::vector<T> pts1, wts1;
-  int num_quad_pts1 = quadrature.get_quadrature_pts(elem, pts1, wts1);
-
-  for (int i = 0; i < p.size(); i++) {
-    lsf_dof[i] += 2.0 * h * p[i];
-  }
-
-  std::vector<T> pts2, wts2;
-  int num_quad_pts2 = quadrature.get_quadrature_pts(elem, pts2, wts2);
-
-  if (num_quad_pts1 != num_quad_pts2) {
-    char msg[256];
-    std::snprintf(msg, 256, "number of quadrature points changed: %d -> %d",
-                  num_quad_pts1, num_quad_pts2);
-    throw std::runtime_error(msg);
-  }
-
-  T dxidphi_fd = 0.0, dwdphi_fd = 0.0;
-  for (int i = 0; i < num_quad_pts1; i++) {
-    dwdphi_fd += (wts2[i] - wts1[i]) / (2.0 * h);
-    for (int d = 0; d < spatial_dim; d++) {
-      dxidphi_fd +=
-          (pts2[spatial_dim * i + d] - pts1[spatial_dim * i + d]) / (2.0 * h);
+    T elem_p[Basis::nodes_per_element];
+    for (int i = 0; i < Basis::nodes_per_element; i++) {
+      elem_p[i] = T(rand()) / RAND_MAX;
     }
+
+    std::vector<T> p(lsf_dof.size(), 0.0);
+    int cell = mesh.get_elem_cell(elem);
+    add_element_res<T, 1, Basis>(lsf_mesh, cell, elem_p, p.data());
+
+    double h = 1e-6;
+    double tol = 1e-8;
+
+    for (int i = 0; i < p.size(); i++) {
+      lsf_dof[i] -= h * p[i];
+    }
+
+    std::vector<T> pts1, wts1;
+    int num_quad_pts1 = quadrature.get_quadrature_pts(elem, pts1, wts1);
+
+    FieldToVTK<T, Mesh::spatial_dim> vtk1("quadratures1.vtk");
+    vtk1.add_scalar_field(pts1, wts1);
+    vtk1.write_vtk();
+
+    for (int i = 0; i < p.size(); i++) {
+      lsf_dof[i] += 2.0 * h * p[i];
+    }
+
+    std::vector<T> pts2, wts2;
+    int num_quad_pts2 = quadrature.get_quadrature_pts(elem, pts2, wts2);
+
+    for (int i = 0; i < p.size(); i++) {
+      lsf_dof[i] -= 2.0 * h * p[i];
+    }
+
+    if (num_quad_pts != num_quad_pts1 or num_quad_pts != num_quad_pts2) {
+      char msg[256];
+      std::snprintf(msg, 256, "number of quadrature points changed: %d, %d, %d",
+                    num_quad_pts, num_quad_pts1, num_quad_pts2);
+      throw std::runtime_error(msg);
+    }
+
+    std::vector<T> dxidphi_fd(spatial_dim * num_quad_pts, 0.0);
+    std::vector<T> dwdphi_fd(num_quad_pts, 0.0);
+    std::vector<T> dxidphi_ad(spatial_dim * num_quad_pts, 0.0);
+    std::vector<T> dwdphi_ad(num_quad_pts, 0.0);
+
+    for (int i = 0; i < num_quad_pts; i++) {
+      dwdphi_fd[i] += (wts2[i] - wts1[i]) / (2.0 * h);
+      for (int j = 0; j < Basis::nodes_per_element; j++) {
+        dwdphi_ad[i] += wts_grad[j][i] * elem_p[j];
+      }
+      for (int d = 0; d < spatial_dim; d++) {
+        int index = spatial_dim * i + d;
+        dxidphi_fd[index] += (pts2[index] - pts1[index]) / (2.0 * h);
+        for (int j = 0; j < Basis::nodes_per_element; j++) {
+          dxidphi_ad[index] += pts_grad[j][index] * elem_p[j];
+        }
+      }
+    }
+
+    double max_err = 0.0;
+
+    std::printf("elem: %d, num_quad_pts: %d\n", elem, num_quad_pts);
+    std::printf("weights:\n");
+    std::printf("    %25s%25s%25s\n", "fd", "ad", "rel.err");
+    for (int i = 0; i < num_quad_pts; i++) {
+      double dw_err = fabs((dwdphi_ad[i] - dwdphi_fd[i]) / dwdphi_fd[i]);
+      if (dwdphi_ad[i] == dwdphi_fd[i]) dw_err = 0.0;
+      if (dw_err > max_err) max_err = dw_err;
+      std::printf("[%2d]%25.10e%25.10e%25.10e\n", i, dwdphi_fd[i], dwdphi_ad[i],
+                  dw_err);
+    }
+    std::printf("points:\n");
+    std::printf("    %25s%25s%25s\n", "fd", "ad", "rel.err");
+    for (int i = 0; i < num_quad_pts; i++) {
+      for (int d = 0; d < spatial_dim; d++) {
+        int index = spatial_dim * i + d;
+        double dxi_err =
+            fabs((dxidphi_ad[index] - dxidphi_fd[index]) / dxidphi_fd[index]);
+        if (dxidphi_ad[index] == dxidphi_fd[index]) dxi_err = 0.0;
+        if (dxi_err > max_err) max_err = dxi_err;
+        std::printf("[%2d]%25.10e%25.10e%25.10e\n", i, dxidphi_fd[index],
+                    dxidphi_ad[index], dxi_err);
+      }
+    }
+    EXPECT_NEAR(max_err, 0.0, tol);
   }
-
-  T dxidphi_ad = 0.0, dwdphi_ad = 0.0;
-
-  std::printf("dwdphi_fd:  %25.15e\n", dwdphi_fd);
-  std::printf("dxidphi_fd: %25.15e\n", dxidphi_fd);
 }

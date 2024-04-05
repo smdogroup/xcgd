@@ -78,11 +78,6 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
     // this is the element index in lsf mesh
     int cell = mesh.get_elem_cell(elem);
 
-    // Get element LSF dofs
-    const std::vector<T>& lsf_dof = mesh.get_lsf_dof();
-    T element_dof[Basis::nodes_per_element];
-    get_element_vars<T, 1, Basis>(lsf_mesh, cell, lsf_dof.data(), element_dof);
-
     // Get bounds of the hyperrectangle
     algoim::uvector<T, Mesh::spatial_dim> xi_min, xi_max;
     get_computational_coordinates_limits(lsf_mesh, cell, xi_min.data(),
@@ -92,87 +87,130 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
     // point within the computational coordinates
     typename Basis::Evaluator eval(lsf_mesh, cell);
 
-    // Obtain the Bernstein polynomial representation of the level-set
-    // function
-    T data[Np_1d * Np_1d];
-    algoim::xarray<T, Mesh::spatial_dim> phi(
-        data, algoim::uvector<int, Mesh::spatial_dim>(Np_1d, Np_1d));
-    get_phi_vals(cell, eval, xi_min, xi_max, element_dof, phi);
+    // Get element LSF dofs
+    const std::vector<T>& lsf_dof = mesh.get_lsf_dof();
+    T element_lsf[Basis::nodes_per_element];
+    get_element_vars<T, 1, Basis>(lsf_mesh, cell, lsf_dof.data(), element_lsf);
 
-    pts.clear();
-    wts.clear();
-    getQuadrature(phi, xi_min, xi_max, pts, wts);
+    // Get quadrature based onf element lsf values
+    getQuadrature(cell, xi_min, xi_max, element_lsf, eval, pts, wts);
 
     return wts.size();
   }
 
-  void get_quadrature_grad(int elem, int nquad,
-                           std::vector<std::vector<T>>& pts_grad,
-                           std::vector<std::vector<T>>& wts_grad) const {
-    int constexpr spatial_dim = Mesh::spatial_dim;
-    int constexpr nodes_per_element = Basis::nodes_per_element;
+  /**
+   * @brief Get derivatives of quadrature points and weights with respect to
+   * element LSF dof
+   *
+   * @param elem element index
+   * @param pts_grad pts_grad[i] = ∂ξ/∂phi_i
+   * @param wts_grad wts_grad[i] = ∂w/∂phi_i
+   * @return int number of quadrature points
+   */
+  int get_quadrature_grad(int elem, std::vector<std::vector<T>>& pts_grad,
+                          std::vector<std::vector<T>>& wts_grad) const {
+    constexpr int spatial_dim = Mesh::spatial_dim;
+    constexpr int nodes_per_element = Basis::nodes_per_element;
 
-    T data[nodes_per_element];
-    algoim::xarray<T, spatial_dim> phi(
-        data, algoim::uvector<int, spatial_dim>(nodes_per_element));
+    // this is the element index in lsf mesh
+    int cell = mesh.get_elem_cell(elem);
+
+    // Get bounds of the hyperrectangle
     algoim::uvector<T, spatial_dim> xi_min, xi_max;
-    get_phi_vals(elem, xi_min, xi_max, phi);
+    get_computational_coordinates_limits(lsf_mesh, cell, xi_min.data(),
+                                         xi_max.data());
 
-    algoim::xarray<duals::dual<T>, spatial_dim> phi_dot(nullptr, phi.size());
-    algoim::algoim_spark_alloc(duals::dual<T>, phi_dot);
-    for (int i = 0; i < phi_dot.size(); i++) {
-      phi_dot[i].rpart(phi[i]);
+    // Create the functor that evaluates the interpolation given an arbitrary
+    // point within the computational coordinates
+    typename Basis::Evaluator eval(lsf_mesh, cell);
+
+    // Get element LSF dofs
+    const std::vector<T>& lsf_dof = mesh.get_lsf_dof();
+    T element_lsf[nodes_per_element];
+    get_element_vars<T, 1, Basis>(lsf_mesh, cell, lsf_dof.data(), element_lsf);
+
+    duals::dual<T> element_lsf_d[nodes_per_element];
+    for (int i = 0; i < nodes_per_element; i++) {
+      element_lsf_d[i].rpart(element_lsf[i]);
+      element_lsf_d[i].dpart(0.0);
     }
 
     pts_grad.clear();
     wts_grad.clear();
-    pts_grad.resize(phi.size());
-    wts_grad.resize(phi.size());
+    pts_grad.resize(nodes_per_element);
+    wts_grad.resize(nodes_per_element);
 
-    for (int i = 0; i < phi.size(); i++) {
-      phi_dot[i].dpart(1.0);
-      getQuadrature(phi, xi_min, xi_max, pts_grad[i], wts_grad[i]);
-      phi_dot[i].dpart(0.0);
+    for (int i = 0; i < nodes_per_element; i++) {
+      element_lsf_d[i].dpart(1.0);
+      getQuadrature(cell, xi_min, xi_max, element_lsf_d, eval, pts_grad[i],
+                    wts_grad[i]);
+      element_lsf_d[i].dpart(0.0);
     }
+
+    return wts_grad[0].size();
   }
 
   const Mesh& get_lsf_mesh() const { return lsf_mesh; };
 
  private:
+  template <typename T2>
   void get_phi_vals(int cell, const typename Basis::Evaluator& eval,
                     const algoim::uvector<T, Mesh::spatial_dim>& xi_min,
                     const algoim::uvector<T, Mesh::spatial_dim>& xi_max,
-                    const T element_dof[],
-                    algoim::xarray<T, Mesh::spatial_dim>& phi) const {
+                    const T2 element_dof[],
+                    algoim::xarray<T2, Mesh::spatial_dim>& phi) const {
     algoim::bernstein::bernsteinInterpolate<Mesh::spatial_dim>(
-        [&](const algoim::uvector<T, Mesh::spatial_dim>& x) {  // x in [0, 1]
-          T N[Basis::nodes_per_element];
+        [&](const algoim::uvector<T2, Mesh::spatial_dim>& x) {  // x in [0, 1]
+          T2 N[Basis::nodes_per_element];
           // xi in [xi_min, xi_max]
-          algoim::uvector<T, Mesh::spatial_dim> xi =
+          algoim::uvector<T2, Mesh::spatial_dim> xi =
               xi_min + x * (xi_max - xi_min);
-          eval(xi.data(), N, nullptr);
-          T val;
-          interp_val_grad<T, Basis>(cell, element_dof, N, nullptr, &val,
-                                    nullptr);
+          eval(xi.data(), N, (T2*)nullptr);
+          T2 val;
+          interp_val_grad<T2, Basis>(cell, element_dof, N, nullptr, &val,
+                                     nullptr);
           return val;
         },
         phi);
   }
 
   template <typename T2>
-  void getQuadrature(const algoim::xarray<T, Mesh::spatial_dim>& phi,
+  void getQuadrature(int cell,
                      const algoim::uvector<T, Mesh::spatial_dim>& xi_min,
                      const algoim::uvector<T, Mesh::spatial_dim>& xi_max,
-                     std::vector<T2>& pts, std::vector<T2>& wts) const {
-    algoim::ImplicitPolyQuadrature<Mesh::spatial_dim> ipquad(phi);
+                     const T2 element_lsf[],
+                     const typename Basis::Evaluator& eval, std::vector<T>& pts,
+                     std::vector<T>& wts) const {
+    constexpr bool is_dual = is_specialization<T2, duals::dual>::value;
+
+    // Obtain the Bernstein polynomial representation of the level-set
+    // function
+    T2 data[Np_1d * Np_1d];
+    algoim::xarray<T2, Mesh::spatial_dim> phi(
+        data, algoim::uvector<int, Mesh::spatial_dim>(Np_1d, Np_1d));
+    get_phi_vals(cell, eval, xi_min, xi_max, element_lsf, phi);
+
+    pts.clear();
+    wts.clear();
+
+    algoim::ImplicitPolyQuadrature<Mesh::spatial_dim, T2> ipquad(phi);
     ipquad.integrate(
         algoim::AutoMixed, Np_1d,
-        [&](const algoim::uvector<T, Mesh::spatial_dim>& x, T2 w) {
-          if (freal(algoim::bernstein::evalBernsteinPoly(phi, x)) <= 0.0) {
+        [&](const algoim::uvector<T2, Mesh::spatial_dim>& x, T2 w) {
+          if (algoim::bernstein::evalBernsteinPoly(phi, x) <= 0.0) {
             for (int d = 0; d < Mesh::spatial_dim; d++) {
-              pts.push_back(xi_min(d) + x(d) * (xi_max(d) - xi_min(d)));
+              if constexpr (is_dual) {
+                pts.push_back(
+                    (xi_min(d) + x(d) * (xi_max(d) - xi_min(d))).dpart());
+              } else {
+                pts.push_back(xi_min(d) + x(d) * (xi_max(d) - xi_min(d)));
+              }
             }
-            wts.push_back(w);
+            if constexpr (is_dual) {
+              wts.push_back(w.dpart());
+            } else {
+              wts.push_back(w);
+            }
           }
         });
   }
@@ -296,8 +334,10 @@ class GDBasis2D final : public BasisBase<T, GDMesh2D<T, Np_1d>> {
     }
 
     // Evaluate the shape function and derivatives given a quadrature point
-    void operator()(const T* pt, T* N, T* Nxi, T* Nxixi = nullptr) const {
-      std::vector<T> xpows(Np_1d), ypows(Np_1d), dxpows(Np_1d), dypows(Np_1d),
+    template <typename T2>
+    void operator()(const T2* pt, T2* N, T2* Nxi,
+                    T2* Nxixi = (T2*)nullptr) const {
+      std::vector<T2> xpows(Np_1d), ypows(Np_1d), dxpows(Np_1d), dypows(Np_1d),
           dx2pows(Np_1d), dy2pows(Np_1d);
 
       for (int ii = 0; ii < Np_1d; ii++) {
