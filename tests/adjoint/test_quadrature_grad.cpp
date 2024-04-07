@@ -103,21 +103,21 @@ TEST(adjoint, GDLSFQuadratureGradient) {
       throw std::runtime_error(msg);
     }
 
-    std::vector<T> dxidphi_fd(spatial_dim * num_quad_pts, 0.0);
-    std::vector<T> dwdphi_fd(num_quad_pts, 0.0);
-    std::vector<T> dxidphi_ad(spatial_dim * num_quad_pts, 0.0);
-    std::vector<T> dwdphi_ad(num_quad_pts, 0.0);
+    std::vector<T> pts_grad_fd(spatial_dim * num_quad_pts, 0.0);
+    std::vector<T> wts_grad_fd(num_quad_pts, 0.0);
+    std::vector<T> pts_grad_ad(spatial_dim * num_quad_pts, 0.0);
+    std::vector<T> wts_grad_ad(num_quad_pts, 0.0);
 
     for (int i = 0; i < num_quad_pts1; i++) {
-      dwdphi_fd[i] += (wts2[i] - wts1[i]) / (2.0 * h);
+      wts_grad_fd[i] += (wts2[i] - wts1[i]) / (2.0 * h);
       for (int j = 0; j < nodes_per_element; j++) {
-        dwdphi_ad[i] += wts_grad[i * nodes_per_element + j] * elem_p[j];
+        wts_grad_ad[i] += wts_grad[i * nodes_per_element + j] * elem_p[j];
       }
       for (int d = 0; d < spatial_dim; d++) {
         int index = spatial_dim * i + d;
-        dxidphi_fd[index] += (pts2[index] - pts1[index]) / (2.0 * h);
+        pts_grad_fd[index] += (pts2[index] - pts1[index]) / (2.0 * h);
         for (int j = 0; j < nodes_per_element; j++) {
-          dxidphi_ad[index] +=
+          pts_grad_ad[index] +=
               pts_grad[d + spatial_dim * (j + i * nodes_per_element)] *
               elem_p[j];
         }
@@ -130,23 +130,23 @@ TEST(adjoint, GDLSFQuadratureGradient) {
     std::printf("weights:\n");
     std::printf("    %25s%25s%25s\n", "fd", "ad", "rel.err");
     for (int i = 0; i < num_quad_pts; i++) {
-      double dw_err = fabs((dwdphi_ad[i] - dwdphi_fd[i]) / dwdphi_fd[i]);
-      if (dwdphi_ad[i] == dwdphi_fd[i]) dw_err = 0.0;
+      double dw_err = fabs((wts_grad_ad[i] - wts_grad_fd[i]) / wts_grad_fd[i]);
+      if (wts_grad_ad[i] == wts_grad_fd[i]) dw_err = 0.0;
       if (dw_err > max_err) max_err = dw_err;
-      std::printf("[%2d]%25.10e%25.10e%25.10e\n", i, dwdphi_fd[i], dwdphi_ad[i],
-                  dw_err);
+      std::printf("[%2d]%25.10e%25.10e%25.10e\n", i, wts_grad_fd[i],
+                  wts_grad_ad[i], dw_err);
     }
     std::printf("points:\n");
     std::printf("    %25s%25s%25s\n", "fd", "ad", "rel.err");
     for (int i = 0; i < num_quad_pts; i++) {
       for (int d = 0; d < spatial_dim; d++) {
         int index = spatial_dim * i + d;
-        double dxi_err =
-            fabs((dxidphi_ad[index] - dxidphi_fd[index]) / dxidphi_fd[index]);
-        if (dxidphi_ad[index] == dxidphi_fd[index]) dxi_err = 0.0;
+        double dxi_err = fabs((pts_grad_ad[index] - pts_grad_fd[index]) /
+                              pts_grad_fd[index]);
+        if (pts_grad_ad[index] == pts_grad_fd[index]) dxi_err = 0.0;
         if (dxi_err > max_err) max_err = dxi_err;
-        std::printf("[%2d]%25.10e%25.10e%25.10e\n", i, dxidphi_fd[index],
-                    dxidphi_ad[index], dxi_err);
+        std::printf("[%2d]%25.10e%25.10e%25.10e\n", i, pts_grad_fd[index],
+                    pts_grad_ad[index], dxi_err);
       }
     }
     EXPECT_NEAR(max_err, 0.0, tol);

@@ -396,14 +396,12 @@ class GalerkinAnalysis final {
         rtransform(J, coef_ugrad, coef_ugrad_ref);
         rtransform(J, jp_ugrad, jp_ugrad_ref);
 
-        // TODO: finish from here
-        std::vector<T> dwdphi(nodes_per_element, 1.2);
-        std::vector<T> dxidphi(spatial_dim * nodes_per_element, 3.4);
-
+        int offset_wts = j * nodes_per_element;
+        int offset_pts = j * nodes_per_element * spatial_dim;
         add_jac_adj_product<T, Basis>(
-            i, element_xloc, element_dof, Nxixi.data(), dwdphi.data(),
-            dxidphi.data(), wts[j], detJ, Jb, psiq, pgrad_ref, coef_uq, jp_uq,
-            coef_ugrad_ref, jp_ugrad_ref, element_dfdx);
+            i, element_xloc, element_dof, Nxixi.data(), &wts_grad[offset_wts],
+            &pts_grad[offset_pts], wts[j], detJ, Jb, psiq, pgrad_ref, coef_uq,
+            jp_uq, coef_ugrad_ref, jp_ugrad_ref, element_dfdx);
       }
 
       add_element_res<T, dof_per_node, Basis>(mesh, i, element_dfdx, dfdx);

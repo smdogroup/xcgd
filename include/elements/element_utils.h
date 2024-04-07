@@ -387,8 +387,8 @@ void add_matrix(
  * nodes_per_element * spatial_dim
  * @param Nxixi shape function Hessians, concatenation of (∇_xi_xi N_q,
  * ∇_xi_eta N_q, ∇_eta_xi N_q, ∇_eta_eta N_q)
- * @param dwdphi ∂q/∂phi, size: nodes_per_element
- * @param dxidphi ∂xi/∂phi, size: spatial_dim * nodes_per_element
+ * @param wts_grad ∂q/∂phi, size: nodes_per_element
+ * @param pts_grad ∂xi/∂phi, size: spatial_dim * nodes_per_element
  * @param coef_uq ∂e/∂uq
  * @param jp_uq ∂2e/∂uq2 * psiq
  * @param coef_ugrad_ref ∂e/∂(∇_ξ)uq
@@ -398,7 +398,7 @@ void add_matrix(
 template <typename T, class GDBasis, int dim>
 void add_jac_adj_product(
     int elem, const T elem_xloc[], const T elem_dof[], const T Nxixi[],
-    const T dwdphi[], const T dxidphi[], T weight, T detJ,
+    const T wts_grad[], const T pts_grad[], T weight, T detJ,
     const A2D::Mat<T, GDBasis::spatial_dim, GDBasis::spatial_dim>& Jb,
     const A2D::Vec<T, dim>& psiq,
     const A2D::Mat<T, dim, GDBasis::spatial_dim>& pgrad_ref,
@@ -448,16 +448,16 @@ void add_jac_adj_product(
 
   for (int j = 0; j < nodes_per_element; j++) {
     // First term
-    elem_dfdx[j] += detJ * dot * dwdphi[j];
+    elem_dfdx[j] += detJ * dot * wts_grad[j];
 
     // Second term
     for (int d = 0; d < spatial_dim; d++) {
-      elem_dfdx[j] += weight * dot * dxidphi[spatial_dim * j + d] * vec(d);
+      elem_dfdx[j] += weight * dot * pts_grad[spatial_dim * j + d] * vec(d);
     }
 
     // Third term
     for (int d = 0; d < spatial_dim; d++) {
-      elem_dfdx[j] += weight * detJ * dxidphi[spatial_dim * j + d] * vec2(d);
+      elem_dfdx[j] += weight * detJ * pts_grad[spatial_dim * j + d] * vec2(d);
     }
   }
 }
@@ -466,7 +466,7 @@ void add_jac_adj_product(
 template <typename T, class GDBasis>
 void add_jac_adj_product(
     int elem, const T elem_xloc[], const T elem_dof[], const T Nxixi[],
-    const T dwdphi[], const T dxidphi[], T weight, T detJ,
+    const T wts_grad[], const T pts_grad[], T weight, T detJ,
     const A2D::Mat<T, GDBasis::spatial_dim, GDBasis::spatial_dim>& Jb, T psiq,
     const A2D::Vec<T, GDBasis::spatial_dim>& pgrad_ref, T coef_uq, T jp_uq,
     const A2D::Vec<T, GDBasis::spatial_dim>& coef_ugrad_ref,
@@ -508,16 +508,16 @@ void add_jac_adj_product(
 
   for (int j = 0; j < nodes_per_element; j++) {
     // First term
-    elem_dfdx[j] += detJ * dot * dwdphi[j];
+    elem_dfdx[j] += detJ * dot * wts_grad[j];
 
     // Second term
     for (int d = 0; d < spatial_dim; d++) {
-      elem_dfdx[j] += weight * dot * dxidphi[spatial_dim * j + d] * vec(d);
+      elem_dfdx[j] += weight * dot * pts_grad[spatial_dim * j + d] * vec(d);
     }
 
     // Third term
     for (int d = 0; d < spatial_dim; d++) {
-      elem_dfdx[j] += weight * detJ * dxidphi[spatial_dim * j + d] * vec2(d);
+      elem_dfdx[j] += weight * detJ * pts_grad[spatial_dim * j + d] * vec2(d);
     }
   }
 }

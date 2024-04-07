@@ -3,12 +3,13 @@
 #include "analysis.h"
 #include "elements/gd_vandermonde.h"
 #include "physics/linear_elasticity.h"
+#include "physics/poisson.h"
 #include "test_commons.h"
 
 class Line {
  public:
   constexpr static int spatial_dim = 2;
-  Line(double k = 0.9, double b = 0.1) : k(k), b(b) {}
+  Line(double k = 0.4, double b = 0.1) : k(k), b(b) {}
 
   template <typename T>
   T operator()(const algoim::uvector<T, spatial_dim>& x) const {
@@ -34,7 +35,9 @@ TEST(adjoint, JacPsiProduct) {
   using LSF = Line;
   using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
 
-  using Physics = LinearElasticity<T, Basis::spatial_dim>;
+  // using Physics = LinearElasticity<T, Basis::spatial_dim>;
+  using Physics = PoissonPhysics<T, Basis::spatial_dim>;
+
   using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
 
   int nxy[2] = {5, 5};
@@ -48,21 +51,44 @@ TEST(adjoint, JacPsiProduct) {
   Quadrature quadrature(mesh, lsf_mesh);
 
   T E = 30.0, nu = 0.3;
-  Physics physics(E, nu);
+  // Physics physics(E, nu);
+  Physics physics;
 
+  double h = 1e-6;
   int ndof = Physics::dof_per_node * mesh.get_num_nodes();
-  int ndof_lsf = quadrature.get_lsf_mesh().get_num_nodes();
+  int ndv = quadrature.get_lsf_mesh().get_num_nodes();
+  std::vector<T>& dvs = mesh.get_lsf_dof();
 
-  std::vector<T> dof(ndof), psi(ndof), dfdx(ndof_lsf);
+  std::vector<T> dof(ndof), psi(ndof), res1(ndof, 0.0), res2(ndof, 0.0);
+  std::vector<T> dfdx(ndv), p(ndv);
 
   for (int i = 0; i < ndof; i++) {
     dof[i] = (T)rand() / RAND_MAX;
     psi[i] = (T)rand() / RAND_MAX;
   }
-  Analysis analysis(mesh, quadrature, basis, physics);
+  for (int i = 0; i < ndv; i++) {
+    p[i] = (T)rand() / RAND_MAX;
+  }
 
+  Analysis analysis(mesh, quadrature, basis, physics);
   analysis.LSF_jacobian_adjoint_product(dof.data(), psi.data(), dfdx.data());
 
-  std::cout << "dfdx:\n";
-  for (auto v : dfdx) std::cout << v << "\n";
+  for (int i = 0; i < ndv; i++) {
+    dvs[i] -= h * p[i];
+  }
+  analysis.residual(nullptr, dof.data(), res1.data());
+
+  for (int i = 0; i < ndv; i++) {
+    dvs[i] += 2.0 * h * p[i];
+  }
+  analysis.residual(nullptr, dof.data(), res2.data());
+
+  double dfdx_fd = 0.0, dfdx_adjoint;
+  for (int i = 0; i < ndof; i++) {
+    dfdx_fd += psi[i] * (res2[i] - res1[i]) / (2.0 * h);
+    dfdx_adjoint += dfdx[i] * p[i];
+  }
+
+  std::printf("dfdx_fd:      %25.15e\n", dfdx_fd);
+  std::printf("dfdx_adjoint: %25.15e\n", dfdx_adjoint);
 }
