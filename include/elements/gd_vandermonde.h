@@ -90,9 +90,13 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
     // this is the element index in lsf mesh
     int cell = mesh.get_elem_cell(elem);
 
-    // Get bounds of the hyperrectangle
+    // Get bounds of the hyperrectangle for both cut mesh and ground grid
+    algoim::uvector<T, spatial_dim> xi_min_lsf, xi_max_lsf;
+    get_computational_coordinates_limits(lsf_mesh, cell, xi_min_lsf.data(),
+                                         xi_max_lsf.data());
+
     algoim::uvector<T, spatial_dim> xi_min, xi_max;
-    get_computational_coordinates_limits(lsf_mesh, cell, xi_min.data(),
+    get_computational_coordinates_limits(mesh, elem, xi_min.data(),
                                          xi_max.data());
 
     // Create the functor that evaluates the interpolation given an arbitrary
@@ -105,7 +109,8 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
     get_element_vars<T, 1, Basis>(lsf_mesh, cell, lsf_dof.data(), element_lsf);
 
     // Get quadrature points and weights
-    getQuadrature(cell, xi_min, xi_max, element_lsf, eval, pts, wts);
+    getQuadrature(xi_min, xi_max, xi_min_lsf, xi_max_lsf, element_lsf, eval,
+                  pts, wts);
 
     return wts.size();
   }
@@ -132,9 +137,13 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
     // this is the element index in lsf mesh
     int cell = mesh.get_elem_cell(elem);
 
-    // Get bounds of the hyperrectangle
+    // Get bounds of the hyperrectangle for both cut mesh and ground grid
+    algoim::uvector<T, spatial_dim> xi_min_lsf, xi_max_lsf;
+    get_computational_coordinates_limits(lsf_mesh, cell, xi_min_lsf.data(),
+                                         xi_max_lsf.data());
+
     algoim::uvector<T, spatial_dim> xi_min, xi_max;
-    get_computational_coordinates_limits(lsf_mesh, cell, xi_min.data(),
+    get_computational_coordinates_limits(mesh, elem, xi_min.data(),
                                          xi_max.data());
 
     // Create the functor that evaluates the interpolation given an arbitrary
@@ -147,7 +156,8 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
     get_element_vars<T, 1, Basis>(lsf_mesh, cell, lsf_dof.data(), element_lsf);
 
     // Get quadrature points and weights
-    getQuadrature(cell, xi_min, xi_max, element_lsf, eval, pts, wts);
+    getQuadrature(xi_min, xi_max, xi_min_lsf, xi_max_lsf, element_lsf, eval,
+                  pts, wts);
 
     int num_quad_pts = wts.size();
 
@@ -166,7 +176,8 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
     for (int i = 0; i < nodes_per_element; i++) {
       element_lsf_d[i].dpart(1.0);
       std::vector<T> dpts, dwts;
-      getQuadrature(cell, xi_min, xi_max, element_lsf_d, eval, dpts, dwts);
+      getQuadrature(xi_min, xi_max, xi_min_lsf, xi_max_lsf, element_lsf_d, eval,
+                    dpts, dwts);
       element_lsf_d[i].dpart(0.0);
 
       if (dwts.size() != num_quad_pts) {
@@ -194,7 +205,7 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
 
  private:
   template <typename T2>
-  void get_phi_vals(int cell, const typename Basis::Evaluator& eval,
+  void get_phi_vals(const typename Basis::Evaluator& eval,
                     const algoim::uvector<T, Mesh::spatial_dim>& xi_min,
                     const algoim::uvector<T, Mesh::spatial_dim>& xi_max,
                     const T2 element_dof[],
@@ -207,17 +218,17 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
               xi_min + x * (xi_max - xi_min);
           eval(xi.data(), N, (T2*)nullptr);
           T2 val;
-          interp_val_grad<T2, Basis>(cell, element_dof, N, nullptr, &val,
-                                     nullptr);
+          interp_val_grad<T2, Basis>(element_dof, N, nullptr, &val, nullptr);
           return val;
         },
         phi);
   }
 
   template <typename T2>
-  void getQuadrature(int cell,
-                     const algoim::uvector<T, Mesh::spatial_dim>& xi_min,
+  void getQuadrature(const algoim::uvector<T, Mesh::spatial_dim>& xi_min,
                      const algoim::uvector<T, Mesh::spatial_dim>& xi_max,
+                     const algoim::uvector<T, Mesh::spatial_dim>& xi_min_lsf,
+                     const algoim::uvector<T, Mesh::spatial_dim>& xi_max_lsf,
                      const T2 element_lsf[],
                      const typename Basis::Evaluator& eval, std::vector<T>& pts,
                      std::vector<T>& wts) const {
@@ -228,7 +239,7 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
     T2 data[Np_1d * Np_1d];
     algoim::xarray<T2, Mesh::spatial_dim> phi(
         data, algoim::uvector<int, Mesh::spatial_dim>(Np_1d, Np_1d));
-    get_phi_vals(cell, eval, xi_min, xi_max, element_lsf, phi);
+    get_phi_vals(eval, xi_min_lsf, xi_max_lsf, element_lsf, phi);
 
     pts.clear();
     wts.clear();
@@ -383,10 +394,10 @@ class GDBasis2D final : public BasisBase<T, GDMesh2D<T, Np_1d>> {
       for (int ii = 0; ii < Np_1d; ii++) {
         xpows[ii] = pow(pt[0], ii);
         ypows[ii] = pow(pt[1], ii);
-        dxpows[ii] = T(ii) * pow(pt[0], ii - 1);
-        dypows[ii] = T(ii) * pow(pt[1], ii - 1);
-        dx2pows[ii] = T(ii) * T(ii - 1) * pow(pt[0], ii - 2);
-        dy2pows[ii] = T(ii) * T(ii - 1) * pow(pt[1], ii - 2);
+        dxpows[ii] = ii > 0 ? T(ii) * pow(pt[0], ii - 1) : T(0.0);
+        dypows[ii] = ii > 0 ? T(ii) * pow(pt[1], ii - 1) : T(0.0);
+        dx2pows[ii] = ii > 1 ? T(ii) * T(ii - 1) * pow(pt[0], ii - 2) : T(0.0);
+        dy2pows[ii] = ii > 1 ? T(ii) * T(ii - 1) * pow(pt[1], ii - 2) : T(0.0);
       }
 
       for (int i = 0; i < Nk; i++) {
@@ -398,10 +409,10 @@ class GDBasis2D final : public BasisBase<T, GDMesh2D<T, Np_1d>> {
           Nxi[spatial_dim * i + 1] = 0.0;
         }
         if (Nxixi) {
-          Nxixi[spatial_dim * i] = 0.0;
-          Nxixi[spatial_dim * i + 1] = 0.0;
-          Nxixi[spatial_dim * i + 2] = 0.0;
-          Nxixi[spatial_dim * i + 3] = 0.0;
+          Nxixi[spatial_dim * spatial_dim * i] = 0.0;
+          Nxixi[spatial_dim * spatial_dim * i + 1] = 0.0;
+          Nxixi[spatial_dim * spatial_dim * i + 2] = 0.0;
+          Nxixi[spatial_dim * spatial_dim * i + 3] = 0.0;
         }
 
         for (int j = 0; j < Np_1d; j++) {
@@ -416,13 +427,13 @@ class GDBasis2D final : public BasisBase<T, GDMesh2D<T, Np_1d>> {
                   Ck[idx + Nk * i] * xpows[j] * dypows[k];
             }
             if (Nxixi) {
-              Nxixi[spatial_dim * i] +=
+              Nxixi[spatial_dim * spatial_dim * i] +=
                   Ck[idx + Nk * i] * dx2pows[j] * ypows[k];
-              Nxixi[spatial_dim * i + 1] +=
+              Nxixi[spatial_dim * spatial_dim * i + 1] +=
                   Ck[idx + Nk * i] * dxpows[j] * dypows[k];
-              Nxixi[spatial_dim * i + 2] +=
+              Nxixi[spatial_dim * spatial_dim * i + 2] +=
                   Ck[idx + Nk * i] * dxpows[j] * dypows[k];
-              Nxixi[spatial_dim * i + 3] +=
+              Nxixi[spatial_dim * spatial_dim * i + 3] +=
                   Ck[idx + Nk * i] * xpows[j] * dy2pows[k];
             }
           }

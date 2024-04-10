@@ -108,7 +108,7 @@ TEST(elements, QuadGDGaussLSF) {
 }
 
 TEST(elements, QuadGDLSFLSF) {
-  constexpr int Np_1d = 2;
+  constexpr int Np_1d = 4;
   using T = double;
   using Grid = StructuredGrid2D<T>;
   using Basis = GDBasis2D<T, Np_1d>;
@@ -116,7 +116,7 @@ TEST(elements, QuadGDLSFLSF) {
   using LSF = Line;
   using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
 
-  int nxy[2] = {5, 5};
+  int nxy[2] = {20, 20};
   T lxy[2] = {1.0, 1.0};
   LSF lsf;
 

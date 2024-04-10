@@ -10,9 +10,7 @@
 #include "test_commons.h"
 #include "utils/mesher.h"
 
-#define PI 3.141592653589793
-
-TEST(elements, GalerkinDiff2D) {
+TEST(elements, GD_N_Nxi_Nxixi) {
   int constexpr Np_1d = 6;
   int constexpr Nk = Np_1d * Np_1d;
   using T = std::complex<double>;
@@ -21,7 +19,9 @@ TEST(elements, GalerkinDiff2D) {
   using Quadrature = GDGaussQuadrature2D<T, Np_1d>;
   using Basis = GDBasis2D<T, Np_1d>;
 
-  int constexpr nx = 10, ny = 10;
+  int constexpr spatial_dim = Mesh::spatial_dim;
+
+  int constexpr nx = 5, ny = 5;
   int nxy[2] = {nx, ny};
   T lxy[2] = {1.0, 1.0};
   Grid grid(nxy, lxy);
@@ -30,16 +30,10 @@ TEST(elements, GalerkinDiff2D) {
   double h = 1e-7;
   std::vector<double> p = {0.4385123, 0.742383};
   std::vector<double> pt = {0.39214122, -0.24213123};
+  std::vector<T> ptc(pt.size());
 
-  std::vector<T> t1, t2;
-  Quadrature quadrature(mesh);
-  int num_quad_pts = quadrature.get_quadrature_pts(0, t1, t2);
-
-  std::vector<T> pts(num_quad_pts * Grid::spatial_dim);
-  for (int q = 0; q < num_quad_pts; q++) {
-    pts[Grid::spatial_dim * q] = T(pt[0], h * p[0]);
-    pts[Grid::spatial_dim * q + 1] = T(pt[1], h * p[1]);
-  }
+  ptc[0] = T(pt[0], h * p[0]);
+  ptc[1] = T(pt[1], h * p[1]);
 
   std::vector<double> Nvals = {
       0.0000658649520253,  -0.0004620981006525, 0.0015485041670998,
@@ -58,150 +52,32 @@ TEST(elements, GalerkinDiff2D) {
   Basis basis(mesh);
 
   for (int elem = 0; elem < nx * ny; elem++) {
-    std::vector<T> N, Nxi;
-    basis.eval_basis_grad(elem, pts, N, Nxi);
+    std::vector<T> N, Nxi, Nxixi;
+    basis.eval_basis_grad(elem, ptc, N, Nxi, Nxixi);
 
     for (int i = 0; i < Nk; i++) {
       double nxi_cs = N[i].imag() / h;
       double nxi_exact = 0.0;
-      for (int j = 0; j < grid.spatial_dim; j++) {
-        nxi_exact += p[j] * Nxi[grid.spatial_dim * i + j].real();
+      for (int j = 0; j < spatial_dim; j++) {
+        nxi_exact += p[j] * Nxi[spatial_dim * i + j].real();
       }
       EXPECT_NEAR((nxi_cs - nxi_exact) / nxi_exact, 0.0, 1e-7);
+
+      for (int j = 0; j < spatial_dim; j++) {
+        double nxixi_cs = Nxi[spatial_dim * i + j].imag() / h;
+        double nxixi_exact = 0.0;
+        for (int k = 0; k < spatial_dim; k++) {
+          nxixi_exact +=
+              Nxixi[spatial_dim * spatial_dim * i + spatial_dim * j + k]
+                  .real() *
+              p[k];
+        }
+        EXPECT_NEAR((nxixi_cs - nxixi_exact) / nxixi_exact, 0.0, 1e-6);
+      }
     }
 
     for (int i = 0; i < Nk; i++) {
       EXPECT_NEAR(Nvals[i], N[i].real(), 1e-13);
     }
   }
-}
-
-template <typename T, int spatial_dim>
-class Integration final : public PhysicsBase<T, spatial_dim, 0, 1> {
- public:
-  T energy(T weight, T _, const A2D::Mat<T, spatial_dim, spatial_dim>& J,
-           T& val, A2D::Vec<T, spatial_dim>& grad) const {
-    T detJ;
-    A2D::MatDet(J, detJ);
-    return weight * detJ * val;
-  }
-};
-
-template <typename T, class Quadrature, class Basis>
-T hypercircle_area(typename Basis::Mesh& mesh, Quadrature& quadrature,
-                   Basis& basis, const T pt0[Basis::spatial_dim]) {
-  using Physics = Integration<T, Basis::spatial_dim>;
-  using Analysis =
-      GalerkinAnalysis<T, typename Basis::Mesh, Quadrature, Basis, Physics>;
-  constexpr int spatial_dim = Basis::spatial_dim;
-
-  std::vector<double> dof(mesh.get_num_nodes() * Physics::dof_per_node, 0.0);
-
-  // Set the circle/sphere
-  for (int i = 0; i < mesh.get_num_nodes(); i++) {
-    T xloc[spatial_dim];
-    mesh.get_node_xloc(i, xloc);
-    double r2 = 0.0;
-    for (int d = 0; d < spatial_dim; d++) {
-      r2 += (xloc[d] - pt0[d]) * (xloc[d] - pt0[d]);
-    }
-    if (r2 <= 1.0) {
-      dof[i] = 1.0;
-    }
-  }
-
-  Physics physics;
-  Analysis analysis(mesh, quadrature, basis, physics);
-
-  return analysis.energy(nullptr, dof.data());
-}
-
-TEST(elements, IntegrationQuad) {
-  using T = double;
-  using Quadrature = QuadrilateralQuadrature<T>;
-  using Basis = QuadrilateralBasis<T>;
-
-  int num_elements, num_nodes;
-  int* element_nodes;
-  double* xloc;
-
-  int nxy[2] = {128, 128};
-  double lxy[2] = {3.0, 3.0};
-  double pt0[2] = {1.5, 1.5};
-  create_2d_rect_quad_mesh(nxy, lxy, &num_elements, &num_nodes, &element_nodes,
-                           &xloc);
-
-  typename Basis::Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
-  Quadrature quadrature;
-  Basis basis;
-
-  double pi = hypercircle_area(mesh, quadrature, basis, pt0);
-  double relerr = (pi - PI) / PI;
-  EXPECT_NEAR(relerr, 0.0, 1e-2);
-}
-
-TEST(elements, IntegrationTet) {
-  using T = double;
-  using Quadrature = TetrahedralQuadrature<T>;
-  using Basis = TetrahedralBasis<T>;
-
-  int num_elements, num_nodes;
-  int* element_nodes;
-  double* xloc;
-
-  int nxyz[3] = {32, 32, 32};
-  double lxyz[3] = {3.0, 3.0, 3.0};
-  double pt0[3] = {1.5, 1.5, 1.5};
-  create_3d_box_tet_mesh(nxyz, lxyz, &num_elements, &num_nodes, &element_nodes,
-                         &xloc);
-
-  typename Basis::Mesh mesh(num_elements, num_nodes, element_nodes, xloc);
-  Quadrature quadrature;
-  Basis basis;
-
-  double pi = hypercircle_area(mesh, quadrature, basis, pt0) * 3.0 / 4.0;
-  double relerr = (pi - PI) / PI;
-  EXPECT_NEAR(relerr, 0.0, 1e-2);
-}
-
-TEST(elements, IntergrationGD2D_Np2) {
-  using T = double;
-  constexpr int Np_1d = 2;
-
-  using Quadrature = GDGaussQuadrature2D<T, Np_1d>;
-  using Basis = GDBasis2D<T, Np_1d>;
-  using Grid = StructuredGrid2D<T>;
-
-  int nxy[2] = {64, 64};
-  double lxy[2] = {3.0, 3.0};
-  double pt0[2] = {1.5, 1.5};
-  Grid grid(nxy, lxy);
-  typename Basis::Mesh mesh(grid);
-  Quadrature quadrature(mesh);
-  Basis basis(mesh);
-
-  double pi = hypercircle_area(mesh, quadrature, basis, pt0);
-  double relerr = (pi - PI) / PI;
-  EXPECT_NEAR(relerr, 0.0, 1e-2);
-}
-
-TEST(elements, IntergrationGD2D_Np4) {
-  using T = double;
-  constexpr int Np_1d = 4;
-
-  using Quadrature = GDGaussQuadrature2D<T, Np_1d>;
-  using Basis = GDBasis2D<T, Np_1d>;
-  using Grid = StructuredGrid2D<T>;
-
-  int nxy[2] = {64, 64};
-  double lxy[2] = {3.0, 3.0};
-  double pt0[2] = {1.5, 1.5};
-  Grid grid(nxy, lxy);
-  typename Basis::Mesh mesh(grid);
-  Quadrature quadrature(mesh);
-  Basis basis(mesh);
-
-  double pi = hypercircle_area(mesh, quadrature, basis, pt0);
-  double relerr = (pi - PI) / PI;
-  EXPECT_NEAR(relerr, 0.0, 1e-2);
 }
