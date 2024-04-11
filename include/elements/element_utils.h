@@ -488,21 +488,27 @@ void det_deriv(const T* elem_xloc, const T* Nxixi,
 }
 
 /**
- * @brief Assemble ψ^T * dR/dφ for an element, this class only works for
- * GDBasis
+ * @brief The following two functions add ψ^T * dR/dφ contribution from a single
+ * quadrature point
+ *
+ * Note: this function only works for the Galerkin difference basis
  *
  * @tparam T numeric type
  * @tparam GDBasis a GD Basis specialization
  * @tparam dim number of dof components at each dof node
- * @param N shape function values, size: nodes_per_element
- * @param Nxixi shape function Hessians, concatenation of (∂2/∂ξξ, ∂2/∂ξη,
- * ∂2/∂ηξ, ∂2/∂ηη) N_q
- * @param wts_grad ∂w/∂φ, size: nodes_per_element
- * @param pts_grad ∂ξ/∂φ, size: spatial_dim * nodes_per_element
+ * @param weight quadrature weight
+ * @param detJ determinant of the Jacobian transformation matrix a the quad pt
+ * @param wts_grad derivatives of quadrature weight w.r.t. nodal phi
+ * @param pts_grad derivatives of the quadrature point w.r.t. nodal phi
+ * @param psiq adjoint variable at the quadrature point
+ * @param ugrad_ref (∇_ξ)uq
+ * @param pgrad_ref (∇_ξ)ψq
+ * @param uhess_ref (∇2_ξ)uq
+ * @param phess_ref (∇2_ξ)ψq
  * @param coef_uq ∂e/∂uq
- * @param jp_uq ∂2e/∂uq2 * ψq
  * @param coef_ugrad_ref ∂e/∂(∇_ξ)uq
- * @param jp_ugrad_ref ∂2e/∂(∇_ξ)uq2 * (∇_ξ)ψq
+ * @param jp_uq ∂2e/∂uq2 * ψq
+ * @param jp_ugrad_ref ∂2e/∂(∇_ξ)uq2 * ψq
  * @param elem_dfdx output, element vector of ψ^T * dR/dφ
  */
 template <typename T, class GDBasis, int dim>
