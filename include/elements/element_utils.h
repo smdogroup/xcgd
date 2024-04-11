@@ -145,14 +145,26 @@ void add_element_res(const typename Basis::Mesh& mesh, int e,
   }
 }
 
+template <typename T, class Basis>
+void add_element_dfdx(const typename Basis::Mesh& lsf_mesh, int c,
+                      const T element_dfdx[], T dfdx[]) {
+  int constexpr nodes_per_element = Basis::nodes_per_element;
+  int nodes[nodes_per_element];
+  lsf_mesh.get_elem_dof_nodes(c, nodes);
+
+  for (int j = 0; j < nodes_per_element; j++) {
+    dfdx[nodes[j]] += element_dfdx[j];
+  }
+}
+
 /**
- * The following two functions evaluate f and ∇f about a quadrature point given
- * its shape function and shape gradient evaluations N and Nxi.
+ * The following two functions evaluate u and ∇u at a quadrature point given the
+ * shape function and shape gradient evaluations N and Nxi at this quadrature
+ * point.
  *
  * @tparam T numeric type
  * @tparam Basis Basis type
  * @tparam dim number of dof components at each dof node
- * @param elem element index
  * @param dof node dof values of size nodes_per_element * dim
  * @param N shape function values, size of nodes_per_element
  * @param Nxi shape function gradients w.r.t. computational coordinates, size of
@@ -161,7 +173,7 @@ void add_element_res(const typename Basis::Mesh& mesh, int e,
  * @param grad gradients of vals w.r.t. computational coordinates dv/dxi
  */
 template <typename T, class Basis, int dim>
-void interp_val_grad(int elem, const T dof[], const T N[], const T Nxi[],
+void interp_val_grad(const T dof[], const T N[], const T Nxi[],
                      A2D::Vec<T, dim>* vals,
                      A2D::Mat<T, dim, Basis::spatial_dim>* grad) {
   static constexpr int spatial_dim = Basis::spatial_dim;
@@ -195,7 +207,7 @@ void interp_val_grad(int elem, const T dof[], const T N[], const T Nxi[],
 
 // dim == 1
 template <typename T, class Basis>
-void interp_val_grad(int elem, const T* dof, const T* N, const T* Nxi, T* val,
+void interp_val_grad(const T* dof, const T* N, const T* Nxi, T* val,
                      A2D::Vec<T, Basis::spatial_dim>* grad) {
   static constexpr int spatial_dim = Basis::spatial_dim;
   static constexpr int nodes_per_element = Basis::nodes_per_element;
@@ -223,6 +235,61 @@ void interp_val_grad(int elem, const T* dof, const T* N, const T* Nxi, T* val,
 }
 
 /**
+ * The following two functions evaluate u and ∇2u at a quadrature point given
+ * the shape function and shape gradient evaluations N and Nxi at this
+ * quadrature point.
+ *
+ * @tparam T numeric type
+ * @tparam Basis Basis type
+ * @tparam dim number of dof components at each dof node
+ * @param dof node dof values of size nodes_per_element * dim
+ * @param Nxixi shape function Hessians, concatenation of (∂2/∂ξξ, ∂2/∂ξη,
+ * ∂2/∂ηξ, ∂2/∂ηη) N_q
+ * @param hess ∇2u, hess(i, :) = (∂2u[i]/∂ξξ, ∂2u[i]/∂ξη, ∂2u[i]/∂ηξ,
+ * ∂2u[i]/∂ηη)
+ */
+template <typename T, class Basis, int dim>
+void interp_hess(
+    const T* dof, const T* Nxixi,
+    A2D::Mat<T, dim, Basis::spatial_dim * Basis::spatial_dim>& hess) {
+  static constexpr int spatial_dim = Basis::spatial_dim;
+  static constexpr int nodes_per_element = Basis::nodes_per_element;
+
+  hess.zero();
+
+  for (int j = 0; j < dim; j++) {
+    for (int i = 0; i < nodes_per_element; i++) {
+      int offset = spatial_dim * spatial_dim * i;
+      for (int d1 = 0; d1 < spatial_dim; d1++) {
+        for (int d2 = 0; d2 < spatial_dim; d2++) {
+          int index = d1 * spatial_dim + d2;
+          hess(j, index) += Nxixi[offset + index] * dof[dim * i + j];
+        }
+      }
+    }
+  }
+}
+
+// dim == 1
+template <typename T, class Basis>
+void interp_hess(const T* dof, const T* Nxixi,
+                 A2D::Vec<T, Basis::spatial_dim * Basis::spatial_dim>& hess) {
+  static constexpr int spatial_dim = Basis::spatial_dim;
+  static constexpr int nodes_per_element = Basis::nodes_per_element;
+
+  hess.zero();
+
+  for (int i = 0; i < nodes_per_element; i++) {
+    int offset = spatial_dim * spatial_dim * i;
+    for (int d1 = 0; d1 < spatial_dim; d1++) {
+      for (int d2 = 0; d2 < spatial_dim; d2++) {
+        int index = d1 * spatial_dim + d2;
+        hess(index) += Nxixi[offset + index] * dof[i];
+      }
+    }
+  }
+}
+/**
  * @brief The following two functions assemble the total derivatives of the
  * energy functional e:
  *
@@ -238,17 +305,15 @@ void interp_val_grad(int elem, const T* dof, const T* N, const T* Nxi, T* val,
  * @tparam T numeric type
  * @tparam Basis Basis type
  * @tparam dim number of dof components at each dof node
- * @param elem element index
  * @param N shape function values, size of nodes_per_element
- * @param Nxi shape function gradients w.r.t. computational coordinates ξ, size
- * of nodes_per_element * spatial_dim
+ * @param Nxi shape function gradients w.r.t. computational coordinates ξ,
+ * size of nodes_per_element * spatial_dim
  * @param coef_vals ∂e/∂uq
  * @param coef_grad ∂e/∂((∇_ξ)uq)
  * @param elem_res de/du
  */
 template <typename T, class Basis, int dim>
-void add_grad(int elem, const T N[], const T Nxi[],
-              const A2D::Vec<T, dim>& coef_vals,
+void add_grad(const T N[], const T Nxi[], const A2D::Vec<T, dim>& coef_vals,
               A2D::Mat<T, dim, Basis::spatial_dim>& coef_grad, T elem_res[]) {
   static constexpr int spatial_dim = Basis::spatial_dim;
   static constexpr int nodes_per_element = Basis::nodes_per_element;
@@ -265,7 +330,7 @@ void add_grad(int elem, const T N[], const T Nxi[],
 
 // dim == 1
 template <typename T, class Basis>
-void add_grad(int elem, const T N[], const T Nxi[], const T& coef_val,
+void add_grad(const T N[], const T Nxi[], const T& coef_val,
               const A2D::Vec<T, Basis::spatial_dim>& coef_grad, T elem_res[]) {
   static constexpr int spatial_dim = Basis::spatial_dim;
   static constexpr int nodes_per_element = Basis::nodes_per_element;
@@ -293,16 +358,15 @@ void add_grad(int elem, const T N[], const T Nxi[], const T& coef_val,
  * @tparam T numeric type
  * @tparam Basis Basis type
  * @tparam dim number of dof components at each dof node
- * @param elem element index
  * @param N shape function values, size of nodes_per_element
- * @param Nxi shape function gradients w.r.t. computational coordinates ξ, size
- * of nodes_per_element * spatial_dim
+ * @param Nxi shape function gradients w.r.t. computational coordinates ξ,
+ * size of nodes_per_element * spatial_dim
  * @param coef_vals ∂^2e/∂(uq)^2
  * @param coef_hess ∂^2e/∂((∇_ξ)uq)^2
  * @param elem_jac d^2e/du^2
  */
 template <typename T, class Basis, int dim>
-void add_matrix(int elem, const T N[], const T Nxi[],
+void add_matrix(const T N[], const T Nxi[],
                 const A2D::Mat<T, dim, dim>& coef_vals,
                 const A2D::Mat<T, dim * Basis::spatial_dim,
                                dim * Basis::spatial_dim>& coef_hess,
@@ -345,7 +409,7 @@ void add_matrix(int elem, const T N[], const T Nxi[],
 // dim == 1
 template <typename T, class Basis>
 void add_matrix(
-    int elem, const T N[], const T Nxi[], const T& coef_val,
+    const T N[], const T Nxi[], const T& coef_val,
     const A2D::Mat<T, Basis::spatial_dim, Basis::spatial_dim>& coef_grad,
     T elem_jac[]) {
   static constexpr int spatial_dim = Basis::spatial_dim;
@@ -375,149 +439,151 @@ void add_matrix(
 }
 
 /**
- * @brief Assemble psi^T * dR/dphi for an element, this class only works for
+ * @brief Compute ∂|J|q/∂ξq: the derivatives of the Jacobian determinant w.r.t.
+ * reference coordinates ξ at a quadrature point
+ *
+ * Note: for the GD applications with structural grid and mesh, this may be
+ * effectively zero because the Jacobian transformation is constant throughout
+ * the computational/physical coordinates
+ *
+ * @tparam T numeric type
+ * @tparam Basis the Basis type
+ * @param elem_xloc element nodal locations
+ * @param Nxixi shape function Hessians, concatenation of (∂2/∂ξξ, ∂2/∂ξη,
+ * ∂2/∂ηξ, ∂2/∂ηη) N_q
+ * @param J Jacobian transformation matrix
+ * @param grad, output
+ */
+template <typename T, class Basis>
+void det_deriv(const T* elem_xloc, const T* Nxixi,
+               const A2D::Mat<T, Basis::spatial_dim, Basis::spatial_dim>& J,
+               A2D::Vec<T, Basis::spatial_dim>& grad) {
+  static constexpr int spatial_dim = Basis::spatial_dim;
+  static constexpr int nodes_per_element = Basis::nodes_per_element;
+
+  // Get derivatives of detJ w.r.t. J
+  T detJ, detJb = 1.0;
+  A2D::ADObj<T&> detJ_obj(detJ, detJb);
+  A2D::ADObj<A2D::Mat<T, spatial_dim, spatial_dim>> J_obj(J);
+  auto stack = A2D::MakeStack(A2D::MatDet(J_obj, detJ_obj));
+  stack.reverse();
+
+  auto Jb = J_obj.bvalue();
+
+  grad.zero();
+
+  // sum_j ∇^2_ξ N_j * Jbar^T * xj
+  for (int j = 0; j < nodes_per_element; j++) {
+    int Nxixi_offset = j * spatial_dim * spatial_dim;
+    int xloc_offset = j * spatial_dim;
+    for (int ii = 0; ii < spatial_dim; ii++) {
+      for (int jj = 0; jj < spatial_dim; jj++) {
+        for (int kk = 0; kk < spatial_dim; kk++) {
+          grad(ii) += Nxixi[Nxixi_offset + ii * spatial_dim + jj] * Jb(kk, jj) *
+                      elem_xloc[xloc_offset + kk];
+        }
+      }
+    }
+  }
+}
+
+/**
+ * @brief Assemble ψ^T * dR/dφ for an element, this class only works for
  * GDBasis
  *
  * @tparam T numeric type
  * @tparam GDBasis a GD Basis specialization
  * @tparam dim number of dof components at each dof node
- * @param elem element index
  * @param N shape function values, size: nodes_per_element
- * @param Nxi shape function gradients w.r.t. computational coordinates ξ, size:
- * nodes_per_element * spatial_dim
- * @param Nxixi shape function Hessians, concatenation of (∇_xi_xi N_q,
- * ∇_xi_eta N_q, ∇_eta_xi N_q, ∇_eta_eta N_q)
- * @param wts_grad ∂q/∂phi, size: nodes_per_element
- * @param pts_grad ∂xi/∂phi, size: spatial_dim * nodes_per_element
+ * @param Nxixi shape function Hessians, concatenation of (∂2/∂ξξ, ∂2/∂ξη,
+ * ∂2/∂ηξ, ∂2/∂ηη) N_q
+ * @param wts_grad ∂w/∂φ, size: nodes_per_element
+ * @param pts_grad ∂ξ/∂φ, size: spatial_dim * nodes_per_element
  * @param coef_uq ∂e/∂uq
- * @param jp_uq ∂2e/∂uq2 * psiq
+ * @param jp_uq ∂2e/∂uq2 * ψq
  * @param coef_ugrad_ref ∂e/∂(∇_ξ)uq
- * @param jp_ugrad_ref ∂2e/∂(∇_ξ)uq2 * (∇_ξ)psiq
- * @param elem_dfdx output, element vector of psi^T * dR/dphi
+ * @param jp_ugrad_ref ∂2e/∂(∇_ξ)uq2 * (∇_ξ)ψq
+ * @param elem_dfdx output, element vector of ψ^T * dR/dφ
  */
 template <typename T, class GDBasis, int dim>
 void add_jac_adj_product(
-    int elem, const T elem_xloc[], const T elem_dof[], const T Nxixi[],
-    const T wts_grad[], const T pts_grad[], T weight, T detJ,
-    const A2D::Mat<T, GDBasis::spatial_dim, GDBasis::spatial_dim>& Jb,
+    T weight, T detJ, const T wts_grad[], const T pts_grad[],
     const A2D::Vec<T, dim>& psiq,
+    const A2D::Mat<T, dim, GDBasis::spatial_dim>& ugrad_ref,
     const A2D::Mat<T, dim, GDBasis::spatial_dim>& pgrad_ref,
-    const A2D::Vec<T, dim>& coef_uq, const A2D::Vec<T, dim>& jp_uq,
+    const A2D::Mat<T, dim, GDBasis::spatial_dim * GDBasis::spatial_dim>&
+        uhess_ref,
+    const A2D::Mat<T, dim, GDBasis::spatial_dim * GDBasis::spatial_dim>&
+        phess_ref,
+    const A2D::Vec<T, dim>& coef_uq,
     const A2D::Mat<T, dim, GDBasis::spatial_dim>& coef_ugrad_ref,
+    const A2D::Vec<T, dim>& jp_uq,
     const A2D::Mat<T, dim, GDBasis::spatial_dim>& jp_ugrad_ref, T elem_dfdx[]) {
   static_assert(GDBasis::is_gd_basis, "This method only works with GD Basis");
+
   static constexpr int spatial_dim = GDBasis::spatial_dim;
   static constexpr int nodes_per_element = GDBasis::nodes_per_element;
 
-  T dot = 0.0;  // ∂e/∂uq * psiq + ∂e/∂(∇_ξ)uq * (∇_ξ)psiq
+  // ∂e/∂u * ψ
+  // = ∂e/∂uq * ψq + ∂e/∂(∇_ξ)uq * (∇_ξ)ψq
+  T dedu_psi = 0.0;
   for (int i = 0; i < dim; i++) {
-    dot += coef_uq(i) * psiq(i);
+    dedu_psi += coef_uq(i) * psiq(i);
     for (int d = 0; d < spatial_dim; d++) {
-      dot += coef_ugrad_ref(i, d) * pgrad_ref(i, d);
+      dedu_psi += coef_ugrad_ref(i, d) * pgrad_ref(i, d);
     }
   }
 
-  A2D::Vec<T, spatial_dim> vec{};
-  for (int j = 0; j < nodes_per_element; j++) {
-    int Nxixi_offset = j * spatial_dim * spatial_dim;
-    int xloc_offset = j * spatial_dim;
-    for (int ii = 0; ii < spatial_dim; ii++) {
-      for (int jj = 0; jj < spatial_dim; jj++) {
-        for (int kk = 0; kk < spatial_dim; kk++) {
-          vec(ii) += Nxixi[Nxixi_offset + ii * spatial_dim + jj] * Jb(kk, jj) *
-                     elem_xloc[xloc_offset + kk];
-        }
+  // Jacobian-vector product times ugrad
+  A2D::Vec<T, spatial_dim> jvp_ugrad{};
+  for (int j = 0; j < dim; j++) {
+    for (int d = 0; d < spatial_dim; d++) {
+      jvp_ugrad(d) += jp_uq(j) * ugrad_ref(j, d);
+    }
+  }
+
+  // Jacobian-vector product times hess
+  A2D::Vec<T, spatial_dim> jvp_uhess{};
+  for (int j = 0; j < dim; j++) {
+    for (int d = 0; d < spatial_dim; d++) {
+      for (int dd = 0; dd < spatial_dim; dd++) {
+        jvp_uhess(dd) +=
+            jp_ugrad_ref(j, d) * uhess_ref(j, d * spatial_dim + dd);
       }
     }
   }
 
-  A2D::Vec<T, spatial_dim> vec2{};
-  for (int j = 0; j < nodes_per_element; j++) {
-    int Nxixi_offset = j * spatial_dim * spatial_dim;
-    int dof_offset = j * dim;
-    for (int k = 0; k < dim; k++) {
-      for (int ii = 0; ii < spatial_dim; ii++) {
-        for (int jj = 0; jj < spatial_dim; jj++) {
-          vec2(jj) += elem_dof[dof_offset + k] *
-                      Nxixi[Nxixi_offset + jj * spatial_dim + ii] *
-                      jp_ugrad_ref(k, jj);
-        }
+  // ∂e/∂uq * ∇ψq
+  A2D::Vec<T, spatial_dim> deriv_grad{};
+  for (int i = 0; i < dim; i++) {
+    for (int d = 0; d < spatial_dim; d++) {
+      deriv_grad(d) += coef_uq(i) * pgrad_ref(i, d);
+    }
+  }
+
+  // ∂e/∂∇uq * ∇2ψq
+  A2D::Vec<T, spatial_dim> deriv_hess{};
+  for (int i = 0; i < dim; i++) {
+    for (int d = 0; d < spatial_dim; d++) {
+      for (int dd = 0; dd < spatial_dim; dd++) {
+        deriv_hess(dd) +=
+            coef_ugrad_ref(i, d) * phess_ref(i, d * spatial_dim + dd);
       }
     }
   }
 
-  for (int j = 0; j < nodes_per_element; j++) {
-    // First term
-    elem_dfdx[j] += detJ * dot * wts_grad[j];
+  T wdetJ = weight * detJ;
 
-    // Second term
+  for (int n = 0; n < nodes_per_element; n++) {
+    // AJP_{1,n}
+    elem_dfdx[n] += detJ * dedu_psi * wts_grad[n];
+
+    // AJP_{3,n}
     for (int d = 0; d < spatial_dim; d++) {
-      elem_dfdx[j] += weight * dot * pts_grad[spatial_dim * j + d] * vec(d);
-    }
-
-    // Third term
-    for (int d = 0; d < spatial_dim; d++) {
-      elem_dfdx[j] += weight * detJ * pts_grad[spatial_dim * j + d] * vec2(d);
-    }
-  }
-}
-
-// dim == 1
-template <typename T, class GDBasis>
-void add_jac_adj_product(
-    int elem, const T elem_xloc[], const T elem_dof[], const T Nxixi[],
-    const T wts_grad[], const T pts_grad[], T weight, T detJ,
-    const A2D::Mat<T, GDBasis::spatial_dim, GDBasis::spatial_dim>& Jb, T psiq,
-    const A2D::Vec<T, GDBasis::spatial_dim>& pgrad_ref, T coef_uq, T jp_uq,
-    const A2D::Vec<T, GDBasis::spatial_dim>& coef_ugrad_ref,
-    const A2D::Vec<T, GDBasis::spatial_dim>& jp_ugrad_ref, T elem_dfdx[]) {
-  static_assert(GDBasis::is_gd_basis, "This method only works with GD Basis");
-  static constexpr int spatial_dim = GDBasis::spatial_dim;
-  static constexpr int nodes_per_element = GDBasis::nodes_per_element;
-
-  T dot = 0.0;  // ∂e/∂uq * psiq + ∂e/∂(∇_ξ)uq * (∇_ξ)psiq
-  dot += coef_uq * psiq;
-  for (int d = 0; d < spatial_dim; d++) {
-    dot += coef_ugrad_ref(d) * pgrad_ref(d);
-  }
-
-  A2D::Vec<T, spatial_dim> vec{};
-  for (int j = 0; j < nodes_per_element; j++) {
-    int Nxixi_offset = j * spatial_dim * spatial_dim;
-    int xloc_offset = j * spatial_dim;
-    for (int ii = 0; ii < spatial_dim; ii++) {
-      for (int jj = 0; jj < spatial_dim; jj++) {
-        for (int kk = 0; kk < spatial_dim; kk++) {
-          vec(ii) += Nxixi[Nxixi_offset + ii * spatial_dim + jj] * Jb(kk, jj) *
-                     elem_xloc[xloc_offset + kk];
-        }
-      }
-    }
-  }
-
-  A2D::Vec<T, spatial_dim> vec2{};
-  for (int j = 0; j < nodes_per_element; j++) {
-    int Nxixi_offset = j * spatial_dim * spatial_dim;
-    for (int ii = 0; ii < spatial_dim; ii++) {
-      for (int jj = 0; jj < spatial_dim; jj++) {
-        vec2(jj) += elem_dof[j] * Nxixi[Nxixi_offset + jj * spatial_dim + ii] *
-                    jp_ugrad_ref(jj);
-      }
-    }
-  }
-
-  for (int j = 0; j < nodes_per_element; j++) {
-    // First term
-    elem_dfdx[j] += detJ * dot * wts_grad[j];
-
-    // Second term
-    for (int d = 0; d < spatial_dim; d++) {
-      elem_dfdx[j] += weight * dot * pts_grad[spatial_dim * j + d] * vec(d);
-    }
-
-    // Third term
-    for (int d = 0; d < spatial_dim; d++) {
-      elem_dfdx[j] += weight * detJ * pts_grad[spatial_dim * j + d] * vec2(d);
+      elem_dfdx[n] +=
+          wdetJ *
+          (jvp_ugrad(d) + jvp_uhess(d) + deriv_grad(d) + deriv_hess(d)) *
+          pts_grad[spatial_dim * n + d];
     }
   }
 }
@@ -579,7 +645,20 @@ class Interpolator final {
 
  public:
   Interpolator(const Mesh& mesh, const Sampler& sampler, const Basis& basis)
-      : mesh(mesh), basis(basis), sampler(sampler) {}
+      : has_lsf(false),
+        mesh(mesh),
+        lsf_mesh(mesh),
+        basis(basis),
+        lsf_basis(basis),
+        sampler(sampler) {}
+  Interpolator(const Mesh& mesh, const Mesh& lsf_mesh, const Sampler& sampler,
+               const Basis& basis, const Basis& lsf_basis)
+      : has_lsf(true),
+        mesh(mesh),
+        lsf_mesh(lsf_mesh),
+        basis(basis),
+        lsf_basis(lsf_basis),
+        sampler(sampler) {}
 
   void to_vtk(const std::string name, T* dof) const {
     FieldToVTK<T, spatial_dim> field_vtk(name);
@@ -590,7 +669,11 @@ class Interpolator final {
                                                element_dof.data());
 
       std::vector<T> element_xloc(Mesh::nodes_per_element * Basis::spatial_dim);
-      get_element_xloc<T, Basis>(mesh, elem, element_xloc.data());
+      int cell = elem;
+      if (has_lsf) {
+        cell = mesh.get_elem_cell(elem);
+      }
+      get_element_xloc<T, Basis>(lsf_mesh, cell, element_xloc.data());
 
       std::vector<T> pts, wts;
       int nsamples = sampler.get_quadrature_pts(elem, pts, wts);
@@ -598,18 +681,21 @@ class Interpolator final {
       std::vector<T> N, Nxi;
       basis.eval_basis_grad(elem, pts, N, Nxi);
 
+      std::vector<T> N_xloc, Nxi_xloc;
+      lsf_basis.eval_basis_grad(cell, pts, N_xloc, Nxi_xloc);
+
       std::vector<T> vals(nsamples);
       std::vector<T> ptx(nsamples * Basis::spatial_dim);
 
       for (int i = 0; i < nsamples; i++) {
         int offset_n = i * Basis::nodes_per_element;
         T val = 0.0;
-        interp_val_grad<T, Basis>(elem, element_dof.data(), &N[offset_n],
-                                  nullptr, &val, nullptr);
+        interp_val_grad<T, Basis>(element_dof.data(), &N[offset_n], nullptr,
+                                  &val, nullptr);
         vals[i] = val;
         A2D::Vec<T, Basis::spatial_dim> xloc;
         interp_val_grad<T, Basis, Basis::spatial_dim>(
-            elem, element_xloc.data(), &N[offset_n], nullptr, &xloc, nullptr);
+            element_xloc.data(), &N_xloc[offset_n], nullptr, &xloc, nullptr);
         for (int d = 0; d < Basis::spatial_dim; d++) {
           ptx[i * Basis::spatial_dim + d] = xloc[d];
         }
@@ -620,8 +706,13 @@ class Interpolator final {
   }
 
  private:
+  void get_ptx(int elem, std::vector<T>& elem_xloc) {}
+
+  bool has_lsf;
   const Mesh& mesh;
+  const Mesh& lsf_mesh;
   const Basis& basis;
+  const Basis& lsf_basis;
   const Sampler& sampler;
   Physics physics;
 };

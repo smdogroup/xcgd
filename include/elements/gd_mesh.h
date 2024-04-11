@@ -281,14 +281,14 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
     return lsf_nodes;
   }
 
-  const std::vector<T>& get_lsf_dof() const { return lsf_dof; }
-  std::vector<T>& get_lsf_dof() { return lsf_dof; }
+  inline const std::vector<T>& get_lsf_dof() const { return lsf_dof; }
+  inline std::vector<T>& get_lsf_dof() { return lsf_dof; }
 
-  const Grid& get_grid() const { return grid; }
+  inline const Grid& get_grid() const { return grid; }
 
-  int get_elem_cell(int elem) const { return elem_cells[elem]; }
+  inline int get_elem_cell(int elem) const { return elem_cells[elem]; }
 
-  bool has_lsf() const { return b_has_lsf; }
+  inline bool has_lsf() const { return b_has_lsf; }
 
  private:
   void check_grid_compatibility(const Grid& grid) const {

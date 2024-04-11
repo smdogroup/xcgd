@@ -131,7 +131,7 @@ class Circle {
 
 void solve_linear_elasticity_gd() {
   using T = double;
-  int constexpr Np_1d = 2;
+  int constexpr Np_1d = 4;
   using Grid = StructuredGrid2D<T>;
   using LSF = Circle<Grid::spatial_dim>;
   using Quadrature = GDLSFQuadrature2D<T, Np_1d>;

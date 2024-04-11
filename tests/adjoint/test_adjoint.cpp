@@ -46,8 +46,6 @@ T eval_det(Basis& basis, int elem, const T* element_xloc, std::vector<T> pt) {
   for (int i = 0; i < nodes_per_element; i++) {
     tmp += Nxixi[spatial_dim * spatial_dim * i] * element_xloc[spatial_dim * i];
   }
-  // printf("J(0, 0): %20.10e, ∂J(0, 0)/∂xi: %20.10e\n", J(0, 0), tmp);
-  printf("%20.10e\n", detJ);
 
   return detJ;
 }
@@ -150,7 +148,7 @@ TEST(adjoint, determinantGrad) {
 }
 
 TEST(adjoint, JacPsiProduct) {
-  constexpr int Np_1d = 2;
+  constexpr int Np_1d = 4;
   using T = double;
 
   using Grid = StructuredGrid2D<T>;
@@ -159,8 +157,8 @@ TEST(adjoint, JacPsiProduct) {
   using LSF = Line;
   using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
 
-  // using Physics = LinearElasticity<T, Basis::spatial_dim>;
-  using Physics = PoissonPhysics<T, Basis::spatial_dim>;
+  using Physics = LinearElasticity<T, Basis::spatial_dim>;
+  // using Physics = PoissonPhysics<T, Basis::spatial_dim>;
 
   using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
 
@@ -175,8 +173,8 @@ TEST(adjoint, JacPsiProduct) {
   Quadrature quadrature(mesh, lsf_mesh);
 
   T E = 30.0, nu = 0.3;
-  // Physics physics(E, nu);
-  Physics physics;
+  Physics physics(E, nu);
+  // Physics physics;
 
   double h = 1e-6;
   int ndof = Physics::dof_per_node * mesh.get_num_nodes();
@@ -184,7 +182,7 @@ TEST(adjoint, JacPsiProduct) {
   std::vector<T>& dvs = mesh.get_lsf_dof();
 
   std::vector<T> dof(ndof), psi(ndof), res1(ndof, 0.0), res2(ndof, 0.0);
-  std::vector<T> dfdx(ndv), p(ndv);
+  std::vector<T> dfdx(ndv, 0.0), p(ndv);
 
   for (int i = 0; i < ndof; i++) {
     dof[i] = (T)rand() / RAND_MAX;
@@ -207,9 +205,13 @@ TEST(adjoint, JacPsiProduct) {
   }
   analysis.residual(nullptr, dof.data(), res2.data());
 
-  double dfdx_fd = 0.0, dfdx_adjoint;
+  double dfdx_fd = 0.0;
   for (int i = 0; i < ndof; i++) {
     dfdx_fd += psi[i] * (res2[i] - res1[i]) / (2.0 * h);
+  }
+
+  double dfdx_adjoint = 0.0;
+  for (int i = 0; i < ndv; i++) {
     dfdx_adjoint += dfdx[i] * p[i];
   }
 

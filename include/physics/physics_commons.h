@@ -17,9 +17,14 @@ class PhysicsBase {
   using grad_t =
       typename std::conditional<dof_per_node == 1, A2D::Vec<T, spatial_dim>,
                                 A2D::Mat<T, dof_per_node, spatial_dim>>::type;
+  using hess_t = typename std::conditional<
+      dof_per_node == 1, A2D::Vec<T, spatial_dim * spatial_dim>,
+      A2D::Mat<T, dof_per_node, spatial_dim * spatial_dim>>::type;
   using jac_t =
       typename std::conditional<dof_per_node == 1, T,
                                 A2D::Mat<T, dof_per_node, dof_per_node>>::type;
+  using jac_grad_t =
+      A2D::Mat<T, dof_per_node * spatial_dim, dof_per_node * spatial_dim>;
 
   /**
    * @brief At a quadrature point, evaluate the energy functional

@@ -57,21 +57,21 @@ class GalerkinAnalysis final {
         // Evaluate the derivative of the spatial dof in the computational
         // coordinates
         A2D::Mat<T, spatial_dim, spatial_dim> J;
-        interp_val_grad<T, Basis, spatial_dim>(i, element_xloc, nullptr,
+        interp_val_grad<T, Basis, spatial_dim>(element_xloc, nullptr,
                                                &Nxi[offset_nxi], nullptr, &J);
 
         // Evaluate the derivative of the dof in the computational coordinates
         typename Physics::dof_t vals{};
         typename Physics::grad_t grad{}, grad_ref{};
-        interp_val_grad<T, Basis>(i, element_dof, &N[offset_n],
-                                  &Nxi[offset_nxi], &vals, &grad_ref);
+        interp_val_grad<T, Basis>(element_dof, &N[offset_n], &Nxi[offset_nxi],
+                                  &vals, &grad_ref);
 
         // Transform gradient from ref coordinates to physical coordinates
         transform(J, grad_ref, grad);
 
         // Add the energy contributions
         if (x) {
-          interp_val_grad<T, Basis>(i, element_x.data(), &N[offset_n], nullptr,
+          interp_val_grad<T, Basis>(element_x.data(), &N[offset_n], nullptr,
                                     &xq, nullptr);
         }
         total_energy += physics.energy(wts[j], xq, J, vals, grad);
@@ -118,16 +118,16 @@ class GalerkinAnalysis final {
         // Evaluate the derivative of the spatial dof in the computational
         // coordinates
         A2D::Mat<T, spatial_dim, spatial_dim> J;
-        interp_val_grad<T, Basis, spatial_dim>(i, element_xloc, nullptr,
+        interp_val_grad<T, Basis, spatial_dim>(element_xloc, nullptr,
                                                &Nxi[offset_nxi], nullptr, &J);
 
         // Evaluate the derivative of the dof in the computational coordinates
         typename Physics::dof_t vals{};
         typename Physics::grad_t grad{}, grad_ref{};
-        interp_val_grad<T, Basis>(i, element_dof, &N[offset_n],
-                                  &Nxi[offset_nxi], &vals, &grad_ref);
+        interp_val_grad<T, Basis>(element_dof, &N[offset_n], &Nxi[offset_nxi],
+                                  &vals, &grad_ref);
         if (x) {
-          interp_val_grad<T, Basis>(i, element_x.data(), &N[offset_n], nullptr,
+          interp_val_grad<T, Basis>(element_x.data(), &N[offset_n], nullptr,
                                     &xq, nullptr);
         }
 
@@ -143,7 +143,7 @@ class GalerkinAnalysis final {
         rtransform(J, coef_grad, coef_grad_ref);
 
         // Add the contributions to the element residual
-        add_grad<T, Basis>(i, &N[offset_n], &Nxi[offset_nxi], coef_vals,
+        add_grad<T, Basis>(&N[offset_n], &Nxi[offset_nxi], coef_vals,
                            coef_grad_ref, element_res);
       }
 
@@ -193,14 +193,14 @@ class GalerkinAnalysis final {
         // Evaluate the derivative of the spatial dof in the computational
         // coordinates
         A2D::Mat<T, spatial_dim, spatial_dim> J;
-        interp_val_grad<T, Basis, spatial_dim>(i, element_xloc, nullptr,
+        interp_val_grad<T, Basis, spatial_dim>(element_xloc, nullptr,
                                                &Nxi[offset_nxi], nullptr, &J);
 
         // Evaluate the derivative of the dof in the computational coordinates
         typename Physics::dof_t vals{};
         typename Physics::grad_t grad{}, grad_ref{};
-        interp_val_grad<T, Basis>(i, element_dof, &N[offset_n],
-                                  &Nxi[offset_nxi], &vals, &grad_ref);
+        interp_val_grad<T, Basis>(element_dof, &N[offset_n], &Nxi[offset_nxi],
+                                  &vals, &grad_ref);
 
         // Transform gradient from ref coordinates to physical coordinates
         transform(J, grad_ref, grad);
@@ -209,7 +209,7 @@ class GalerkinAnalysis final {
         // coordinates
         typename Physics::dof_t direct_vals{};
         typename Physics::grad_t direct_grad{}, direct_grad_ref{};
-        interp_val_grad<T, Basis>(i, element_direct, &N[offset_n],
+        interp_val_grad<T, Basis>(element_direct, &N[offset_n],
                                   &Nxi[offset_nxi], &direct_vals,
                                   &direct_grad_ref);
 
@@ -217,7 +217,7 @@ class GalerkinAnalysis final {
         transform(J, direct_grad_ref, direct_grad);
 
         if (x) {
-          interp_val_grad<T, Basis>(i, element_x.data(), &N[offset_n], nullptr,
+          interp_val_grad<T, Basis>(element_x.data(), &N[offset_n], nullptr,
                                     &xq, nullptr);
         }
 
@@ -231,7 +231,7 @@ class GalerkinAnalysis final {
         rtransform(J, coef_grad, coef_grad_ref);
 
         // Add the contributions to the element residual
-        add_grad<T, Basis>(i, &N[offset_n], &Nxi[offset_nxi], coef_vals,
+        add_grad<T, Basis>(&N[offset_n], &Nxi[offset_nxi], coef_vals,
                            coef_grad_ref, element_res);
       }
 
@@ -277,16 +277,16 @@ class GalerkinAnalysis final {
         // Evaluate the derivative of the spatial dof in the computational
         // coordinates
         A2D::Mat<T, spatial_dim, spatial_dim> J;
-        interp_val_grad<T, Basis, spatial_dim>(i, element_xloc, nullptr,
+        interp_val_grad<T, Basis, spatial_dim>(element_xloc, nullptr,
                                                &Nxi[offset_nxi], nullptr, &J);
 
         // Evaluate the derivative of the dof in the computational coordinates
         typename Physics::dof_t vals{};
         typename Physics::grad_t grad_ref{}, grad{};
-        interp_val_grad<T, Basis>(i, element_dof, &N[offset_n],
-                                  &Nxi[offset_nxi], &vals, &grad_ref);
+        interp_val_grad<T, Basis>(element_dof, &N[offset_n], &Nxi[offset_nxi],
+                                  &vals, &grad_ref);
         if (x) {
-          interp_val_grad<T, Basis>(i, element_x.data(), &N[offset_n], nullptr,
+          interp_val_grad<T, Basis>(element_x.data(), &N[offset_n], nullptr,
                                     &xq, nullptr);
         }
 
@@ -305,7 +305,7 @@ class GalerkinAnalysis final {
         jtransform<T, dof_per_node, spatial_dim>(J, jac_grad, jac_grad_ref);
 
         // Add the contributions to the element residual
-        add_matrix<T, Basis>(i, &N[offset_n], &Nxi[offset_nxi], jac_vals,
+        add_matrix<T, Basis>(&N[offset_n], &Nxi[offset_nxi], jac_vals,
                              jac_grad_ref, element_jac);
       }
 
@@ -339,8 +339,7 @@ class GalerkinAnalysis final {
       get_element_vars<T, dof_per_node, Basis>(mesh, i, psi, element_psi);
 
       // Create the element dfdx
-      T element_dfdx[dof_per_element];
-      for (int j = 0; j < dof_per_element; j++) element_dfdx[j] = 0.0;
+      std::vector<T> element_dfdx(nodes_per_element, 0.0);
 
       std::vector<T> pts, wts, pts_grad, wts_grad;
       int num_quad_pts =
@@ -354,27 +353,24 @@ class GalerkinAnalysis final {
         int offset_nxi = j * nodes_per_element * spatial_dim;
         int offset_nxixi = j * nodes_per_element * spatial_dim * spatial_dim;
 
-        T detJ, detJb = 1.0;
-        A2D::Mat<T, spatial_dim, spatial_dim> J, Jb;
-        interp_val_grad<T, Basis, spatial_dim>(i, element_xloc, nullptr,
+        A2D::Mat<T, spatial_dim, spatial_dim> J;
+        interp_val_grad<T, Basis, spatial_dim>(element_xloc, nullptr,
                                                &Nxi[offset_nxi], nullptr, &J);
-
-        // Get derivatives of detJ w.r.t. J
-        A2D::ADObj<T&> detJ_obj(detJ, detJb);
-        A2D::ADObj<A2D::Mat<T, spatial_dim, spatial_dim>&> J_obj(J, Jb);
-        auto stack = A2D::MakeStack(A2D::MatDet(J_obj, detJ_obj));
-        stack.reverse();
 
         // Evaluate the derivative of the dof in the computational coordinates
         typename Physics::dof_t uq{}, psiq{};           // uq, psiq
         typename Physics::grad_t ugrad{}, ugrad_ref{};  // (∇_x)uq, (∇_ξ)uq
         typename Physics::grad_t pgrad{}, pgrad_ref{};  // (∇_x)psiq, (∇_ξ)psiq
+        typename Physics::hess_t uhess_ref{};           //(∇2_ξ)uq
+        typename Physics::hess_t phess_ref{};           //(∇2_ξ)psiq
 
         // Interpolate the quantities at the quadrature point
-        interp_val_grad<T, Basis>(i, element_dof, &N[offset_n],
-                                  &Nxi[offset_nxi], &uq, &ugrad_ref);
-        interp_val_grad<T, Basis>(i, element_psi, &N[offset_n],
-                                  &Nxi[offset_nxi], &psiq, &pgrad_ref);
+        interp_val_grad<T, Basis>(element_dof, &N[offset_n], &Nxi[offset_nxi],
+                                  &uq, &ugrad_ref);
+        interp_val_grad<T, Basis>(element_psi, &N[offset_n], &Nxi[offset_nxi],
+                                  &psiq, &pgrad_ref);
+        interp_hess<T, Basis>(element_dof, &Nxixi[offset_nxixi], uhess_ref);
+        interp_hess<T, Basis>(element_psi, &Nxixi[offset_nxixi], phess_ref);
 
         transform(J, ugrad_ref, ugrad);
         transform(J, pgrad_ref, pgrad);
@@ -383,6 +379,9 @@ class GalerkinAnalysis final {
         typename Physics::grad_t coef_ugrad{};  // ∂e/∂(∇_x)uq
         typename Physics::dof_t jp_uq{};        // ∂2e/∂uq2 * psiq
         typename Physics::grad_t jp_ugrad{};  // ∂2e/∂(∇_x)uq2 * (∇_x)psiq
+
+        T detJ;
+        A2D::MatDet(J, detJ);
 
         physics.residual(1.0 / detJ, 0.0, J, uq, ugrad, coef_uq, coef_ugrad);
         physics.jacobian_product(1.0 / detJ, 0.0, J, uq, ugrad, psiq, pgrad,
@@ -398,13 +397,16 @@ class GalerkinAnalysis final {
 
         int offset_wts = j * nodes_per_element;
         int offset_pts = j * nodes_per_element * spatial_dim;
+
         add_jac_adj_product<T, Basis>(
-            i, element_xloc, element_dof, Nxixi.data(), &wts_grad[offset_wts],
-            &pts_grad[offset_pts], wts[j], detJ, Jb, psiq, pgrad_ref, coef_uq,
-            jp_uq, coef_ugrad_ref, jp_ugrad_ref, element_dfdx);
+            wts[i], detJ, &wts_grad[offset_wts], &pts_grad[offset_pts], psiq,
+            ugrad_ref, pgrad_ref, uhess_ref, phess_ref, coef_uq, coef_ugrad_ref,
+            jp_uq, jp_ugrad_ref, element_dfdx.data());
       }
 
-      add_element_res<T, dof_per_node, Basis>(mesh, i, element_dfdx, dfdx);
+      const Mesh& lsf_mesh = quadrature.get_lsf_mesh();
+      int c = mesh.get_elem_cell(i);
+      add_element_dfdx<T, Basis>(lsf_mesh, c, element_dfdx.data(), dfdx);
     }
   }
 

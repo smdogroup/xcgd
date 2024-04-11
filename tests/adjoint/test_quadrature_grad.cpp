@@ -9,7 +9,7 @@
 class Line {
  public:
   constexpr static int spatial_dim = 2;
-  Line(double k = 0.4, double b = 0.1) : k(k), b(b) {}
+  Line(double k = 0.4, double b = 0.7) : k(k), b(b) {}
 
   template <typename T>
   T operator()(const algoim::uvector<T, spatial_dim>& x) const {
