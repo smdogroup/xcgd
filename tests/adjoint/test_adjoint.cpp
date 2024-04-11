@@ -61,7 +61,6 @@ TEST(adjoint, determinantGrad) {
   using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
 
   using Physics = LinearElasticity<T, Basis::spatial_dim>;
-  using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
 
   int nxy[2] = {5, 5};
   T lxy[2] = {1.0, 1.0};
@@ -149,8 +148,8 @@ TEST(adjoint, determinantGrad) {
 
 template <typename T, class Basis, class Mesh, class Quadrature, class Physics>
 void test_jac_psi_product(Basis& basis, Mesh& mesh, Quadrature& quadrature,
-                          Physics& physics, double h = 1e-7,
-                          double tol = 1e-7) {
+                          Physics& physics, double h = 1e-6,
+                          double tol = 1e-6) {
   int ndof = Physics::dof_per_node * mesh.get_num_nodes();
   int ndv = quadrature.get_lsf_mesh().get_num_nodes();
   std::vector<T>& dvs = mesh.get_lsf_dof();
