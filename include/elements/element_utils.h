@@ -535,6 +535,7 @@ void add_jac_adj_product(
   }
 
   // Jacobian-vector product times ugrad
+  // ∂2e/∂uq2 * ψq * ∇uq
   A2D::Vec<T, spatial_dim> jvp_ugrad{};
   for (int j = 0; j < dim; j++) {
     for (int d = 0; d < spatial_dim; d++) {
@@ -543,6 +544,7 @@ void add_jac_adj_product(
   }
 
   // Jacobian-vector product times hess
+  // ∂2e/∂uq2 * ∇ψq * ∇2uq
   A2D::Vec<T, spatial_dim> jvp_uhess{};
   for (int j = 0; j < dim; j++) {
     for (int d = 0; d < spatial_dim; d++) {
@@ -577,6 +579,78 @@ void add_jac_adj_product(
   for (int n = 0; n < nodes_per_element; n++) {
     // AJP_{1,n}
     elem_dfdx[n] += detJ * dedu_psi * wts_grad[n];
+
+    // AJP_{2,n} is assumed zero
+
+    // AJP_{3,n}
+    for (int d = 0; d < spatial_dim; d++) {
+      elem_dfdx[n] +=
+          wdetJ *
+          (jvp_ugrad(d) + jvp_uhess(d) + deriv_grad(d) + deriv_hess(d)) *
+          pts_grad[spatial_dim * n + d];
+    }
+  }
+}
+
+// dim == 1
+template <typename T, class GDBasis>
+void add_jac_adj_product(
+    T weight, T detJ, const T wts_grad[], const T pts_grad[], T psiq,
+    const A2D::Vec<T, GDBasis::spatial_dim>& ugrad_ref,
+    const A2D::Vec<T, GDBasis::spatial_dim>& pgrad_ref,
+    const A2D::Vec<T, GDBasis::spatial_dim * GDBasis::spatial_dim>& uhess_ref,
+    const A2D::Vec<T, GDBasis::spatial_dim * GDBasis::spatial_dim>& phess_ref,
+    T coef_uq, const A2D::Vec<T, GDBasis::spatial_dim>& coef_ugrad_ref, T jp_uq,
+    const A2D::Vec<T, GDBasis::spatial_dim>& jp_ugrad_ref, T elem_dfdx[]) {
+  static_assert(GDBasis::is_gd_basis, "This method only works with GD Basis");
+
+  static constexpr int spatial_dim = GDBasis::spatial_dim;
+  static constexpr int nodes_per_element = GDBasis::nodes_per_element;
+
+  // ∂e/∂u * ψ
+  // = ∂e/∂uq * ψq + ∂e/∂(∇_ξ)uq * (∇_ξ)ψq
+  T dedu_psi = coef_uq * psiq;
+  for (int d = 0; d < spatial_dim; d++) {
+    dedu_psi += coef_ugrad_ref(d) * pgrad_ref(d);
+  }
+
+  // Jacobian-vector product times ugrad
+  // ∂2e/∂uq2 * ψq * ∇uq
+  A2D::Vec<T, spatial_dim> jvp_ugrad{};
+  for (int d = 0; d < spatial_dim; d++) {
+    jvp_ugrad(d) += jp_uq * ugrad_ref(d);
+  }
+
+  // Jacobian-vector product times hess
+  // ∂2e/∂uq2 * ∇ψq * ∇2uq
+  A2D::Vec<T, spatial_dim> jvp_uhess{};
+  for (int d = 0; d < spatial_dim; d++) {
+    for (int dd = 0; dd < spatial_dim; dd++) {
+      jvp_uhess(dd) += jp_ugrad_ref(d) * uhess_ref(d * spatial_dim + dd);
+    }
+  }
+
+  // ∂e/∂uq * ∇ψq
+  A2D::Vec<T, spatial_dim> deriv_grad{};
+  for (int d = 0; d < spatial_dim; d++) {
+    deriv_grad(d) += coef_uq * pgrad_ref(d);
+  }
+
+  // ∂e/∂∇uq * ∇2ψq
+  A2D::Vec<T, spatial_dim> deriv_hess{};
+  for (int d = 0; d < spatial_dim; d++) {
+    for (int dd = 0; dd < spatial_dim; dd++) {
+      deriv_hess(dd) += coef_ugrad_ref(d) * phess_ref(d * spatial_dim + dd);
+    }
+  }
+
+  T wdetJ = weight * detJ;
+
+  for (int n = 0; n < nodes_per_element; n++) {
+    // AJP_{1,n}
+    elem_dfdx[n] += detJ * dedu_psi * wts_grad[n];
+
+    // AJP_{2,n} is assumed zero
 
     // AJP_{3,n}
     for (int d = 0; d < spatial_dim; d++) {

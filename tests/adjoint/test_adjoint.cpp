@@ -147,36 +147,10 @@ TEST(adjoint, determinantGrad) {
   }
 }
 
-TEST(adjoint, JacPsiProduct) {
-  constexpr int Np_1d = 4;
-  using T = double;
-
-  using Grid = StructuredGrid2D<T>;
-  using Basis = GDBasis2D<T, Np_1d>;
-  using Mesh = Basis::Mesh;
-  using LSF = Line;
-  using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
-
-  using Physics = LinearElasticity<T, Basis::spatial_dim>;
-  // using Physics = PoissonPhysics<T, Basis::spatial_dim>;
-
-  using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
-
-  int nxy[2] = {5, 5};
-  T lxy[2] = {1.0, 1.0};
-  LSF lsf;
-
-  Grid grid(nxy, lxy);
-  Mesh mesh(grid, lsf);
-  Mesh lsf_mesh(grid);
-  Basis basis(mesh);
-  Quadrature quadrature(mesh, lsf_mesh);
-
-  T E = 30.0, nu = 0.3;
-  Physics physics(E, nu);
-  // Physics physics;
-
-  double h = 1e-6;
+template <typename T, class Basis, class Mesh, class Quadrature, class Physics>
+void test_jac_psi_product(Basis& basis, Mesh& mesh, Quadrature& quadrature,
+                          Physics& physics, double h = 1e-7,
+                          double tol = 1e-7) {
   int ndof = Physics::dof_per_node * mesh.get_num_nodes();
   int ndv = quadrature.get_lsf_mesh().get_num_nodes();
   std::vector<T>& dvs = mesh.get_lsf_dof();
@@ -192,6 +166,7 @@ TEST(adjoint, JacPsiProduct) {
     p[i] = (T)rand() / RAND_MAX;
   }
 
+  using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
   Analysis analysis(mesh, quadrature, basis, physics);
   analysis.LSF_jacobian_adjoint_product(dof.data(), psi.data(), dfdx.data());
 
@@ -217,4 +192,58 @@ TEST(adjoint, JacPsiProduct) {
 
   std::printf("dfdx_fd:      %25.15e\n", dfdx_fd);
   std::printf("dfdx_adjoint: %25.15e\n", dfdx_adjoint);
+  EXPECT_NEAR((dfdx_fd - dfdx_adjoint) / dfdx_adjoint, 0.0, tol);
+}
+
+TEST(adjoint, JacPsiProductElasticity) {
+  constexpr int Np_1d = 4;
+  using T = double;
+
+  using Grid = StructuredGrid2D<T>;
+  using Basis = GDBasis2D<T, Np_1d>;
+  using Mesh = Basis::Mesh;
+  using LSF = Line;
+  using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
+  using Physics = LinearElasticity<T, Basis::spatial_dim>;
+
+  int nxy[2] = {5, 5};
+  T lxy[2] = {1.0, 1.0};
+  LSF lsf;
+
+  Grid grid(nxy, lxy);
+  Mesh mesh(grid, lsf);
+  Mesh lsf_mesh(grid);
+  Basis basis(mesh);
+  Quadrature quadrature(mesh, lsf_mesh);
+
+  T E = 30.0, nu = 0.3;
+  Physics physics(E, nu);
+
+  test_jac_psi_product<T>(basis, mesh, quadrature, physics);
+}
+
+TEST(adjoint, JacPsiProductPoisson) {
+  constexpr int Np_1d = 4;
+  using T = double;
+
+  using Grid = StructuredGrid2D<T>;
+  using Basis = GDBasis2D<T, Np_1d>;
+  using Mesh = Basis::Mesh;
+  using LSF = Line;
+  using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
+  using Physics = PoissonPhysics<T, Basis::spatial_dim>;
+
+  int nxy[2] = {5, 5};
+  T lxy[2] = {1.0, 1.0};
+  LSF lsf;
+
+  Grid grid(nxy, lxy);
+  Mesh mesh(grid, lsf);
+  Mesh lsf_mesh(grid);
+  Basis basis(mesh);
+  Quadrature quadrature(mesh, lsf_mesh);
+
+  Physics physics;
+
+  test_jac_psi_product<T>(basis, mesh, quadrature, physics);
 }
