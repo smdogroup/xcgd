@@ -645,20 +645,7 @@ class Interpolator final {
 
  public:
   Interpolator(const Mesh& mesh, const Sampler& sampler, const Basis& basis)
-      : has_lsf(false),
-        mesh(mesh),
-        lsf_mesh(mesh),
-        basis(basis),
-        lsf_basis(basis),
-        sampler(sampler) {}
-  Interpolator(const Mesh& mesh, const Mesh& lsf_mesh, const Sampler& sampler,
-               const Basis& basis, const Basis& lsf_basis)
-      : has_lsf(true),
-        mesh(mesh),
-        lsf_mesh(lsf_mesh),
-        basis(basis),
-        lsf_basis(lsf_basis),
-        sampler(sampler) {}
+      : mesh(mesh), basis(basis), sampler(sampler) {}
 
   void to_vtk(const std::string name, T* dof) const {
     FieldToVTK<T, spatial_dim> field_vtk(name);
@@ -669,11 +656,7 @@ class Interpolator final {
                                                element_dof.data());
 
       std::vector<T> element_xloc(Mesh::nodes_per_element * Basis::spatial_dim);
-      int cell = elem;
-      if (has_lsf) {
-        cell = mesh.get_elem_cell(elem);
-      }
-      get_element_xloc<T, Basis>(lsf_mesh, cell, element_xloc.data());
+      get_element_xloc<T, Basis>(mesh, elem, element_xloc.data());
 
       std::vector<T> pts, wts;
       int nsamples = sampler.get_quadrature_pts(elem, pts, wts);
@@ -682,7 +665,7 @@ class Interpolator final {
       basis.eval_basis_grad(elem, pts, N, Nxi);
 
       std::vector<T> N_xloc, Nxi_xloc;
-      lsf_basis.eval_basis_grad(cell, pts, N_xloc, Nxi_xloc);
+      basis.eval_basis_grad(elem, pts, N_xloc, Nxi_xloc);
 
       std::vector<T> vals(nsamples);
       std::vector<T> ptx(nsamples * Basis::spatial_dim);
@@ -706,13 +689,8 @@ class Interpolator final {
   }
 
  private:
-  void get_ptx(int elem, std::vector<T>& elem_xloc) {}
-
-  bool has_lsf;
   const Mesh& mesh;
-  const Mesh& lsf_mesh;
   const Basis& basis;
-  const Basis& lsf_basis;
   const Sampler& sampler;
   Physics physics;
 };
