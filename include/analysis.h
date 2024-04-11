@@ -345,6 +345,22 @@ class GalerkinAnalysis final {
       int num_quad_pts =
           quadrature.get_quadrature_pts_grad(i, pts, wts, pts_grad, wts_grad);
 
+      printf("elem: %2d\n", i);
+      for (int jj = 0; jj < num_quad_pts; jj++) {
+        printf("pts: %20.10e, %20.10e, wts: %20.10e\n", pts[spatial_dim * jj],
+               pts[spatial_dim * jj + 1], wts[jj]);
+      }
+
+      for (int ii = 0; ii < nodes_per_element; ii++) {
+        T p1 = pts_grad[spatial_dim * ii];
+        T p2 = pts_grad[spatial_dim * ii + 1];
+        T w = wts_grad[ii];
+        printf(
+            "node: %2d, pts_grad: %20.10e, %20.10e, wts_grad: "
+            "%20.10e\n",
+            ii, p1, p2, w);
+      }
+
       std::vector<T> N, Nxi, Nxixi;
       basis.eval_basis_grad(i, pts, N, Nxi, Nxixi);
 
@@ -399,9 +415,15 @@ class GalerkinAnalysis final {
         int offset_pts = j * nodes_per_element * spatial_dim;
 
         add_jac_adj_product<T, Basis>(
-            wts[i], detJ, &wts_grad[offset_wts], &pts_grad[offset_pts], psiq,
+            wts[j], detJ, &wts_grad[offset_wts], &pts_grad[offset_pts], psiq,
             ugrad_ref, pgrad_ref, uhess_ref, phess_ref, coef_uq, coef_ugrad_ref,
             jp_uq, jp_ugrad_ref, element_dfdx.data());
+
+        // for (int ii = 0; ii < nodes_per_element; ii++) {
+        //   if (element_dfdx[ii] != 0.0)
+        //     printf("elem: %2d, dfdx[%2d]: %20.10e\n", i, ii,
+        //     element_dfdx[ii]);
+        // }
       }
 
       const Mesh& lsf_mesh = quadrature.get_lsf_mesh();
