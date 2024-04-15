@@ -146,14 +146,26 @@ void add_element_res(const typename Basis::Mesh& mesh, int e,
 }
 
 template <typename T, class Basis>
-void add_element_dfdx(const typename Basis::Mesh& lsf_mesh, int c,
+void add_element_dfdx(const typename Basis::Mesh& mesh, int e,
                       const T element_dfdx[], T dfdx[]) {
+  int constexpr nodes_per_element = Basis::nodes_per_element;
+  int nodes[nodes_per_element];
+  mesh.get_elem_dof_nodes(e, nodes);
+
+  for (int j = 0; j < nodes_per_element; j++) {
+    dfdx[nodes[j]] += element_dfdx[j];
+  }
+}
+
+template <typename T, class Basis>
+void add_element_dfdphi(const typename Basis::Mesh& lsf_mesh, int c,
+                        const T element_dfdphi[], T dfdphi[]) {
   int constexpr nodes_per_element = Basis::nodes_per_element;
   int nodes[nodes_per_element];
   lsf_mesh.get_elem_dof_nodes(c, nodes);
 
   for (int j = 0; j < nodes_per_element; j++) {
-    dfdx[nodes[j]] += element_dfdx[j];
+    dfdphi[nodes[j]] += element_dfdphi[j];
   }
 }
 
@@ -488,6 +500,20 @@ void det_deriv(const T* elem_xloc, const T* Nxixi,
 }
 
 /**
+ * @brief The following two functions add ψ^T * dR/dx contribution from a single
+ * quadrature point
+ */
+template <typename T, class Basis>
+void add_jac_adj_product(const T N[], const T& x_val, T elem_dfdx[]) {
+  static constexpr int spatial_dim = Basis::spatial_dim;
+  static constexpr int nodes_per_element = Basis::nodes_per_element;
+
+  for (int i = 0; i < nodes_per_element; i++) {
+    elem_dfdx[i] += x_val * N[i];
+  }
+}
+
+/**
  * @brief The following two functions add ψ^T * dR/dφ contribution from a single
  * quadrature point
  *
@@ -509,7 +535,7 @@ void det_deriv(const T* elem_xloc, const T* Nxixi,
  * @param coef_ugrad_ref ∂e/∂(∇_ξ)uq
  * @param jp_uq ∂2e/∂uq2 * ψq
  * @param jp_ugrad_ref ∂2e/∂(∇_ξ)uq2 * ψq
- * @param elem_dfdx output, element vector of ψ^T * dR/dφ
+ * @param elem_dfdphi output, element vector of ψ^T * dR/dφ
  */
 template <typename T, class GDBasis, int dim>
 void add_jac_adj_product(
@@ -524,7 +550,8 @@ void add_jac_adj_product(
     const A2D::Vec<T, dim>& coef_uq,
     const A2D::Mat<T, dim, GDBasis::spatial_dim>& coef_ugrad_ref,
     const A2D::Vec<T, dim>& jp_uq,
-    const A2D::Mat<T, dim, GDBasis::spatial_dim>& jp_ugrad_ref, T elem_dfdx[]) {
+    const A2D::Mat<T, dim, GDBasis::spatial_dim>& jp_ugrad_ref,
+    T elem_dfdphi[]) {
   static_assert(GDBasis::is_gd_basis, "This method only works with GD Basis");
 
   static constexpr int spatial_dim = GDBasis::spatial_dim;
@@ -584,13 +611,13 @@ void add_jac_adj_product(
 
   for (int n = 0; n < nodes_per_element; n++) {
     // AJP_{1,n}
-    elem_dfdx[n] += detJ * dedu_psi * wts_grad[n];
+    elem_dfdphi[n] += detJ * dedu_psi * wts_grad[n];
 
     // AJP_{2,n} is assumed zero
 
     // AJP_{3,n}
     for (int d = 0; d < spatial_dim; d++) {
-      elem_dfdx[n] +=
+      elem_dfdphi[n] +=
           wdetJ *
           (jvp_ugrad(d) + jvp_uhess(d) + deriv_grad(d) + deriv_hess(d)) *
           pts_grad[spatial_dim * n + d];
@@ -607,7 +634,7 @@ void add_jac_adj_product(
     const A2D::Vec<T, GDBasis::spatial_dim * GDBasis::spatial_dim>& uhess_ref,
     const A2D::Vec<T, GDBasis::spatial_dim * GDBasis::spatial_dim>& phess_ref,
     T coef_uq, const A2D::Vec<T, GDBasis::spatial_dim>& coef_ugrad_ref, T jp_uq,
-    const A2D::Vec<T, GDBasis::spatial_dim>& jp_ugrad_ref, T elem_dfdx[]) {
+    const A2D::Vec<T, GDBasis::spatial_dim>& jp_ugrad_ref, T elem_dfdphi[]) {
   static_assert(GDBasis::is_gd_basis, "This method only works with GD Basis");
 
   static constexpr int spatial_dim = GDBasis::spatial_dim;
@@ -654,13 +681,13 @@ void add_jac_adj_product(
 
   for (int n = 0; n < nodes_per_element; n++) {
     // AJP_{1,n}
-    elem_dfdx[n] += detJ * dedu_psi * wts_grad[n];
+    elem_dfdphi[n] += detJ * dedu_psi * wts_grad[n];
 
     // AJP_{2,n} is assumed zero
 
     // AJP_{3,n}
     for (int d = 0; d < spatial_dim; d++) {
-      elem_dfdx[n] +=
+      elem_dfdphi[n] +=
           wdetJ *
           (jvp_ugrad(d) + jvp_uhess(d) + deriv_grad(d) + deriv_hess(d)) *
           pts_grad[spatial_dim * n + d];
@@ -727,13 +754,16 @@ class Interpolator final {
   Interpolator(const Mesh& mesh, const Sampler& sampler, const Basis& basis)
       : mesh(mesh), basis(basis), sampler(sampler) {}
 
-  void to_vtk(const std::string name, T* dof) const {
+  void to_vtk(const std::string name, T* dof = (T*)nullptr) const {
     FieldToVTK<T, spatial_dim> field_vtk(name);
 
     for (int elem = 0; elem < mesh.get_num_elements(); elem++) {
-      std::vector<T> element_dof(Mesh::nodes_per_element);
-      get_element_vars<T, dof_per_node, Basis>(mesh, elem, dof,
-                                               element_dof.data());
+      std::vector<T> element_dof;
+      if (dof) {
+        element_dof.resize(Mesh::nodes_per_element);
+        get_element_vars<T, dof_per_node, Basis>(mesh, elem, dof,
+                                                 element_dof.data());
+      }
 
       std::vector<T> element_xloc(Mesh::nodes_per_element * Basis::spatial_dim);
       get_element_xloc<T, Basis>(mesh, elem, element_xloc.data());
@@ -753,8 +783,10 @@ class Interpolator final {
       for (int i = 0; i < nsamples; i++) {
         int offset_n = i * Basis::nodes_per_element;
         T val = 0.0;
-        interp_val_grad<T, Basis>(element_dof.data(), &N[offset_n], nullptr,
-                                  &val, nullptr);
+        if (dof) {
+          interp_val_grad<T, Basis>(element_dof.data(), &N[offset_n], nullptr,
+                                    &val, nullptr);
+        }
         vals[i] = val;
         A2D::Vec<T, Basis::spatial_dim> xloc;
         interp_val_grad<T, Basis, Basis::spatial_dim>(

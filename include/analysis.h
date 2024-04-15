@@ -239,6 +239,91 @@ class GalerkinAnalysis final {
     }
   }
 
+  /*
+    Evaluate the matrix vector product dR/dx * psi, where x are the nodal data,
+    psi are the adjoint variables
+  */
+  void jacobian_adjoint_product(const T x[], const T dof[], const T psi[],
+                                T dfdx[]) const {
+    T xq = 0.0;
+    std::vector<T> element_x(nodes_per_element);
+
+    for (int i = 0; i < mesh.get_num_elements(); i++) {
+      // Get the element node locations
+      T element_xloc[spatial_dim * nodes_per_element];
+      get_element_xloc<T, Basis>(mesh, i, element_xloc);
+
+      // Get element design variable if needed
+      if (x) {
+        get_element_vars<T, 1, Basis>(mesh, i, x, element_x.data());
+      }
+
+      // Get the element degrees of freedom
+      T element_dof[dof_per_element];
+      get_element_vars<T, dof_per_node, Basis>(mesh, i, dof, element_dof);
+
+      // Get the element psi for the Jacobian-vector product
+      T element_psi[dof_per_element];
+      get_element_vars<T, dof_per_node, Basis>(mesh, i, psi, element_psi);
+
+      // Create the element residual
+      T element_dfdx[dof_per_element];
+      for (int j = 0; j < dof_per_element; j++) {
+        element_dfdx[j] = 0.0;
+      }
+
+      std::vector<T> pts, wts;
+      int num_quad_pts = quadrature.get_quadrature_pts(i, pts, wts);
+
+      std::vector<T> N, Nxi;
+      basis.eval_basis_grad(i, pts, N, Nxi);
+
+      for (int j = 0; j < num_quad_pts; j++) {
+        int offset_n = j * nodes_per_element;
+        int offset_nxi = j * nodes_per_element * spatial_dim;
+
+        // Evaluate the derivative of the spatial dof in the computational
+        // coordinates
+        A2D::Mat<T, spatial_dim, spatial_dim> J;
+        interp_val_grad<T, Basis, spatial_dim>(element_xloc, nullptr,
+                                               &Nxi[offset_nxi], nullptr, &J);
+
+        // Evaluate the derivative of the dof in the computational coordinates
+        typename Physics::dof_t vals{};
+        typename Physics::grad_t grad{}, grad_ref{};
+        interp_val_grad<T, Basis>(element_dof, &N[offset_n], &Nxi[offset_nxi],
+                                  &vals, &grad_ref);
+
+        // Transform gradient from ref coordinates to physical coordinates
+        transform(J, grad_ref, grad);
+
+        // Evaluate the derivative of the psi in the computational
+        // coordinates
+        typename Physics::dof_t psi_vals{};
+        typename Physics::grad_t psi_grad{}, psi_grad_ref{};
+        interp_val_grad<T, Basis>(element_psi, &N[offset_n], &Nxi[offset_nxi],
+                                  &psi_vals, &psi_grad_ref);
+
+        // Transform gradient from ref coordinates to physical coordinates
+        transform(J, psi_grad_ref, psi_grad);
+
+        if (x) {
+          interp_val_grad<T, Basis>(element_x.data(), &N[offset_n], nullptr,
+                                    &xq, nullptr);
+        }
+
+        // Evaluate the residuals at the quadrature points
+        typename Physics::x_t x_val{};
+        physics.adjoint_jacobian_product(wts[j], xq, J, vals, grad, psi_vals,
+                                         psi_grad, x_val);
+
+        add_jac_adj_product<T, Basis>(&N[offset_n], x_val, element_dfdx);
+      }
+
+      add_element_dfdx<T, Basis>(mesh, i, element_dfdx, dfdx);
+    }
+  }
+
   void jacobian(const T x[], const T dof[],
                 GalerkinBSRMat<T, dof_per_node>* mat) const {
     T xq = 0.0;
@@ -321,7 +406,7 @@ class GalerkinAnalysis final {
     level-set mesh
   */
   void LSF_jacobian_adjoint_product(const T dof[], const T psi[],
-                                    T dfdx[]) const {
+                                    T dfdphi[]) const {
     static_assert(Basis::is_gd_basis, "This method only works with GD Basis");
     if (!mesh.has_lsf()) {
       throw std::runtime_error(
@@ -338,8 +423,8 @@ class GalerkinAnalysis final {
       get_element_vars<T, dof_per_node, Basis>(mesh, i, dof, element_dof);
       get_element_vars<T, dof_per_node, Basis>(mesh, i, psi, element_psi);
 
-      // Create the element dfdx
-      std::vector<T> element_dfdx(nodes_per_element, 0.0);
+      // Create the element dfdphi
+      std::vector<T> element_dfdphi(nodes_per_element, 0.0);
 
       std::vector<T> pts, wts, pts_grad, wts_grad;
       int num_quad_pts =
@@ -401,12 +486,12 @@ class GalerkinAnalysis final {
         add_jac_adj_product<T, Basis>(
             wts[j], detJ, &wts_grad[offset_wts], &pts_grad[offset_pts], psiq,
             ugrad_ref, pgrad_ref, uhess_ref, phess_ref, coef_uq, coef_ugrad_ref,
-            jp_uq, jp_ugrad_ref, element_dfdx.data());
+            jp_uq, jp_ugrad_ref, element_dfdphi.data());
       }
 
       const Mesh& lsf_mesh = quadrature.get_lsf_mesh();
       int c = mesh.get_elem_cell(i);
-      add_element_dfdx<T, Basis>(lsf_mesh, c, element_dfdx.data(), dfdx);
+      add_element_dfdphi<T, Basis>(lsf_mesh, c, element_dfdphi.data(), dfdphi);
     }
   }
 
