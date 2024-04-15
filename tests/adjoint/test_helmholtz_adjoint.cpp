@@ -39,7 +39,7 @@ TEST(adjoint, JacPsiProductHelmholtz) {
   using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
   using Basis = GDBasis2D<T, Np_1d>;
   using Mesh = Basis::Mesh;
-  int nxy[2] = {64, 64};
+  int nxy[2] = {5, 5};
   T lxy[2] = {1.0, 1.0};
   T pt0[2] = {0.5, 0.5};
   T r = 0.5;
@@ -78,6 +78,7 @@ TEST(adjoint, JacPsiProductHelmholtz) {
   int ndof = mesh.get_num_nodes();
   int ndv = mesh.get_num_nodes();
   double h = 1e-6;
+  double tol = 1e-7;
 
   std::vector<T> x(ndv, 0.0), p(ndv, 0.0), dfdx(ndv, 0.0);
   std::vector<T> dof(ndof, 0.0), psi(ndof, 0.0), res1(ndof, 0.0),
@@ -122,4 +123,5 @@ TEST(adjoint, JacPsiProductHelmholtz) {
 
   std::printf("dfdx_fd:      %25.15e\n", dfdx_fd);
   std::printf("dfdx_adjoint: %25.15e\n", dfdx_adjoint);
+  EXPECT_NEAR((dfdx_fd - dfdx_adjoint) / dfdx_adjoint, 0.0, tol);
 }
