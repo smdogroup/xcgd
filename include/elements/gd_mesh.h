@@ -6,6 +6,7 @@
 #include <set>
 #include <vector>
 
+#include "elements/element_commons.h"
 #include "quadrature_general.hpp"
 #include "utils/misc.h"
 
@@ -127,6 +128,7 @@ class StructuredGrid2D final {
   T xy0[spatial_dim];
 };
 
+#if 0
 template <typename T, int Np_1d>
 class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
  private:
@@ -153,8 +155,8 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
    *
    * @tparam Func functor type
    * @param grid GD grid
-   * @param lsf level set function that determining the analysis domain, lsf(T*
-   * xyz) where xyz contains x,y,(z) coordinates.
+   * @param lsf initial level set function that determines the analysis domain,
+   * lsf(T* xyz) where xyz contains x,y,(z) coordinates.
    *
    * Note: Within the analysis domain, lsf <= 0
    */
@@ -466,6 +468,316 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
   // push direction for each cell
   std::vector<int> dir_cells;
 };
+#endif
+
+/**
+ * @brief The 2-dimensional Galerkin difference mesh defined on a structured
+ * grid, i.e. no cuts by a level set function
+ */
+template <typename T, int Np_1d>
+class GridMesh final : public GDMeshBase<T, Np_1d> {
+ private:
+  using MeshBase = GDMeshBase<T, Np_1d>;
+
+ public:
+  using MeshBase::corner_nodes_per_element;
+  using MeshBase::nodes_per_element;
+  using MeshBase::spatial_dim;
+  using typename MeshBase::Grid;
+
+  /**
+   * @brief Construct GD Mesh given grid only
+   */
+  GridMesh(const Grid& grid)
+      : MeshBase(grid),
+        num_nodes(grid.get_num_verts()),
+        num_elements(grid.get_num_cells()) {}
+
+  inline int get_num_nodes() const { return num_nodes; }
+  inline int get_num_elements() const { return num_elements; }
+
+  inline void get_node_xloc(int node, T* xloc) const {
+    this->grid.get_vert_xloc(node, xloc);
+  }
+
+  /**
+   * @brief For a GD element, get all dof nodes
+   *
+   * @param elem element index
+   * @param nodes dof node indices, length: nodes_per_element
+   */
+  void get_elem_dof_nodes(int elem, int* nodes) const {
+    this->get_cell_ground_stencil(elem, nodes);
+  }
+
+  inline void get_elem_corner_nodes(int elem, int* nodes) const {
+    this->grid.get_cell_verts(elem, nodes);
+  }
+
+  inline void get_elem_vert_ranges(int elem, T* xloc_min, T* xloc_max) const {
+    this->grid.get_cell_vert_ranges(elem, xloc_min, xloc_max);
+  }
+
+  std::vector<int> get_left_boundary_nodes() const {
+    std::vector<int> nodes;
+    const int* nxy = this->grid.get_nxy();
+    for (int j = 0; j < nxy[1] + 1; j++) {
+      int coords[2] = {0, j};
+      int node = this->grid.get_coords_vert(coords);
+      nodes.push_back(node);
+    }
+    return nodes;
+  }
+
+  std::vector<int> get_right_boundary_nodes() const {
+    std::vector<int> nodes;
+    const int* nxy = this->grid.get_nxy();
+    for (int j = 0; j < nxy[1] + 1; j++) {
+      int coords[2] = {nxy[0], j};
+      int node = this->grid.get_coords_vert(coords);
+      nodes.push_back(node);
+    }
+    return nodes;
+  }
+
+ private:
+  int num_nodes = -1;
+  int num_elements = -1;
+};
+
+template <typename T, int Np_1d>
+class CutMesh final : public GDMeshBase<T, Np_1d> {
+ private:
+  using MeshBase = GDMeshBase<T, Np_1d>;
+
+ public:
+  using MeshBase::corner_nodes_per_element;
+  using MeshBase::nodes_per_element;
+  using MeshBase::spatial_dim;
+  using typename MeshBase::Grid;
+  static constexpr bool is_cut_mesh = true;
+
+  /**
+   * @brief Construct GD Mesh given grid and LSF function
+   *
+   * @tparam Func functor type
+   * @param grid GD grid
+   * @param lsf initial level set function that determines the analysis domain,
+   * lsf(T* xyz) where xyz contains x,y,(z) coordinates.
+   *
+   * Note: Within the analysis domain, lsf <= 0
+   */
+  template <class Func>
+  CutMesh(const Grid& grid, const Func& lsf)
+      : MeshBase(grid), lsf_dof(grid.get_num_verts()) {
+    init_dofs_from_lsf(lsf);
+    num_nodes = node_verts.size();
+    num_elements = elem_cells.size();
+  }
+
+  int get_num_nodes() const { return num_nodes; }
+  int get_num_elements() const { return num_elements; }
+
+  inline void get_node_xloc(int node, T* xloc) const {
+    this->grid.get_vert_xloc(node_verts.at(node), xloc);
+  }
+
+  /**
+   * @brief For a GD element, get all dof nodes
+   *
+   * @param elem element index
+   * @param nodes dof node indices, length: nodes_per_element
+   */
+  void get_elem_dof_nodes(int elem, int* nodes) const {
+    int cell = elem_cells.at(elem);
+    this->get_cell_ground_stencil(cell, nodes);
+    adjust_stencil(cell, nodes);
+    for (int i = 0; i < nodes_per_element; i++) {
+      nodes[i] = vert_nodes.at(nodes[i]);
+    }
+  }
+
+  inline void get_elem_corner_nodes(int elem, int* nodes) const {
+    this->grid.get_cell_verts(elem_cells.at(elem), nodes);
+    for (int i = 0; i < corner_nodes_per_element; i++) {
+      nodes[i] = vert_nodes.at(nodes[i]);
+    }
+  }
+
+  inline void get_elem_vert_ranges(int elem, T* xloc_min, T* xloc_max) const {
+    this->grid.get_cell_vert_ranges(elem_cells.at(elem), xloc_min, xloc_max);
+  }
+
+  std::vector<int> get_left_boundary_nodes() const {
+    std::vector<int> nodes;
+    const int* nxy = this->grid.get_nxy();
+    for (int j = 0; j < nxy[1] + 1; j++) {
+      int coords[2] = {0, j};
+      int node = vert_nodes.at(node);
+      nodes.push_back(node);
+    }
+    return nodes;
+  }
+
+  std::vector<int> get_right_boundary_nodes() const {
+    std::vector<int> nodes;
+    const int* nxy = this->grid.get_nxy();
+    for (int j = 0; j < nxy[1] + 1; j++) {
+      int coords[2] = {nxy[0], j};
+      int node = vert_nodes.at(node);
+      nodes.push_back(node);
+    }
+    return nodes;
+  }
+
+  std::vector<T> get_lsf_nodes() const {
+    std::vector<T> lsf_nodes(get_num_nodes());
+    for (auto kv : node_verts) {
+      // lsf_nodes[node] = lsf_dof[vert]
+      lsf_nodes[kv.first] = lsf_dof[kv.second];
+    }
+    return lsf_nodes;
+  }
+
+  inline const std::vector<T>& get_lsf_dof() const { return lsf_dof; }
+  inline std::vector<T>& get_lsf_dof() { return lsf_dof; }
+
+  inline int get_elem_cell(int elem) const { return elem_cells[elem]; }
+
+ private:
+  template <class Func>
+  void init_dofs_from_lsf(const Func& lsf) {
+    // LSF values are always associated with the ground grid verts, unlike the
+    // dof values which might only be associated with part of the ground grid
+    // verts (i.e. nodes)
+    int nverts = this->grid.get_num_verts();
+
+    // Populate lsf values
+    std::vector<bool> active_lsf_verts(nverts, false);
+    for (int i = 0; i < nverts; i++) {
+      algoim::uvector<T, spatial_dim> xloc;
+      this->grid.get_vert_xloc(i, xloc.data());
+      lsf_dof[i] = lsf(xloc);
+      if (freal(lsf_dof[i]) <= freal(T(0.0))) {
+        active_lsf_verts[i] = true;
+      }
+    }
+
+    // Active cell is a cell with at least one active lsf vert
+    int ncells = this->grid.get_num_cells();
+    std::vector<bool> active_cells(ncells, false);
+
+    // Unlike LSF values, dof are associated with nodes, which is a subset of
+    // verts. Here we determine which verts are dof nodes
+    for (int c = 0; c < ncells; c++) {
+      if (active_cells[c]) continue;
+      int verts[Grid::nverts_per_cell];
+      this->grid.get_cell_verts(c, verts);
+      for (int i = 0; i < Grid::nverts_per_cell; i++) {
+        if (active_lsf_verts[verts[i]]) {
+          active_cells[c] = true;
+          break;
+        }
+      }
+    }
+
+    // Create active dof nodes and the mapping to verts
+    int node = 0;
+    for (int c = 0; c < ncells; c++) {
+      if (!active_cells[c]) continue;
+      elem_cells.push_back(c);
+      int verts[Grid::nverts_per_cell];
+      this->grid.get_cell_verts(c, verts);
+      for (int i = 0; i < Grid::nverts_per_cell; i++) {
+        if (vert_nodes.count(verts[i]) == 0) {
+          vert_nodes[verts[i]] = node;
+          node_verts[node] = verts[i];
+          node++;
+        }
+      }
+    }
+
+    // For each cell, get the push direction for the outlying ground stencil
+    // vertices
+    dir_cells = std::vector<int>(ncells, -1);  // val | direction
+                                               // 0   | +x
+                                               // 1   | -x
+                                               // 2   | +y
+                                               // 3   | -y
+                                               // 4   | +z
+                                               // 5   | -z
+
+    for (int c = 0; c < ncells; c++) {
+      algoim::uvector<T, spatial_dim> xloc;
+      this->grid.get_cell_xloc(c, xloc.data());
+      auto grad = lsf.grad(xloc);
+
+      double tmp = 0.0;
+      int dim = -1;
+      for (int d = 0; d < spatial_dim; d++) {
+        if (fabs(grad(d)) > tmp) {
+          tmp = fabs(grad(d));
+          dim = d;
+        }
+      }
+      dir_cells[c] = 2 * dim + (freal(grad(dim)) < 0.0 ? 0 : 1);
+    }
+  }
+
+  /**
+   * @brief Adjust the stencil by pushing the stencil verts that are outside the
+   * LSF boundary inward such that all nodes are active nodes
+   */
+  void adjust_stencil(int cell, int* verts) const {
+    // Get push direction
+    int dir = dir_cells[cell];
+    int dim = dir / spatial_dim;
+    int sign = dir % spatial_dim == 0 ? 1 : -1;
+
+    // Adjust nodes
+    for (int index = 0; index < nodes_per_element; index++) {
+      int vert = verts[index];
+      if (vert_nodes.count(vert) == 0) {
+        int vert_coords[spatial_dim] = {-1, -1};
+        this->grid.get_vert_coords(vert, vert_coords);
+        vert_coords[dim] += sign * Np_1d;
+        verts[index] = this->grid.get_coords_vert(vert_coords);
+      }
+    }
+
+// check  if the stencil is a valid stencil
+#ifdef XCGD_DEBUG_MODE
+    for (int index = 0; index < nodes_per_element; index++) {
+      int vert = verts[index];
+      if (vert_nodes.count(vert) == 0) {
+        int coords[spatial_dim];
+        this->grid.get_vert_coords(vert, coords);
+        std::printf(
+            "[Debug] vert %d (%d, %d) is not an active node, cell: %d\n", vert,
+            coords[0], coords[1], cell);
+      }
+    }
+#endif
+  }
+
+  int num_nodes = -1;
+  int num_elements = -1;
+
+  // level set function values at vertices of the ground grid
+  std::vector<T> lsf_dof;
+
+  // indices of vertices that are dof nodes, i.e. vertices that have active
+  // degrees of freedom
+  std::unordered_map<int, int> node_verts;  // node -> vert
+  std::unordered_map<int, int> vert_nodes;  // vert -> node
+
+  // indices of cells that are dof elements, i.e. cells that have active degrees
+  // of freedom
+  std::vector<int> elem_cells;  // elem -> cell
+
+  // push direction for each cell
+  std::vector<int> dir_cells;
+};
 
 /**
  * @brief Helper function: get the limit of computational coordinates (xi, eta,
@@ -487,10 +799,11 @@ class GDMesh2D final : public MeshBase<T, 2, Np_1d * Np_1d, 4> {
  * @param xi_max output, upper bounds of computational coordinates
  * @return T area ratio
  */
-template <typename T, class GDMesh>
-T get_computational_coordinates_limits(const GDMesh& mesh, int elem, T* xi_min,
+template <typename T, class Mesh>
+T get_computational_coordinates_limits(const Mesh& mesh, int elem, T* xi_min,
                                        T* xi_max) {
-  int constexpr spatial_dim = GDMesh::spatial_dim;
+  static_assert(Mesh::is_gd_mesh, "function only works with a GD mesh");
+  int constexpr spatial_dim = Mesh::spatial_dim;
   T xy_min[spatial_dim], xy_max[spatial_dim];
   T uv_min[spatial_dim], uv_max[spatial_dim];
   mesh.get_elem_node_ranges(elem, xy_min, xy_max);

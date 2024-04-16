@@ -105,14 +105,15 @@ TEST(elements, IntergrationGD2D_Np2) {
   constexpr int Np_1d = 2;
 
   using Quadrature = GDGaussQuadrature2D<T, Np_1d>;
-  using Basis = GDBasis2D<T, Np_1d>;
+  using Mesh = GridMesh<T, Np_1d>;
+  using Basis = GDBasis2D<T, Mesh>;
   using Grid = StructuredGrid2D<T>;
 
   int nxy[2] = {64, 64};
   double lxy[2] = {3.0, 3.0};
   double pt0[2] = {1.5, 1.5};
   Grid grid(nxy, lxy);
-  typename Basis::Mesh mesh(grid);
+  Mesh mesh(grid);
   Quadrature quadrature(mesh);
   Basis basis(mesh);
 
@@ -126,14 +127,15 @@ TEST(elements, IntergrationGD2D_Np4) {
   constexpr int Np_1d = 4;
 
   using Quadrature = GDGaussQuadrature2D<T, Np_1d>;
-  using Basis = GDBasis2D<T, Np_1d>;
+  using Mesh = GridMesh<T, Np_1d>;
+  using Basis = GDBasis2D<T, Mesh>;
   using Grid = StructuredGrid2D<T>;
 
   int nxy[2] = {64, 64};
   double lxy[2] = {3.0, 3.0};
   double pt0[2] = {1.5, 1.5};
   Grid grid(nxy, lxy);
-  typename Basis::Mesh mesh(grid);
+  Mesh mesh(grid);
   Quadrature quadrature(mesh);
   Basis basis(mesh);
 

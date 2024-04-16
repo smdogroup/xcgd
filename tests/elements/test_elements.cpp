@@ -15,9 +15,9 @@ TEST(elements, GD_N_Nxi_Nxixi) {
   int constexpr Nk = Np_1d * Np_1d;
   using T = std::complex<double>;
   using Grid = StructuredGrid2D<T>;
-  using Mesh = GDMesh2D<T, Np_1d>;
+  using Mesh = GridMesh<T, Np_1d>;
+  using Basis = GDBasis2D<T, Mesh>;
   using Quadrature = GDGaussQuadrature2D<T, Np_1d>;
-  using Basis = GDBasis2D<T, Np_1d>;
 
   int constexpr spatial_dim = Mesh::spatial_dim;
 

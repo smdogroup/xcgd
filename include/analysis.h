@@ -7,6 +7,7 @@
 #include "elements/element_utils.h"
 #include "sparse_utils/sparse_matrix.h"
 #include "utils/linalg.h"
+#include "utils/misc.h"
 
 template <typename T, class Mesh, class Quadrature, class Basis, class Physics>
 class GalerkinAnalysis final {
@@ -33,16 +34,16 @@ class GalerkinAnalysis final {
     for (int i = 0; i < mesh.get_num_elements(); i++) {
       // Get the element node locations
       T element_xloc[spatial_dim * nodes_per_element];
-      get_element_xloc<T, Basis>(mesh, i, element_xloc);
+      get_element_xloc<T, Mesh, Basis>(mesh, i, element_xloc);
 
       // Get element design variable if needed
       if (x) {
-        get_element_vars<T, 1, Basis>(mesh, i, x, element_x.data());
+        get_element_vars<T, 1, Mesh, Basis>(mesh, i, x, element_x.data());
       }
 
       // Get the element degrees of freedom
       T element_dof[dof_per_element];
-      get_element_vars<T, dof_per_node, Basis>(mesh, i, dof, element_dof);
+      get_element_vars<T, dof_per_node, Mesh, Basis>(mesh, i, dof, element_dof);
 
       std::vector<T> pts, wts;
       int num_quad_pts = quadrature.get_quadrature_pts(i, pts, wts);
@@ -88,15 +89,15 @@ class GalerkinAnalysis final {
     for (int i = 0; i < mesh.get_num_elements(); i++) {
       // Get the element node locations
       T element_xloc[spatial_dim * nodes_per_element];
-      get_element_xloc<T, Basis>(mesh, i, element_xloc);
+      get_element_xloc<T, Mesh, Basis>(mesh, i, element_xloc);
 
       // Get the element degrees of freedom
       T element_dof[dof_per_element];
-      get_element_vars<T, dof_per_node, Basis>(mesh, i, dof, element_dof);
+      get_element_vars<T, dof_per_node, Mesh, Basis>(mesh, i, dof, element_dof);
 
       // Get element design variable if needed
       if (x) {
-        get_element_vars<T, 1, Basis>(mesh, i, x, element_x.data());
+        get_element_vars<T, 1, Mesh, Basis>(mesh, i, x, element_x.data());
       }
 
       // Create the element residual
@@ -147,7 +148,7 @@ class GalerkinAnalysis final {
                            coef_grad_ref, element_res);
       }
 
-      add_element_res<T, dof_per_node, Basis>(mesh, i, element_res, res);
+      add_element_res<T, dof_per_node, Mesh, Basis>(mesh, i, element_res, res);
     }
   }
 
@@ -159,20 +160,21 @@ class GalerkinAnalysis final {
     for (int i = 0; i < mesh.get_num_elements(); i++) {
       // Get the element node locations
       T element_xloc[spatial_dim * nodes_per_element];
-      get_element_xloc<T, Basis>(mesh, i, element_xloc);
+      get_element_xloc<T, Mesh, Basis>(mesh, i, element_xloc);
 
       // Get element design variable if needed
       if (x) {
-        get_element_vars<T, 1, Basis>(mesh, i, x, element_x.data());
+        get_element_vars<T, 1, Mesh, Basis>(mesh, i, x, element_x.data());
       }
 
       // Get the element degrees of freedom
       T element_dof[dof_per_element];
-      get_element_vars<T, dof_per_node, Basis>(mesh, i, dof, element_dof);
+      get_element_vars<T, dof_per_node, Mesh, Basis>(mesh, i, dof, element_dof);
 
       // Get the element directions for the Jacobian-vector product
       T element_direct[dof_per_element];
-      get_element_vars<T, dof_per_node, Basis>(mesh, i, direct, element_direct);
+      get_element_vars<T, dof_per_node, Mesh, Basis>(mesh, i, direct,
+                                                     element_direct);
 
       // Create the element residual
       T element_res[dof_per_element];
@@ -235,7 +237,7 @@ class GalerkinAnalysis final {
                            coef_grad_ref, element_res);
       }
 
-      add_element_res<T, dof_per_node, Basis>(mesh, i, element_res, res);
+      add_element_res<T, dof_per_node, Mesh, Basis>(mesh, i, element_res, res);
     }
   }
 
@@ -251,20 +253,20 @@ class GalerkinAnalysis final {
     for (int i = 0; i < mesh.get_num_elements(); i++) {
       // Get the element node locations
       T element_xloc[spatial_dim * nodes_per_element];
-      get_element_xloc<T, Basis>(mesh, i, element_xloc);
+      get_element_xloc<T, Mesh, Basis>(mesh, i, element_xloc);
 
       // Get element design variable if needed
       if (x) {
-        get_element_vars<T, 1, Basis>(mesh, i, x, element_x.data());
+        get_element_vars<T, 1, Mesh, Basis>(mesh, i, x, element_x.data());
       }
 
       // Get the element degrees of freedom
       T element_dof[dof_per_element];
-      get_element_vars<T, dof_per_node, Basis>(mesh, i, dof, element_dof);
+      get_element_vars<T, dof_per_node, Mesh, Basis>(mesh, i, dof, element_dof);
 
       // Get the element psi for the Jacobian-vector product
       T element_psi[dof_per_element];
-      get_element_vars<T, dof_per_node, Basis>(mesh, i, psi, element_psi);
+      get_element_vars<T, dof_per_node, Mesh, Basis>(mesh, i, psi, element_psi);
 
       // Create the element residual
       T element_dfdx[dof_per_element];
@@ -320,7 +322,7 @@ class GalerkinAnalysis final {
         add_jac_adj_product<T, Basis>(&N[offset_n], x_val, element_dfdx);
       }
 
-      add_element_dfdx<T, Basis>(mesh, i, element_dfdx, dfdx);
+      add_element_dfdx<T, Mesh, Basis>(mesh, i, element_dfdx, dfdx);
     }
   }
 
@@ -332,16 +334,16 @@ class GalerkinAnalysis final {
     for (int i = 0; i < mesh.get_num_elements(); i++) {
       // Get the element node locations
       T element_xloc[spatial_dim * nodes_per_element];
-      get_element_xloc<T, Basis>(mesh, i, element_xloc);
+      get_element_xloc<T, Mesh, Basis>(mesh, i, element_xloc);
 
       // Get element design variable if needed
       if (x) {
-        get_element_vars<T, 1, Basis>(mesh, i, x, element_x.data());
+        get_element_vars<T, 1, Mesh, Basis>(mesh, i, x, element_x.data());
       }
 
       // Get the element degrees of freedom
       T element_dof[dof_per_element];
-      get_element_vars<T, dof_per_node, Basis>(mesh, i, dof, element_dof);
+      get_element_vars<T, dof_per_node, Mesh, Basis>(mesh, i, dof, element_dof);
 
       // Create the element Jacobian
       T element_jac[dof_per_element * dof_per_element];
@@ -408,20 +410,18 @@ class GalerkinAnalysis final {
   void LSF_jacobian_adjoint_product(const T dof[], const T psi[],
                                     T dfdphi[]) const {
     static_assert(Basis::is_gd_basis, "This method only works with GD Basis");
-    if (!mesh.has_lsf()) {
-      throw std::runtime_error(
-          "This method only works with the level-set mesh");
-    }
+    static_assert(Mesh::is_cut_mesh,
+                  "This method requires a level-set-cut mesh");
 
     for (int i = 0; i < mesh.get_num_elements(); i++) {
       // Get the element node locations
       T element_xloc[spatial_dim * nodes_per_element];
-      get_element_xloc<T, Basis>(mesh, i, element_xloc);
+      get_element_xloc<T, Mesh, Basis>(mesh, i, element_xloc);
 
       // Get the element states and adjoints
       T element_dof[dof_per_element], element_psi[dof_per_element];
-      get_element_vars<T, dof_per_node, Basis>(mesh, i, dof, element_dof);
-      get_element_vars<T, dof_per_node, Basis>(mesh, i, psi, element_psi);
+      get_element_vars<T, dof_per_node, Mesh, Basis>(mesh, i, dof, element_dof);
+      get_element_vars<T, dof_per_node, Mesh, Basis>(mesh, i, psi, element_psi);
 
       // Create the element dfdphi
       std::vector<T> element_dfdphi(nodes_per_element, 0.0);
@@ -489,9 +489,10 @@ class GalerkinAnalysis final {
             jp_uq, jp_ugrad_ref, element_dfdphi.data());
       }
 
-      const Mesh& lsf_mesh = quadrature.get_lsf_mesh();
+      const auto& lsf_mesh = quadrature.get_lsf_mesh();
       int c = mesh.get_elem_cell(i);
-      add_element_dfdphi<T, Basis>(lsf_mesh, c, element_dfdphi.data(), dfdphi);
+      add_element_dfdphi<T, decltype(lsf_mesh), Basis>(
+          lsf_mesh, c, element_dfdphi.data(), dfdphi);
     }
   }
 

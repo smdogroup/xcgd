@@ -135,7 +135,9 @@ void solve_linear_elasticity_gd() {
   using Grid = StructuredGrid2D<T>;
   using LSF = Circle<Grid::spatial_dim>;
   using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
-  using Basis = GDBasis2D<T, Np_1d>;
+  using GridMesh = GridMesh<T, Np_1d>;
+  using CutMesh = CutMesh<T, Np_1d>;
+  using Basis = GDBasis2D<T, CutMesh>;
   int nxy[2] = {96, 64};
   T lxy[2] = {1.5, 1.0};
 
@@ -145,8 +147,8 @@ void solve_linear_elasticity_gd() {
   LSF lsf(center, r, true);
 
   Grid grid(nxy, lxy);
-  Basis::Mesh mesh(grid, lsf);
-  Basis::Mesh lsf_mesh(grid);
+  GridMesh lsf_mesh(grid);
+  CutMesh mesh(grid, lsf);
   Basis basis(mesh);
   Quadrature quadrature(mesh, lsf_mesh);
 

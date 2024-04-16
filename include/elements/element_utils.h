@@ -104,9 +104,8 @@ inline void jtransform(
   }
 }
 
-template <typename T, class Basis>
-void get_element_xloc(const typename Basis::Mesh& mesh, int e,
-                      T element_xloc[]) {
+template <typename T, class Mesh, class Basis>
+void get_element_xloc(const Mesh& mesh, int e, T element_xloc[]) {
   int constexpr nodes_per_element = Basis::nodes_per_element;
   int constexpr spatial_dim = Basis::spatial_dim;
   int nodes[nodes_per_element];
@@ -117,9 +116,8 @@ void get_element_xloc(const typename Basis::Mesh& mesh, int e,
   }
 }
 
-template <typename T, int dim, class Basis>
-void get_element_vars(const typename Basis::Mesh& mesh, int e, const T dof[],
-                      T element_dof[]) {
+template <typename T, int dim, class Mesh, class Basis>
+void get_element_vars(const Mesh& mesh, int e, const T dof[], T element_dof[]) {
   int constexpr nodes_per_element = Basis::nodes_per_element;
   int constexpr spatial_dim = Basis::spatial_dim;
   int nodes[nodes_per_element];
@@ -131,9 +129,8 @@ void get_element_vars(const typename Basis::Mesh& mesh, int e, const T dof[],
   }
 }
 
-template <typename T, int dim, class Basis>
-void add_element_res(const typename Basis::Mesh& mesh, int e,
-                     const T element_res[], T res[]) {
+template <typename T, int dim, class Mesh, class Basis>
+void add_element_res(const Mesh& mesh, int e, const T element_res[], T res[]) {
   int constexpr nodes_per_element = Basis::nodes_per_element;
   int constexpr spatial_dim = Basis::spatial_dim;
   int nodes[nodes_per_element];
@@ -145,9 +142,9 @@ void add_element_res(const typename Basis::Mesh& mesh, int e,
   }
 }
 
-template <typename T, class Basis>
-void add_element_dfdx(const typename Basis::Mesh& mesh, int e,
-                      const T element_dfdx[], T dfdx[]) {
+template <typename T, class Mesh, class Basis>
+void add_element_dfdx(const Mesh& mesh, int e, const T element_dfdx[],
+                      T dfdx[]) {
   int constexpr nodes_per_element = Basis::nodes_per_element;
   int nodes[nodes_per_element];
   mesh.get_elem_dof_nodes(e, nodes);
@@ -157,9 +154,9 @@ void add_element_dfdx(const typename Basis::Mesh& mesh, int e,
   }
 }
 
-template <typename T, class Basis>
-void add_element_dfdphi(const typename Basis::Mesh& lsf_mesh, int c,
-                        const T element_dfdphi[], T dfdphi[]) {
+template <typename T, class Mesh, class Basis>
+void add_element_dfdphi(const Mesh& lsf_mesh, int c, const T element_dfdphi[],
+                        T dfdphi[]) {
   int constexpr nodes_per_element = Basis::nodes_per_element;
   int nodes[nodes_per_element];
   lsf_mesh.get_elem_dof_nodes(c, nodes);
@@ -695,12 +692,9 @@ void add_jac_adj_product(
   }
 }
 
-template <typename T, int Np_1d, int samples_1d>
+template <typename T, int samples_1d, class Mesh>
 class GDSampler2D final : public QuadratureBase<T> {
  private:
-  using Mesh =
-      GDMesh2D<T, Np_1d>;  // Np_1d and samples_1d can be different, which is
-                           // the whole point of using this Sampler clas
   static constexpr int spatial_dim = Mesh::spatial_dim;
   static constexpr int samples = samples_1d * samples_1d;
 
@@ -717,7 +711,7 @@ class GDSampler2D final : public QuadratureBase<T> {
     T lxy[2], xy0[2];
     for (int d = 0; d < spatial_dim; d++) {
       xy0[d] = xymin[d] + 0.05 * (xymax[d] - xymin[d]);
-      lxy[d] = 0.95 * (xymax[d] - xymin[d]);
+      lxy[d] = 0.9 * (xymax[d] - xymin[d]);
     }
     int nxy[2] = {samples_1d - 1, samples_1d - 1};
     StructuredGrid2D<T> grid(nxy, lxy, xy0);
@@ -761,12 +755,12 @@ class Interpolator final {
       std::vector<T> element_dof;
       if (dof) {
         element_dof.resize(Mesh::nodes_per_element);
-        get_element_vars<T, dof_per_node, Basis>(mesh, elem, dof,
-                                                 element_dof.data());
+        get_element_vars<T, dof_per_node, Mesh, Basis>(mesh, elem, dof,
+                                                       element_dof.data());
       }
 
       std::vector<T> element_xloc(Mesh::nodes_per_element * Basis::spatial_dim);
-      get_element_xloc<T, Basis>(mesh, elem, element_xloc.data());
+      get_element_xloc<T, Mesh, Basis>(mesh, elem, element_xloc.data());
 
       std::vector<T> pts, wts;
       int nsamples = sampler.get_quadrature_pts(elem, pts, wts);

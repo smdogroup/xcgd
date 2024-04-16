@@ -59,19 +59,15 @@ void interpolate_dof_at_quadratures(const Mesh& mesh,
   interpolator.to_vtk(name + "_field.vtk", dof.data());
 }
 
-// TODO: finish this
-TEST(elements, InterpolationQuad) {}
-
-TEST(elements, SampleGDGaussLSF) {
+TEST(elements, GDSamplingCutMeshGaussQuadratures) {
   constexpr int Np_1d = 2;
   constexpr int samples_1d = 10;
   using T = double;
   using Grid = StructuredGrid2D<T>;
-  using Basis = GDBasis2D<T, Np_1d>;
-  using Mesh = Basis::Mesh;
+  using Mesh = CutMesh<T, Np_1d>;
+  using Basis = GDBasis2D<T, Mesh>;
   using LSF = Line;
-  using Quadrature = GDSampler2D<T, Np_1d, samples_1d>;
-
+  using Quadrature = GDSampler2D<T, samples_1d, Mesh>;
   int nxy[2] = {5, 5};
   T lxy[2] = {1.0, 1.0};
   LSF lsf;
@@ -81,38 +77,36 @@ TEST(elements, SampleGDGaussLSF) {
   Basis basis(mesh);
   Quadrature quadrature(mesh);
 
-  interpolate_dof_at_quadratures<T>(mesh, quadrature, basis,
-                                    "sample_gd_gauss_lsf");
+  interpolate_dof_at_quadratures<T>(mesh, quadrature, basis, "gd_sampling_lsf");
 }
 
-TEST(elements, QuadGDGaussLSF) {
+TEST(elements, GDInterpolationGaussQuadrature) {
   constexpr int Np_1d = 4;
   using T = double;
   using Grid = StructuredGrid2D<T>;
-  using Basis = GDBasis2D<T, Np_1d>;
-  using Mesh = Basis::Mesh;
-  using LSF = Line;
+  using Mesh = GridMesh<T, Np_1d>;
+  using Basis = GDBasis2D<T, Mesh>;
   using Quadrature = GDGaussQuadrature2D<T, Np_1d>;
 
   int nxy[2] = {20, 20};
   T lxy[2] = {1.0, 1.0};
-  LSF lsf;
 
   Grid grid(nxy, lxy);
-  Mesh mesh(grid, lsf);
+  Mesh mesh(grid);
   Basis basis(mesh);
   Quadrature quadrature(mesh);
 
   interpolate_dof_at_quadratures<T>(mesh, quadrature, basis,
-                                    "quad_gd_gauss_lsf");
+                                    "gd_interpolation_gauss");
 }
 
-TEST(elements, QuadGDLSFLSF) {
+TEST(elements, GDInterpolationLSFQuadrature) {
   constexpr int Np_1d = 4;
   using T = double;
   using Grid = StructuredGrid2D<T>;
-  using Basis = GDBasis2D<T, Np_1d>;
-  using Mesh = Basis::Mesh;
+  using GridMesh = GridMesh<T, Np_1d>;
+  using CutMesh = CutMesh<T, Np_1d>;
+  using Basis = GDBasis2D<T, CutMesh>;
   using LSF = Line;
   using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
 
@@ -121,10 +115,11 @@ TEST(elements, QuadGDLSFLSF) {
   LSF lsf;
 
   Grid grid(nxy, lxy);
-  Mesh mesh(grid, lsf);
-  Mesh lsf_mesh(grid);
+  GridMesh lsf_mesh(grid);
+  CutMesh mesh(grid, lsf);
   Basis basis(mesh);
   Quadrature quadrature(mesh, lsf_mesh);
 
-  interpolate_dof_at_quadratures<T>(mesh, quadrature, basis, "quad_gd_lsf_lsf");
+  interpolate_dof_at_quadratures<T>(mesh, quadrature, basis,
+                                    "gd_interpolation_lsf");
 }

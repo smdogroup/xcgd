@@ -119,11 +119,12 @@ void solve_poisson_gd() {
   int constexpr Np_1d = 4;
   using Grid = StructuredGrid2D<T>;
   using Quadrature = GDGaussQuadrature2D<T, Np_1d>;
-  using Basis = GDBasis2D<T, Np_1d>;
+  using Mesh = GridMesh<T, Np_1d>;
+  using Basis = GDBasis2D<T, Mesh>;
   int nxy[2] = {32, 32};
   T lxy[2] = {1.0, 1.0};
   Grid grid(nxy, lxy);
-  Basis::Mesh mesh(grid);
+  Mesh mesh(grid);
   Quadrature quadrature(mesh);
   Basis basis(mesh);
 

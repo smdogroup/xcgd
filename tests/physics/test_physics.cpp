@@ -7,6 +7,7 @@
 #include "analysis.h"
 #include "elements/fe_quadrilateral.h"
 #include "elements/fe_tetrahedral.h"
+#include "elements/gd_mesh.h"
 #include "elements/gd_vandermonde.h"
 #include "physics/helmholtz.h"
 #include "physics/linear_elasticity.h"
@@ -146,14 +147,14 @@ create_tet_basis() {
 }
 
 template <int Np_1d = 4>
-std::tuple<typename GDBasis2D<T, Np_1d>::Mesh *,
-           GDGaussQuadrature2D<T, Np_1d> *, GDBasis2D<T, Np_1d> *>
+std::tuple<GridMesh<T, Np_1d> *, GDGaussQuadrature2D<T, Np_1d> *,
+           GDBasis2D<T, GridMesh<T, Np_1d>> *>
 create_gd_basis() {
   int constexpr nx = 5, ny = 7;
   using Grid = StructuredGrid2D<T>;
   using Quadrature = GDGaussQuadrature2D<T, Np_1d>;
-  using Basis = GDBasis2D<T, Np_1d>;
-  using Mesh = typename Basis::Mesh;
+  using Mesh = GridMesh<T, Np_1d>;
+  using Basis = GDBasis2D<T, Mesh>;
 
   int nxy[2] = {nx, ny};
   T lxy[2] = {1.0, 1.4};

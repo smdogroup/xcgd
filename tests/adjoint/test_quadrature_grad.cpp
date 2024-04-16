@@ -30,15 +30,16 @@ TEST(adjoint, GDLSFQuadratureGradient) {
   using T = double;
 
   using Grid = StructuredGrid2D<T>;
-  using Basis = GDBasis2D<T, Np_1d>;
-  using Mesh = Basis::Mesh;
+  using GridMesh = GridMesh<T, Np_1d>;
+  using CutMesh = CutMesh<T, Np_1d>;
+  using Basis = GDBasis2D<T, CutMesh>;
   using LSF = Line;
   using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
 
   using Physics = LinearElasticity<T, Basis::spatial_dim>;
-  using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
+  using Analysis = GalerkinAnalysis<T, CutMesh, Quadrature, Basis, Physics>;
 
-  constexpr int spatial_dim = Mesh::spatial_dim;
+  constexpr int spatial_dim = CutMesh::spatial_dim;
   constexpr int nodes_per_element = Basis::nodes_per_element;
 
   int nxy[2] = {5, 5};
@@ -46,8 +47,8 @@ TEST(adjoint, GDLSFQuadratureGradient) {
   LSF lsf;
 
   Grid grid(nxy, lxy);
-  Mesh mesh(grid, lsf);
-  Mesh lsf_mesh(grid);
+  GridMesh lsf_mesh(grid);
+  CutMesh mesh(grid, lsf);
   Basis basis(mesh);
   Quadrature quadrature(mesh, lsf_mesh);
 
@@ -69,7 +70,7 @@ TEST(adjoint, GDLSFQuadratureGradient) {
 
     std::vector<T> p(lsf_dof.size(), 0.0);
     int cell = mesh.get_elem_cell(elem);
-    add_element_res<T, 1, Basis>(lsf_mesh, cell, elem_p, p.data());
+    add_element_res<T, 1, GridMesh, Basis>(lsf_mesh, cell, elem_p, p.data());
 
     double h = 1e-6;
     double tol = 1e-8;

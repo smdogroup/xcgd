@@ -32,9 +32,9 @@ void write_tet_to_vtk() {
 void write_gd_mesh_to_vtk() {
   using T = double;
   constexpr int Np_1d = 2;
-  using Basis = GDBasis2D<T, Np_1d>;
+  using Mesh = GridMesh<T, Np_1d>;
+  using Basis = GDBasis2D<T, Mesh>;
   using Grid = StructuredGrid2D<T>;
-  using Mesh = Basis::Mesh;
 
   int nxy[2] = {10, 10};
   T lxy[2] = {1.0, 1.5};

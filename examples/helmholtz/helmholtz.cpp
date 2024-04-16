@@ -157,16 +157,19 @@ void solve_helmholtz_gd() {
   using T = double;
   int constexpr Np_1d = 4;
   using Grid = StructuredGrid2D<T>;
-  using Quadrature = GDGaussQuadrature2D<T, Np_1d>;
-  using Basis = GDBasis2D<T, Np_1d>;
+  using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
+  using GridMesh = GridMesh<T, Np_1d>;
+  using CutMesh = CutMesh<T, Np_1d>;
+  using Basis = GDBasis2D<T, CutMesh>;
   int nxy[2] = {64, 64};
   T lxy[2] = {1.0, 1.0};
   T pt0[2] = {0.5, 0.5};
   T r = 0.5;
   Grid grid(nxy, lxy);
   Circle lsf(pt0, r);
-  Basis::Mesh mesh(grid, lsf);
-  Quadrature quadrature(mesh);
+  GridMesh lsf_mesh(grid);
+  CutMesh mesh(grid, lsf);
+  Quadrature quadrature(mesh, lsf_mesh);
   Basis basis(mesh);
 
   auto xfunc = [pt0, r](T *xloc) {
@@ -182,21 +185,6 @@ void solve_helmholtz_gd() {
 
   T r0 = 5.0;
   solve_helmholtz(r0, xfunc, mesh, quadrature, basis, "gd");
-
-  // // Visualize stencil for each element (resulting very large vtk file!)
-  // ToVTK<T, Basis::Mesh> vtk(mesh, "gd_mesh.vtk");
-  // vtk.write_mesh();
-  // for (int elem = 0; elem < mesh.get_num_elements(); elem++) {
-  //   std::vector<T> dof(mesh.get_num_nodes(), 0.0);
-  //   int nodes[Basis::Mesh::nodes_per_element];
-  //   mesh.get_elem_dof_nodes(elem, nodes);
-  //   for (int i = 0; i < Basis::Mesh::nodes_per_element; i++) {
-  //     dof[nodes[i]] = 1.0;
-  //   }
-  //   char name[256];
-  //   std::snprintf(name, 256, "elem_%05d", elem);
-  //   vtk.write_sol(name, dof.data());
-  // }
 }
 
 int main(int argc, char *argv[]) {

@@ -9,7 +9,8 @@ TEST(mesh, GDMeshStructured) {
   constexpr int Np_1d = 4;
   using T = double;
   using Grid = StructuredGrid2D<T>;
-  using Mesh = GDMesh2D<T, Np_1d>;
+  using Mesh = GridMesh<T, Np_1d>;
+  using Basis = GDBasis2D<T, Mesh>;
 
   int nxy[2] = {4, 3};
   T lxy[2] = {1.0, 1.0};
@@ -65,7 +66,7 @@ void generate_lsf_mesh(bool flip = false) {
   constexpr int Np_1d = 4;
   using T = double;
   using Grid = StructuredGrid2D<T>;
-  using Mesh = GDMesh2D<T, Np_1d>;
+  using Mesh = CutMesh<T, Np_1d>;
 
   int nxy[2] = {21, 21};
   T lxy[2] = {2.0, 2.0};
