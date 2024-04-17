@@ -1,4 +1,7 @@
+#include "analysis.h"
+#include "elements/element_utils.h"
 #include "elements/gd_vandermonde.h"
+#include "physics/volume.h"
 #include "utils/vtk.h"
 
 template <int spatial_dim>
@@ -34,11 +37,15 @@ int main() {
   using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
   using Mesh = CutMesh<T, Np_1d>;
   using Basis = GDBasis2D<T, Mesh>;
-  int nxy[2] = {96, 64};
-  T lxy[2] = {1.5, 1.0};
 
-  double center[2] = {0.75, 0.5};
-  double r = 0.3;
+  using Physics = VolumePhysics<T, Grid::spatial_dim>;
+  using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
+
+  int nxy[2] = {48, 64};
+  T lxy[2] = {3.0, 3.5};
+
+  double center[2] = {1.2, 1.3};
+  double r = 1.0;
 
   LSF lsf(center, r, false);
 
@@ -47,12 +54,16 @@ int main() {
   Basis basis(mesh);
   Quadrature quadrature(mesh);
 
-  std::vector<T> &lsf_dof = mesh.get_lsf_dof();
+  Physics physics;
+  Analysis analysis(mesh, quadrature, basis, physics);
 
-  for (int i = 0; i < lsf_dof.size(); i++) {
-    lsf_dof[i] += 0.1 * (T(rand()) / RAND_MAX - 0.5);
-  }
-  mesh.update_mesh();
+  std::vector<T> dummy(mesh.get_num_nodes(), 0.0);
+  std::printf("LSF area: %20.10e\n", analysis.energy(nullptr, dummy.data()));
+
+  using Interpolator = Interpolator<T, Quadrature, Basis>;
+  Interpolator interp(mesh, quadrature, basis);
+
+  interp.to_vtk("quadratures.vtk", dummy.data());
 
   ToVTK<T, GridMesh<T, Np_1d>> lsf_vtk(mesh.get_lsf_mesh(), "lsf_mesh.vtk");
   lsf_vtk.write_mesh();

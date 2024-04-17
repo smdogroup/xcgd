@@ -205,8 +205,8 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
                                          xi_max_lsf.data());
 
     algoim::uvector<T, spatial_dim> xi_min, xi_max;
-    get_computational_coordinates_limits(mesh, elem, xi_min.data(),
-                                         xi_max.data());
+    T wcoef = get_computational_coordinates_limits(mesh, elem, xi_min.data(),
+                                                   xi_max.data());
 
     // Create the functor that evaluates the interpolation given an arbitrary
     // point within the computational coordinates
@@ -220,7 +220,7 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
 
     // Get quadrature points and weights
     getQuadrature(xi_min, xi_max, xi_min_lsf, xi_max_lsf, element_lsf, eval,
-                  pts, wts);
+                  wcoef, pts, wts);
 
     return wts.size();
   }
@@ -250,8 +250,8 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
                                          xi_max_lsf.data());
 
     algoim::uvector<T, spatial_dim> xi_min, xi_max;
-    get_computational_coordinates_limits(mesh, elem, xi_min.data(),
-                                         xi_max.data());
+    T wcoef = get_computational_coordinates_limits(mesh, elem, xi_min.data(),
+                                                   xi_max.data());
 
     // Create the functor that evaluates the interpolation given an arbitrary
     // point within the computational coordinates
@@ -265,7 +265,7 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
 
     // Get quadrature points and weights
     getQuadrature(xi_min, xi_max, xi_min_lsf, xi_max_lsf, element_lsf, eval,
-                  pts, wts);
+                  wcoef, pts, wts);
 
     int num_quad_pts = wts.size();
 
@@ -285,7 +285,7 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
       element_lsf_d[i].dpart(1.0);
       std::vector<T> dpts, dwts;
       getQuadrature(xi_min, xi_max, xi_min_lsf, xi_max_lsf, element_lsf_d, eval,
-                    dpts, dwts);
+                    wcoef, dpts, dwts);
       element_lsf_d[i].dpart(0.0);
 
       if (dwts.size() != num_quad_pts) {
@@ -336,7 +336,8 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
                      const algoim::uvector<T, spatial_dim>& xi_max_lsf,
                      const T2 element_lsf[],
                      const VandermondeEvaluator<T, GridMesh>& eval,
-                     std::vector<T>& pts, std::vector<T>& wts) const {
+                     const T wcoef, std::vector<T>& pts,
+                     std::vector<T>& wts) const {
     constexpr bool is_dual = is_specialization<T2, duals::dual>::value;
 
     // Obtain the Bernstein polynomial representation of the level-set
@@ -363,9 +364,9 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
               }
             }
             if constexpr (is_dual) {
-              wts.push_back(w.dpart());
+              wts.push_back(wcoef * w.dpart());
             } else {
-              wts.push_back(w);
+              wts.push_back(wcoef * w);
             }
           }
         });

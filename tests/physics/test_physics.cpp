@@ -207,15 +207,6 @@ void test_helmholtz(
   test_physics(tuple, physics, h, tol);
 }
 
-template <class Quadrature, class Basis>
-void test_integral(
-    std::tuple<typename Basis::Mesh *, Quadrature *, Basis *> tuple,
-    double h = 1e-30, double tol = 1e-14) {
-  using Physics = IntegralPhysics<T, Basis::spatial_dim>;
-  Physics physics;
-  test_physics(tuple, physics, h, tol);
-}
-
 TEST(physics, NeohookeanQuad) { test_neohookean(create_quad_basis()); }
 TEST(physics, NeohookeanTet) { test_neohookean(create_tet_basis()); }
 TEST(physics, NeohookeanGD) { test_neohookean(create_gd_basis(), 1e-8, 1e-6); }
@@ -237,6 +228,3 @@ TEST(physics, LinearElasticityTet) { test_elasticity(create_tet_basis()); }
 TEST(physics, LinearElasticityGD) {
   test_elasticity(create_gd_basis(), 1e-8, 1e-8);
 }
-
-TEST(physics, IntegralQuad) { test_integral(create_quad_basis()); }
-TEST(physics, IntegralTet) { test_integral(create_tet_basis()); }

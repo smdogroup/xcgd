@@ -525,7 +525,7 @@ T get_computational_coordinates_limits(const Mesh& mesh, int elem, T* xi_min,
 
   T hx = (uv_max[0] - uv_min[0]) / (xy_max[0] - xy_min[0]);
   T hy = (uv_max[1] - uv_min[1]) / (xy_max[1] - xy_min[1]);
-  T wt = 4.0 * hx * hy;
+  T wcoef = 4.0 * hx * hy;
 
   T cx = (2.0 * uv_min[0] - xy_min[0] - xy_max[0]) / (xy_max[0] - xy_min[0]);
   T dx = 2.0 * hx;
@@ -537,7 +537,7 @@ T get_computational_coordinates_limits(const Mesh& mesh, int elem, T* xi_min,
   xi_max[0] = cx + dx;
   xi_max[1] = cy + dy;
 
-  return wt;
+  return wcoef;
 }
 
 #endif  // XCGD_GD_MESH_H
