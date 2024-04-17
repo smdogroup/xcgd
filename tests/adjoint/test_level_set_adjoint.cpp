@@ -16,11 +16,6 @@ class Line {
     return -k * x(0) + x(1) - b;
   }
 
-  template <typename T>
-  algoim::uvector<T, spatial_dim> grad(const algoim::uvector<T, 2>& x) const {
-    return algoim::uvector<T, spatial_dim>(-k, 1.0);
-  }
-
  private:
   double k, b;
 };
@@ -55,9 +50,8 @@ TEST(adjoint, determinantGrad) {
   using T = double;
 
   using Grid = StructuredGrid2D<T>;
-  using GridMesh = GridMesh<T, Np_1d>;
-  using CutMesh = CutMesh<T, Np_1d>;
-  using Basis = GDBasis2D<T, CutMesh>;
+  using Mesh = CutMesh<T, Np_1d>;
+  using Basis = GDBasis2D<T, Mesh>;
 
   using LSF = Line;
   using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
@@ -69,10 +63,9 @@ TEST(adjoint, determinantGrad) {
   LSF lsf;
 
   Grid grid(nxy, lxy);
-  CutMesh mesh(grid, lsf);
-  GridMesh lsf_mesh(grid);
+  Mesh mesh(grid, lsf);
   Basis basis(mesh);
-  Quadrature quadrature(mesh, lsf_mesh);
+  Quadrature quadrature(mesh);
 
   using Interpolator = Interpolator<T, Quadrature, Basis>;
   Interpolator interp(mesh, quadrature, basis);
@@ -81,15 +74,15 @@ TEST(adjoint, determinantGrad) {
     dof[i] = T(i);
   }
   interp.to_vtk("interp.vtk", dof.data());
-  ToVTK<T, CutMesh> vtk(mesh, "mesh.vtk");
+  ToVTK<T, Mesh> vtk(mesh, "mesh.vtk");
   vtk.write_mesh();
   vtk.write_sol("lsf", mesh.get_lsf_nodes().data());
 
   for (int elem = 0; elem < mesh.get_num_elements(); elem++) {
     std::vector<T> dof(mesh.get_num_nodes(), 0.0);
-    int nodes[CutMesh::nodes_per_element];
+    int nodes[Mesh::nodes_per_element];
     mesh.get_elem_dof_nodes(elem, nodes);
-    for (int i = 0; i < CutMesh::nodes_per_element; i++) {
+    for (int i = 0; i < Mesh::nodes_per_element; i++) {
       dof[nodes[i]] = 1.0;
     }
     char name[256];
@@ -106,7 +99,7 @@ TEST(adjoint, determinantGrad) {
   constexpr int nodes_per_element = Basis::nodes_per_element;
 
   T element_xloc[spatial_dim * nodes_per_element];
-  get_element_xloc<T, CutMesh, Basis>(mesh, i, element_xloc);
+  get_element_xloc<T, Mesh, Basis>(mesh, i, element_xloc);
 
   std::vector<T> pts, wts, pts_grad, wts_grad;
   int num_quad_pts =
@@ -152,7 +145,7 @@ void test_jac_psi_product(Basis& basis, Mesh& mesh, Quadrature& quadrature,
                           Physics& physics, double h = 1e-6,
                           double tol = 1e-6) {
   int ndof = Physics::dof_per_node * mesh.get_num_nodes();
-  int ndv = quadrature.get_lsf_mesh().get_num_nodes();
+  int ndv = mesh.get_lsf_mesh().get_num_nodes();
   std::vector<T>& dvs = mesh.get_lsf_dof();
 
   std::vector<T> dof(ndof), psi(ndof), res1(ndof, 0.0), res2(ndof, 0.0);
@@ -200,9 +193,8 @@ TEST(adjoint, JacPsiProductElasticity) {
   using T = double;
 
   using Grid = StructuredGrid2D<T>;
-  using GridMesh = GridMesh<T, Np_1d>;
-  using CutMesh = CutMesh<T, Np_1d>;
-  using Basis = GDBasis2D<T, CutMesh>;
+  using Mesh = CutMesh<T, Np_1d>;
+  using Basis = GDBasis2D<T, Mesh>;
   using LSF = Line;
   using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
   using Physics = LinearElasticity<T, Basis::spatial_dim>;
@@ -212,10 +204,9 @@ TEST(adjoint, JacPsiProductElasticity) {
   LSF lsf;
 
   Grid grid(nxy, lxy);
-  GridMesh lsf_mesh(grid);
-  CutMesh mesh(grid, lsf);
+  Mesh mesh(grid, lsf);
   Basis basis(mesh);
-  Quadrature quadrature(mesh, lsf_mesh);
+  Quadrature quadrature(mesh);
 
   T E = 30.0, nu = 0.3;
   Physics physics(E, nu);
@@ -240,10 +231,9 @@ TEST(adjoint, JacPsiProductPoisson) {
   LSF lsf;
 
   Grid grid(nxy, lxy);
-  GridMesh lsf_mesh(grid);
   CutMesh mesh(grid, lsf);
   Basis basis(mesh);
-  Quadrature quadrature(mesh, lsf_mesh);
+  Quadrature quadrature(mesh);
 
   Physics physics;
 

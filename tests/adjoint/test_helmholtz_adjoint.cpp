@@ -38,17 +38,16 @@ TEST(adjoint, JacPsiProductHelmholtz) {
   using Grid = StructuredGrid2D<T>;
   using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
   using GridMesh = GridMesh<T, Np_1d>;
-  using CutMesh = CutMesh<T, Np_1d>;
-  using Basis = GDBasis2D<T, CutMesh>;
+  using Mesh = CutMesh<T, Np_1d>;
+  using Basis = GDBasis2D<T, Mesh>;
   int nxy[2] = {5, 5};
   T lxy[2] = {1.0, 1.0};
   T pt0[2] = {0.5, 0.5};
   T r = 0.5;
   Grid grid(nxy, lxy);
   Circle lsf(pt0, r);
-  CutMesh mesh(grid, lsf);
-  GridMesh lsf_mesh(grid);
-  Quadrature quadrature(mesh, lsf_mesh);
+  Mesh mesh(grid, lsf);
+  Quadrature quadrature(mesh);
   Basis basis(mesh);
 
   // Export quadrature points
@@ -68,7 +67,7 @@ TEST(adjoint, JacPsiProductHelmholtz) {
   };
 
   using Physics = HelmholtzPhysics<T, Basis::spatial_dim>;
-  using Analysis = GalerkinAnalysis<T, CutMesh, Quadrature, Basis, Physics>;
+  using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
   using BSRMat = GalerkinBSRMat<T, Physics::dof_per_node>;
   using CSCMat = SparseUtils::CSCMat<T>;
 

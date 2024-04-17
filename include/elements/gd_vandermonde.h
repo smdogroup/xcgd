@@ -182,8 +182,8 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
   constexpr static int nodes_per_element = Basis::nodes_per_element;
 
  public:
-  GDLSFQuadrature2D(const CutMesh& mesh, const GridMesh& lsf_mesh)
-      : mesh(mesh), lsf_mesh(lsf_mesh) {}
+  GDLSFQuadrature2D(const CutMesh& mesh)
+      : mesh(mesh), lsf_mesh(mesh.get_lsf_mesh()) {}
 
   /**
    * @brief Get the quadrature points and weights
@@ -308,8 +308,6 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
 
     return num_quad_pts;
   }
-
-  const GridMesh& get_lsf_mesh() const { return lsf_mesh; };
 
  private:
   template <typename T2>

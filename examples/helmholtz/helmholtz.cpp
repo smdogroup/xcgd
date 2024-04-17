@@ -158,18 +158,16 @@ void solve_helmholtz_gd() {
   int constexpr Np_1d = 4;
   using Grid = StructuredGrid2D<T>;
   using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
-  using GridMesh = GridMesh<T, Np_1d>;
-  using CutMesh = CutMesh<T, Np_1d>;
-  using Basis = GDBasis2D<T, CutMesh>;
+  using Mesh = CutMesh<T, Np_1d>;
+  using Basis = GDBasis2D<T, Mesh>;
   int nxy[2] = {64, 64};
   T lxy[2] = {1.0, 1.0};
   T pt0[2] = {0.5, 0.5};
   T r = 0.5;
   Grid grid(nxy, lxy);
   Circle lsf(pt0, r);
-  GridMesh lsf_mesh(grid);
-  CutMesh mesh(grid, lsf);
-  Quadrature quadrature(mesh, lsf_mesh);
+  Mesh mesh(grid, lsf);
+  Quadrature quadrature(mesh);
   Basis basis(mesh);
 
   auto xfunc = [pt0, r](T *xloc) {

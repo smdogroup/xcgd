@@ -105,8 +105,8 @@ TEST(elements, GDInterpolationLSFQuadrature) {
   using T = double;
   using Grid = StructuredGrid2D<T>;
   using GridMesh = GridMesh<T, Np_1d>;
-  using CutMesh = CutMesh<T, Np_1d>;
-  using Basis = GDBasis2D<T, CutMesh>;
+  using Mesh = CutMesh<T, Np_1d>;
+  using Basis = GDBasis2D<T, Mesh>;
   using LSF = Line;
   using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
 
@@ -115,10 +115,9 @@ TEST(elements, GDInterpolationLSFQuadrature) {
   LSF lsf;
 
   Grid grid(nxy, lxy);
-  GridMesh lsf_mesh(grid);
-  CutMesh mesh(grid, lsf);
+  Mesh mesh(grid, lsf);
   Basis basis(mesh);
-  Quadrature quadrature(mesh, lsf_mesh);
+  Quadrature quadrature(mesh);
 
   interpolate_dof_at_quadratures<T>(mesh, quadrature, basis,
                                     "gd_interpolation_lsf");

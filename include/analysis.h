@@ -489,7 +489,7 @@ class GalerkinAnalysis final {
             jp_uq, jp_ugrad_ref, element_dfdphi.data());
       }
 
-      const auto& lsf_mesh = quadrature.get_lsf_mesh();
+      const auto& lsf_mesh = mesh.get_lsf_mesh();
       int c = mesh.get_elem_cell(i);
       add_element_dfdphi<T, decltype(lsf_mesh), Basis>(
           lsf_mesh, c, element_dfdphi.data(), dfdphi);

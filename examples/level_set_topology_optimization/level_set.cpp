@@ -39,9 +39,8 @@ int main() {
   using Grid = StructuredGrid2D<T>;
   using LSF = Circle<Grid::spatial_dim>;
   using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
-  using CutMesh = CutMesh<T, Np_1d>;
-  using GridMesh = GridMesh<T, Np_1d>;
-  using Basis = GDBasis2D<T, CutMesh>;
+  using Mesh = CutMesh<T, Np_1d>;
+  using Basis = GDBasis2D<T, Mesh>;
   int nxy[2] = {96, 64};
   T lxy[2] = {1.5, 1.0};
 
@@ -51,12 +50,15 @@ int main() {
   LSF lsf(center, r, true);
 
   Grid grid(nxy, lxy);
-  CutMesh mesh(grid, lsf);
-  GridMesh lsf_mesh(grid);
+  Mesh mesh(grid, lsf);
   Basis basis(mesh);
-  Quadrature quadrature(mesh, lsf_mesh);
+  Quadrature quadrature(mesh);
 
-  ToVTK<T, GridMesh> vtk(lsf_mesh, "lsf.vtk");
+  ToVTK<T, GridMesh<T, Np_1d>> lsf_vtk(mesh.get_lsf_mesh(), "lsf_mesh.vtk");
+  lsf_vtk.write_mesh();
+  lsf_vtk.write_sol("lsf", mesh.get_lsf_dof().data());
+
+  ToVTK<T, Mesh> vtk(mesh, "cut_mesh.vtk");
   vtk.write_mesh();
-  vtk.write_sol("lsf", mesh.get_lsf_dof().data());
+  vtk.write_sol("lsf", mesh.get_lsf_nodes().data());
 }

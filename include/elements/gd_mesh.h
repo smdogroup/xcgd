@@ -236,6 +236,7 @@ template <typename T, int Np_1d>
 class CutMesh final : public GDMeshBase<T, Np_1d> {
  private:
   using MeshBase = GDMeshBase<T, Np_1d>;
+  using LSFMesh = GridMesh<T, Np_1d>;
 
  public:
   using MeshBase::corner_nodes_per_element;
@@ -256,11 +257,10 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
    */
   template <class Func>
   CutMesh(const Grid& grid, const Func& lsf)
-      : MeshBase(grid), lsf_dof(grid.get_num_verts()) {
-    int nverts = this->grid.get_num_verts();
-    for (int i = 0; i < nverts; i++) {
+      : MeshBase(grid), lsf_mesh(grid), lsf_dof(lsf_mesh.get_num_nodes()) {
+    for (int i = 0; i < lsf_dof.size(); i++) {
       algoim::uvector<T, spatial_dim> xloc;
-      this->grid.get_vert_xloc(i, xloc.data());
+      lsf_mesh.get_node_xloc(i, xloc.data());
       lsf_dof[i] = lsf(xloc);
     }
     update_mesh();
@@ -332,31 +332,20 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
     return lsf_nodes;
   }
 
+  const LSFMesh& get_lsf_mesh() const { return lsf_mesh; }
+
   inline const std::vector<T>& get_lsf_dof() const { return lsf_dof; }
   inline std::vector<T>& get_lsf_dof() { return lsf_dof; }
 
   inline int get_elem_cell(int elem) const { return elem_cells[elem]; }
 
- private:
-  // Given the lsf dof, interpolate the gradient of the lsf at the centroid
-  // a cell using bilinear quad element
-  std::array<T, spatial_dim> interp_lsf_grad(int cell) {
-    int verts[Grid::nverts_per_cell];
-    this->grid.get_cell_verts(cell, verts);
-
-    const T* h = this->grid.get_h();
-    std::array<T, spatial_dim> grad;
-
-    grad[0] = 0.5 / h[0] *
-              (-lsf_dof[verts[0]] + lsf_dof[verts[1]] + lsf_dof[verts[2]] -
-               lsf_dof[verts[3]]);
-    grad[1] = 0.5 / h[1] *
-              (-lsf_dof[verts[0]] - lsf_dof[verts[1]] + lsf_dof[verts[2]] +
-               lsf_dof[verts[3]]);
-    return grad;
-  }
-
+  // Update the mesh when the lsf_dof is updated
   void update_mesh() {
+    node_verts.clear();
+    vert_nodes.clear();
+    elem_cells.clear();
+    dir_cells.clear();
+
     // LSF values are always associated with the ground grid verts, unlike the
     // dof values which might only be associated with part of the ground grid
     // verts (i.e. nodes)
@@ -428,6 +417,25 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
     }
   }
 
+ private:
+  // Given the lsf dof, interpolate the gradient of the lsf at the centroid
+  // a cell using bilinear quad element
+  std::array<T, spatial_dim> interp_lsf_grad(int cell) {
+    int verts[Grid::nverts_per_cell];
+    this->grid.get_cell_verts(cell, verts);
+
+    const T* h = this->grid.get_h();
+    std::array<T, spatial_dim> grad;
+
+    grad[0] = 0.5 / h[0] *
+              (-lsf_dof[verts[0]] + lsf_dof[verts[1]] + lsf_dof[verts[2]] -
+               lsf_dof[verts[3]]);
+    grad[1] = 0.5 / h[1] *
+              (-lsf_dof[verts[0]] - lsf_dof[verts[1]] + lsf_dof[verts[2]] +
+               lsf_dof[verts[3]]);
+    return grad;
+  }
+
   /**
    * @brief Adjust the stencil by pushing the stencil verts that are outside the
    * LSF boundary inward such that all nodes are active nodes
@@ -463,6 +471,8 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
     }
 #endif
   }
+
+  LSFMesh lsf_mesh;
 
   int num_nodes = -1;
   int num_elements = -1;
