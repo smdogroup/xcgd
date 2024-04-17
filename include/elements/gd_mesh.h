@@ -2,6 +2,7 @@
 #define XCGD_GD_MESH_H
 
 #include <algorithm>
+#include <array>
 #include <map>
 #include <set>
 #include <vector>
@@ -20,7 +21,7 @@ class StructuredGrid2D final {
   /**
    * @param nxy_ numbers of cells in x, y directions
    * @param lxy_ lengths of the grid in x, y directions
-   * @param lxy_ origin (x, y) of the grid
+   * @param xy0_ origin (x, y) of the grid
    */
   StructuredGrid2D(const int* nxy_, const T* lxy_, const T* xy0_ = nullptr) {
     for (int d = 0; d < spatial_dim; d++) {
@@ -31,6 +32,7 @@ class StructuredGrid2D final {
       } else {
         xy0[d] = 0.0;
       }
+      h[d] = lxy[d] / T(nxy[d]);
     }
   }
 
@@ -89,6 +91,25 @@ class StructuredGrid2D final {
     }
   }
 
+  // cell -> xloc for all verts
+  void get_cell_verts_xloc(int cell, T* xloc) const {
+    if (xloc) {
+      int nij[spatial_dim] = {cell % nxy[0], cell / nxy[0]};
+
+      xloc[0] = xy0[0] + h[0] * nij[0];
+      xloc[1] = xy0[1] + h[1] * nij[1];
+
+      xloc[2] = xy0[0] + h[0] * (nij[0] + 1);
+      xloc[3] = xy0[1] + h[1] * nij[1];
+
+      xloc[4] = xy0[0] + h[0] * (nij[0] + 1);
+      xloc[5] = xy0[1] + h[1] * (nij[1] + 1);
+
+      xloc[6] = xy0[0] + h[0] * nij[0];
+      xloc[7] = xy0[1] + h[1] * (nij[1] + 1);
+    }
+  }
+
   void get_cell_vert_ranges(int cell, T* xloc_min, T* xloc_max) const {
     int verts[4];
     get_cell_verts(cell, verts);
@@ -102,7 +123,7 @@ class StructuredGrid2D final {
       int nij[spatial_dim];
       get_vert_coords(vert, nij);
       for (int d = 0; d < spatial_dim; d++) {
-        xloc[d] = xy0[d] + lxy[d] * T(nij[d]) / T(nxy[d]);
+        xloc[d] = xy0[d] + h[d] * T(nij[d]);
       }
     }
   }
@@ -113,7 +134,7 @@ class StructuredGrid2D final {
       int nij[spatial_dim];
       get_cell_coords(cell, nij);
       for (int d = 0; d < spatial_dim; d++) {
-        xloc[d] = xy0[d] + lxy[d] * (T(nij[d]) + 0.5) / T(nxy[d]);
+        xloc[d] = xy0[d] + h[d] * (T(nij[d]) + 0.5);
       }
     }
   }
@@ -121,16 +142,20 @@ class StructuredGrid2D final {
   const int* get_nxy() const { return nxy; };
   const T* get_lxy() const { return lxy; };
   const T* get_xy0() const { return xy0; };
+  const T* get_h() const { return h; };
 
  private:
   int nxy[spatial_dim];
   T lxy[spatial_dim];
   T xy0[spatial_dim];
+  T h[spatial_dim];
 };
 
 /**
- * @brief The 2-dimensional Galerkin difference mesh defined on a structured
+ * @brief The Galerkin difference mesh defined on a structured
  * grid, i.e. no cuts by a level set function
+ *
+ * Note: This class is light-weight, as the mesh data is computed on-the-fly.
  */
 template <typename T, int Np_1d>
 class GridMesh final : public GDMeshBase<T, Np_1d> {
@@ -203,6 +228,10 @@ class GridMesh final : public GDMeshBase<T, Np_1d> {
   int num_elements = -1;
 };
 
+/**
+ * @brief The Galerkin difference mesh defined on a structured
+ * grid with cuts defined by a level set function
+ */
 template <typename T, int Np_1d>
 class CutMesh final : public GDMeshBase<T, Np_1d> {
  private:
@@ -228,7 +257,13 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
   template <class Func>
   CutMesh(const Grid& grid, const Func& lsf)
       : MeshBase(grid), lsf_dof(grid.get_num_verts()) {
-    init_dofs_from_lsf(lsf);
+    int nverts = this->grid.get_num_verts();
+    for (int i = 0; i < nverts; i++) {
+      algoim::uvector<T, spatial_dim> xloc;
+      this->grid.get_vert_xloc(i, xloc.data());
+      lsf_dof[i] = lsf(xloc);
+    }
+    update_mesh();
     num_nodes = node_verts.size();
     num_elements = elem_cells.size();
   }
@@ -303,19 +338,33 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
   inline int get_elem_cell(int elem) const { return elem_cells[elem]; }
 
  private:
-  template <class Func>
-  void init_dofs_from_lsf(const Func& lsf) {
+  // Given the lsf dof, interpolate the gradient of the lsf at the centroid
+  // a cell using bilinear quad element
+  std::array<T, spatial_dim> interp_lsf_grad(int cell) {
+    int verts[Grid::nverts_per_cell];
+    this->grid.get_cell_verts(cell, verts);
+
+    const T* h = this->grid.get_h();
+    std::array<T, spatial_dim> grad;
+
+    grad[0] = 0.5 / h[0] *
+              (-lsf_dof[verts[0]] + lsf_dof[verts[1]] + lsf_dof[verts[2]] -
+               lsf_dof[verts[3]]);
+    grad[1] = 0.5 / h[1] *
+              (-lsf_dof[verts[0]] - lsf_dof[verts[1]] + lsf_dof[verts[2]] +
+               lsf_dof[verts[3]]);
+    return grad;
+  }
+
+  void update_mesh() {
     // LSF values are always associated with the ground grid verts, unlike the
     // dof values which might only be associated with part of the ground grid
     // verts (i.e. nodes)
     int nverts = this->grid.get_num_verts();
 
-    // Populate lsf values
+    // Given lsf dof values, obtain active lsf vertices
     std::vector<bool> active_lsf_verts(nverts, false);
     for (int i = 0; i < nverts; i++) {
-      algoim::uvector<T, spatial_dim> xloc;
-      this->grid.get_vert_xloc(i, xloc.data());
-      lsf_dof[i] = lsf(xloc);
       if (freal(lsf_dof[i]) <= freal(T(0.0))) {
         active_lsf_verts[i] = true;
       }
@@ -366,19 +415,16 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
                                                // 5   | -z
 
     for (int c = 0; c < ncells; c++) {
-      algoim::uvector<T, spatial_dim> xloc;
-      this->grid.get_cell_xloc(c, xloc.data());
-      auto grad = lsf.grad(xloc);
-
+      std::array<T, spatial_dim> grad = interp_lsf_grad(c);
       double tmp = 0.0;
       int dim = -1;
       for (int d = 0; d < spatial_dim; d++) {
-        if (fabs(grad(d)) > tmp) {
-          tmp = fabs(grad(d));
+        if (fabs(grad[d]) > tmp) {
+          tmp = fabs(grad[d]);
           dim = d;
         }
       }
-      dir_cells[c] = 2 * dim + (freal(grad(dim)) < 0.0 ? 0 : 1);
+      dir_cells[c] = 2 * dim + (freal(grad[dim]) < 0.0 ? 0 : 1);
     }
   }
 
@@ -411,8 +457,8 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
         int coords[spatial_dim];
         this->grid.get_vert_coords(vert, coords);
         std::printf(
-            "[Debug] vert %d (%d, %d) is not an active node, cell: %d\n", vert,
-            coords[0], coords[1], cell);
+            "[Debug] vert %d (%d, %d) is not an active node for cell: %d\n",
+            vert, coords[0], coords[1], cell);
       }
     }
 #endif
