@@ -57,8 +57,40 @@ int main() {
   Physics physics;
   Analysis analysis(mesh, quadrature, basis, physics);
 
+  int ndv = mesh.get_lsf_mesh().get_num_nodes();
+  std::vector<T> &dvs = mesh.get_lsf_dof();
+  std::vector<T> p(ndv, 0.0);
+
+  double h = 1e-6;
+  for (int i = 0; i < ndv; i++) {
+    p[i] = (T)rand() / RAND_MAX;
+  }
+
   std::vector<T> dummy(mesh.get_num_nodes(), 0.0);
   std::printf("LSF area: %20.10e\n", analysis.energy(nullptr, dummy.data()));
+
+  for (int i = 0; i < ndv; i++) {
+    dvs[i] -= h * p[i];
+  }
+  T a1 = analysis.energy(nullptr, dummy.data());
+
+  for (int i = 0; i < ndv; i++) {
+    dvs[i] += 2.0 * h * p[i];
+  }
+  T a2 = analysis.energy(nullptr, dummy.data());
+
+  T dfdx_fd = (a2 - a1) / 2.0 / h;
+
+  std::vector<T> dfdx(ndv, 0.0);
+  analysis.LSF_volume_derivatives(dfdx.data());
+
+  T dfdx_exact = 0.0;
+  for (int i = 0; i < ndv; i++) {
+    dfdx_exact += dfdx[i] * p[i];
+  }
+
+  std::printf("area gradient fd:    %25.15e\n", dfdx_fd);
+  std::printf("area gradient exact: %25.15e\n", dfdx_exact);
 
   using Interpolator = Interpolator<T, Quadrature, Basis>;
   Interpolator interp(mesh, quadrature, basis);

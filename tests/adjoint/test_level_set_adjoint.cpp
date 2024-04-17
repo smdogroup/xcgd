@@ -4,6 +4,7 @@
 #include "elements/gd_vandermonde.h"
 #include "physics/linear_elasticity.h"
 #include "physics/poisson.h"
+#include "physics/volume.h"
 #include "test_commons.h"
 
 class Line {
@@ -149,7 +150,7 @@ void test_jac_psi_product(Basis& basis, Mesh& mesh, Quadrature& quadrature,
   std::vector<T>& dvs = mesh.get_lsf_dof();
 
   std::vector<T> dof(ndof), psi(ndof), res1(ndof, 0.0), res2(ndof, 0.0);
-  std::vector<T> dfdphi(ndv, 0.0), p(ndv);
+  std::vector<T> dfdphi(ndv, 0.0), dadphi(ndv, 0.0), p(ndv);
 
   for (int i = 0; i < ndof; i++) {
     dof[i] = (T)rand() / RAND_MAX;
@@ -163,29 +164,46 @@ void test_jac_psi_product(Basis& basis, Mesh& mesh, Quadrature& quadrature,
   Analysis analysis(mesh, quadrature, basis, physics);
   analysis.LSF_jacobian_adjoint_product(dof.data(), psi.data(), dfdphi.data());
 
+  using Volume = VolumePhysics<T, Basis::spatial_dim>;
+  using VolAnalysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Volume>;
+  Volume vol;
+  VolAnalysis vol_analysis(mesh, quadrature, basis, vol);
+  std::vector<T> dummy(ndv);
+
+  vol_analysis.LSF_volume_derivatives(dadphi.data());
+
   for (int i = 0; i < ndv; i++) {
     dvs[i] -= h * p[i];
   }
   analysis.residual(nullptr, dof.data(), res1.data());
+  T a1 = vol_analysis.energy(nullptr, dummy.data());
 
   for (int i = 0; i < ndv; i++) {
     dvs[i] += 2.0 * h * p[i];
   }
   analysis.residual(nullptr, dof.data(), res2.data());
+  T a2 = vol_analysis.energy(nullptr, dummy.data());
 
   double dfdphi_fd = 0.0;
+  double dadphi_fd = (a2 - a1) / 2.0 / h;
   for (int i = 0; i < ndof; i++) {
     dfdphi_fd += psi[i] * (res2[i] - res1[i]) / (2.0 * h);
   }
 
   double dfdphi_adjoint = 0.0;
+  double dadphi_exact = 0.0;
   for (int i = 0; i < ndv; i++) {
     dfdphi_adjoint += dfdphi[i] * p[i];
+    dadphi_exact += dadphi[i] * p[i];
   }
 
   std::printf("dfdphi_fd:      %25.15e\n", dfdphi_fd);
   std::printf("dfdphi_adjoint: %25.15e\n", dfdphi_adjoint);
   EXPECT_NEAR((dfdphi_fd - dfdphi_adjoint) / dfdphi_adjoint, 0.0, tol);
+
+  std::printf("area grad fd:    %25.15e\n", dadphi_fd);
+  std::printf("area grad exact: %25.15e\n", dadphi_exact);
+  EXPECT_NEAR((dadphi_fd - dadphi_exact) / dadphi_exact, 0.0, tol);
 }
 
 TEST(adjoint, JacPsiProductElasticity) {

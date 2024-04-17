@@ -5,6 +5,7 @@
 
 #include "a2dcore.h"
 #include "elements/element_utils.h"
+#include "physics/volume.h"
 #include "sparse_utils/sparse_matrix.h"
 #include "utils/linalg.h"
 #include "utils/misc.h"
@@ -487,6 +488,54 @@ class GalerkinAnalysis final {
             wts[j], detJ, &wts_grad[offset_wts], &pts_grad[offset_pts], psiq,
             ugrad_ref, pgrad_ref, uhess_ref, phess_ref, coef_uq, coef_ugrad_ref,
             jp_uq, jp_ugrad_ref, element_dfdphi.data());
+      }
+
+      const auto& lsf_mesh = mesh.get_lsf_mesh();
+      int c = mesh.get_elem_cell(i);
+      add_element_dfdphi<T, decltype(lsf_mesh), Basis>(
+          lsf_mesh, c, element_dfdphi.data(), dfdphi);
+    }
+  }
+
+  /*
+    Evaluate the derivatives of the volume defined by the LSF with respect to
+    the LSF dofs
+
+   * Note: This only works for Galerkin Difference method combined with the
+   * level-set mesh
+  */
+  void LSF_volume_derivatives(T dfdphi[]) const {
+    static_assert(Basis::is_gd_basis, "This method only works with GD Basis");
+    static_assert(Mesh::is_cut_mesh,
+                  "This method requires a level-set-cut mesh");
+
+    for (int i = 0; i < mesh.get_num_elements(); i++) {
+      // Get the element node locations
+      T element_xloc[spatial_dim * nodes_per_element];
+      get_element_xloc<T, Mesh, Basis>(mesh, i, element_xloc);
+
+      // Create the element dfdphi
+      std::vector<T> element_dfdphi(nodes_per_element, 0.0);
+
+      std::vector<T> pts, wts, pts_grad, wts_grad;
+      int num_quad_pts =
+          quadrature.get_quadrature_pts_grad(i, pts, wts, pts_grad, wts_grad);
+
+      std::vector<T> N, Nxi;
+      basis.eval_basis_grad(i, pts, N, Nxi);
+
+      for (int j = 0; j < num_quad_pts; j++) {
+        int offset_nxi = j * nodes_per_element * spatial_dim;
+        A2D::Mat<T, spatial_dim, spatial_dim> J;
+        interp_val_grad<T, Basis, spatial_dim>(element_xloc, nullptr,
+                                               &Nxi[offset_nxi], nullptr, &J);
+
+        T detJ;
+        A2D::MatDet(J, detJ);
+        int offset_wts = j * nodes_per_element;
+        for (int n = 0; n < nodes_per_element; n++) {
+          element_dfdphi[n] += wts_grad[offset_wts + n] * detJ;
+        }
       }
 
       const auto& lsf_mesh = mesh.get_lsf_mesh();
