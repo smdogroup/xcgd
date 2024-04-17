@@ -10,7 +10,6 @@
 #include "elements/gd_mesh.h"
 #include "elements/gd_vandermonde.h"
 #include "physics/helmholtz.h"
-#include "physics/integral.h"
 #include "physics/linear_elasticity.h"
 #include "physics/neohookean.h"
 #include "physics/poisson.h"
