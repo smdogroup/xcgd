@@ -10,6 +10,7 @@
 #include "elements/gd_mesh.h"
 #include "elements/gd_vandermonde.h"
 #include "physics/helmholtz.h"
+#include "physics/integral.h"
 #include "physics/linear_elasticity.h"
 #include "physics/neohookean.h"
 #include "physics/poisson.h"
@@ -70,7 +71,10 @@ void test_physics(std::tuple<Mesh *, Quadrature *, Basis *> tuple,
   }
 
   dres_relerr = (dres_exact - dres_cs) / dres_cs;
+  if (dres_exact == 0 and dres_cs == 0) dres_relerr = 0.0;
+
   dJp_relerr = (dJp_exact - dJp_cs) / dJp_cs;
+  if (dJp_exact == 0 and dJp_cs == 0) dJp_relerr = 0.0;
 
   std::printf("\nDerivatives check for the residual\n");
   std::printf("complex step derivatives: %25.15e\n", dres_cs);
@@ -103,6 +107,8 @@ void test_physics(std::tuple<Mesh *, Quadrature *, Basis *> tuple,
     Jp_axpy_l1 += Jp_axpy[i].real() * p[i];
   }
   double Jp_relerr = (Jp_l1 - Jp_axpy_l1) / Jp_l1;
+  if (Jp_l1 == 0 and Jp_axpy_l1 == 0) Jp_relerr = 0.0;
+
   std::printf("\nDerivatives check for the Jacobian matrix\n");
   std::printf("Jac-vec product:          %25.15e\n", Jp_l1);
   std::printf("Jac-vec product by axpy:  %25.15e\n", Jp_axpy_l1);
@@ -201,6 +207,15 @@ void test_helmholtz(
   test_physics(tuple, physics, h, tol);
 }
 
+template <class Quadrature, class Basis>
+void test_integral(
+    std::tuple<typename Basis::Mesh *, Quadrature *, Basis *> tuple,
+    double h = 1e-30, double tol = 1e-14) {
+  using Physics = IntegralPhysics<T, Basis::spatial_dim>;
+  Physics physics;
+  test_physics(tuple, physics, h, tol);
+}
+
 TEST(physics, NeohookeanQuad) { test_neohookean(create_quad_basis()); }
 TEST(physics, NeohookeanTet) { test_neohookean(create_tet_basis()); }
 TEST(physics, NeohookeanGD) { test_neohookean(create_gd_basis(), 1e-8, 1e-6); }
@@ -222,3 +237,6 @@ TEST(physics, LinearElasticityTet) { test_elasticity(create_tet_basis()); }
 TEST(physics, LinearElasticityGD) {
   test_elasticity(create_gd_basis(), 1e-8, 1e-8);
 }
+
+TEST(physics, IntegralQuad) { test_integral(create_quad_basis()); }
+TEST(physics, IntegralTet) { test_integral(create_tet_basis()); }

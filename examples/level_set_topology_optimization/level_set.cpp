@@ -20,13 +20,6 @@ class Circle {
                    (x(1) - x0[1]) * (x(1) - x0[1]) - r * r);
   }
 
-  template <typename T>
-  algoim::uvector<T, spatial_dim> grad(
-      const algoim::uvector<T, spatial_dim> &x) const {
-    return algoim::uvector<T, spatial_dim>(2.0 * sign * (x(0) - x0[0]),
-                                           2.0 * sign * (x(1) - x0[1]));
-  }
-
  private:
   double x0[spatial_dim];
   double r;
@@ -47,12 +40,19 @@ int main() {
   double center[2] = {0.75, 0.5};
   double r = 0.3;
 
-  LSF lsf(center, r, true);
+  LSF lsf(center, r, false);
 
   Grid grid(nxy, lxy);
   Mesh mesh(grid, lsf);
   Basis basis(mesh);
   Quadrature quadrature(mesh);
+
+  std::vector<T> &lsf_dof = mesh.get_lsf_dof();
+
+  for (int i = 0; i < lsf_dof.size(); i++) {
+    lsf_dof[i] += 0.1 * (T(rand()) / RAND_MAX - 0.5);
+  }
+  mesh.update_mesh();
 
   ToVTK<T, GridMesh<T, Np_1d>> lsf_vtk(mesh.get_lsf_mesh(), "lsf_mesh.vtk");
   lsf_vtk.write_mesh();
