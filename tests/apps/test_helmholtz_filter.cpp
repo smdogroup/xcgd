@@ -21,6 +21,8 @@ TEST(apps, HelmholtzFilter) {
   using T = double;
   int constexpr Np_1d = 2;
   using Grid = StructuredGrid2D<T>;
+  int constexpr spatial_dim = Grid::spatial_dim;
+
   using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
   using Mesh = CutMesh<T, Np_1d>;
   using Basis = GDBasis2D<T, Mesh>;
@@ -31,8 +33,8 @@ TEST(apps, HelmholtzFilter) {
 
   using Filter = HelmholtzFilter<T, LSFMesh, LSFQuadrature, LSFBasis>;
 
-  int nxy[2] = {48, 64};
-  T lxy[2] = {3.0, 3.5};
+  int nxy[2] = {32, 16};
+  T lxy[2] = {2.0, 1.0};
 
   Grid grid(nxy, lxy);
   Mesh mesh(grid);
@@ -43,7 +45,7 @@ TEST(apps, HelmholtzFilter) {
   LSFQuadrature lsf_quadrature(lsf_mesh);
   LSFBasis lsf_basis(lsf_mesh);
 
-  T r0 = 0.5;
+  T r0 = 0.1;
   Filter filter(r0, lsf_mesh, lsf_quadrature, lsf_basis);
 
   int ndv = lsf_mesh.get_num_nodes();
@@ -55,6 +57,16 @@ TEST(apps, HelmholtzFilter) {
     w[i] = (T)rand() / RAND_MAX;
     p[i] = (T)rand() / RAND_MAX;
   }
+
+  // // Set x
+  // int m = 1, n = 1;
+  // for (int i = 0; i < ndv; i++) {
+  //   T xloc[spatial_dim];
+  //   lsf_mesh.get_node_xloc(i, xloc);
+  //   x[i] = cos(xloc[0] / lxy[0] * 2.0 * PI * m) *
+  //              cos(xloc[1] / lxy[1] * 2.0 * PI * n) -
+  //          0.5;
+  // }
 
   filter.apply(x.data(), phi.data());
 
@@ -86,4 +98,9 @@ TEST(apps, HelmholtzFilter) {
   std::printf("dfdx_fd:    %25.15e\n", dfdx_fd);
   std::printf("dfdx_exact: %25.15e\n", dfdx_exact);
   EXPECT_NEAR((dfdx_fd - dfdx_exact) / dfdx_exact, 0.0, tol);
+
+  ToVTK<T, LSFMesh> lsf_vtk(lsf_mesh, "lsf_mesh.vtk");
+  lsf_vtk.write_mesh();
+  lsf_vtk.write_sol("x", x.data());
+  lsf_vtk.write_sol("phi", phi.data());
 }

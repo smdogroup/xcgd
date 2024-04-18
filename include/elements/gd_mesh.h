@@ -306,29 +306,45 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
     this->grid.get_cell_vert_ranges(elem_cells.at(elem), xloc_min, xloc_max);
   }
 
-  std::vector<int> get_left_boundary_nodes() const {
+  /* Helper function */
+  std::vector<int> get_left_boundary_nodes(double tol = 1e-10) const {
+    const T* xy0 = this->grid.get_xy0();
     std::vector<int> nodes;
-    const int* nxy = this->grid.get_nxy();
-    for (int j = 0; j < nxy[1] + 1; j++) {
-      int coords[2] = {0, j};
-      int node = vert_nodes.at(node);
-      nodes.push_back(node);
+    for (int i = 0; i < num_nodes; i++) {
+      T xloc[spatial_dim];
+      get_node_xloc(i, xloc);
+      if (xloc[0] - xy0[0] < tol) {
+        nodes.push_back(i);
+      }
     }
     return nodes;
   }
 
-  std::vector<int> get_right_boundary_nodes() const {
+  /* Helper function */
+  std::vector<int> get_right_boundary_nodes(double tol = 1e-10) const {
+    const T* xy0 = this->grid.get_xy0();
+    const T* lxy = this->grid.get_lxy();
     std::vector<int> nodes;
-    const int* nxy = this->grid.get_nxy();
-    for (int j = 0; j < nxy[1] + 1; j++) {
-      int coords[2] = {nxy[0], j};
-      int node = vert_nodes.at(node);
-      nodes.push_back(node);
+    for (int i = 0; i < num_nodes; i++) {
+      T xloc[spatial_dim];
+      get_node_xloc(i, xloc);
+      if (xy0[0] + lxy[0] - xloc[0] < tol) {
+        nodes.push_back(i);
+      }
     }
     return nodes;
   }
 
   std::vector<T> get_lsf_nodes() const {
+    std::vector<T> lsf_nodes(get_num_nodes());
+    for (auto kv : node_verts) {
+      // lsf_nodes[node] = lsf_dof[vert]
+      lsf_nodes[kv.first] = lsf_dof[kv.second];
+    }
+    return lsf_nodes;
+  }
+
+  std::vector<T> get_lsf_nodes(std::vector<T>& lsf_dof) const {
     std::vector<T> lsf_nodes(get_num_nodes());
     for (auto kv : node_verts) {
       // lsf_nodes[node] = lsf_dof[vert]
@@ -423,6 +439,19 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
 
     num_nodes = node_verts.size();
     num_elements = elem_cells.size();
+  }
+
+  // Helper function
+  bool is_irregular_stencil(int elem) {
+    int cell = elem_cells.at(elem);
+    int verts[nodes_per_element];
+    this->get_cell_ground_stencil(cell, verts);
+    for (int index = 0; index < nodes_per_element; index++) {
+      if (vert_nodes.count(verts[index]) == 0) {
+        return true;
+      }
+    }
+    return false;
   }
 
  private:
