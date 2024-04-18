@@ -264,8 +264,13 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
       lsf_dof[i] = lsf(xloc);
     }
     update_mesh();
-    num_nodes = node_verts.size();
-    num_elements = elem_cells.size();
+  }
+
+  CutMesh(const Grid& grid)
+      : MeshBase(grid),
+        lsf_mesh(grid),
+        lsf_dof(lsf_mesh.get_num_nodes(), -1.0) {
+    update_mesh();
   }
 
   int get_num_nodes() const { return num_nodes; }
@@ -415,6 +420,9 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
       }
       dir_cells[c] = 2 * dim + (freal(grad[dim]) < 0.0 ? 0 : 1);
     }
+
+    num_nodes = node_verts.size();
+    num_elements = elem_cells.size();
   }
 
  private:

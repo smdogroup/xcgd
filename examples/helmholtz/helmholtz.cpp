@@ -43,12 +43,12 @@ void solve_helmholtz(T r0, const Func &xfunc, Mesh &mesh,
   }
 
   // Compute Jacobian matrix
-  std::vector<T> dof(ndof, 0.0);
-  analysis.jacobian(x.data(), dof.data(), jac_bsr);
+  std::vector<T> zeros(ndof, 0.0);
+  analysis.jacobian(x.data(), zeros.data(), jac_bsr);
 
   // Store right hand size to sol
   std::vector<T> sol(ndof, 0.0);
-  analysis.residual(x.data(), dof.data(), sol.data());
+  analysis.residual(x.data(), zeros.data(), sol.data());
   for (int i = 0; i < sol.size(); i++) {
     sol[i] *= -1.0;
   }

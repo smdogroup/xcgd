@@ -1,42 +1,25 @@
 #include "analysis.h"
+#include "apps/helmholtz_filter.h"
 #include "elements/element_utils.h"
 #include "elements/gd_vandermonde.h"
 #include "physics/volume.h"
 #include "utils/vtk.h"
 
-template <int spatial_dim>
-class Circle {
- public:
-  Circle(double *center, double radius, bool flip = false) {
-    for (int d = 0; d < spatial_dim; d++) {
-      x0[d] = center[d];
-    }
-    r = radius;
-    if (flip) {
-      sign = -1.0;
-    }
-  }
+#define PI 3.141592653589793
 
-  template <typename T>
-  T operator()(const algoim::uvector<T, spatial_dim> &x) const {
-    return sign * ((x(0) - x0[0]) * (x(0) - x0[0]) +
-                   (x(1) - x0[1]) * (x(1) - x0[1]) - r * r);
-  }
-
- private:
-  double x0[spatial_dim];
-  double r;
-  double sign = 1.0;
-};
-
-int main() {
+void mesh_test() {
   using T = double;
-  int constexpr Np_1d = 4;
+  int constexpr Np_1d = 2;
   using Grid = StructuredGrid2D<T>;
-  using LSF = Circle<Grid::spatial_dim>;
   using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
   using Mesh = CutMesh<T, Np_1d>;
   using Basis = GDBasis2D<T, Mesh>;
+
+  using LSFQuadrature = GDGaussQuadrature2D<T, Np_1d>;
+  using LSFMesh = GridMesh<T, Np_1d>;
+  using LSFBasis = GDBasis2D<T, LSFMesh>;
+
+  using Filter = HelmholtzFilter<T, LSFMesh, LSFQuadrature, LSFBasis>;
 
   using Physics = VolumePhysics<T, Grid::spatial_dim>;
   using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
@@ -44,27 +27,38 @@ int main() {
   int nxy[2] = {48, 64};
   T lxy[2] = {3.0, 3.5};
 
-  double center[2] = {1.2, 1.3};
-  double r = 1.0;
-
-  LSF lsf(center, r, false);
-
   Grid grid(nxy, lxy);
-  Mesh mesh(grid, lsf);
+  Mesh mesh(grid);
+  LSFMesh lsf_mesh = mesh.get_lsf_mesh();
   Basis basis(mesh);
   Quadrature quadrature(mesh);
 
   Physics physics;
   Analysis analysis(mesh, quadrature, basis, physics);
 
-  int ndv = mesh.get_lsf_mesh().get_num_nodes();
-  std::vector<T> &dvs = mesh.get_lsf_dof();
+  int ndv = lsf_mesh.get_num_nodes();
+  std::vector<T>& dvs = mesh.get_lsf_dof();
   std::vector<T> p(ndv, 0.0);
+
+  int m = 3, n = 5;
+  for (int i = 0; i < ndv; i++) {
+    T xloc[Basis::spatial_dim];
+    lsf_mesh.get_node_xloc(i, xloc);
+    dvs[i] = cos(xloc[0] / lxy[0] * 2.0 * PI * m) *
+                 cos(xloc[1] / lxy[1] * 2.0 * PI * n) -
+             0.5;
+  }
+  mesh.update_mesh();
 
   double h = 1e-6;
   for (int i = 0; i < ndv; i++) {
     p[i] = (T)rand() / RAND_MAX;
   }
+
+  T r0 = 0.2;
+  LSFQuadrature lsf_quadrature(lsf_mesh);
+  LSFBasis lsf_basis(lsf_mesh);
+  Filter filter(r0, lsf_mesh, lsf_quadrature, lsf_basis);
 
   std::vector<T> dummy(mesh.get_num_nodes(), 0.0);
   std::printf("LSF area: %20.10e\n", analysis.energy(nullptr, dummy.data()));
@@ -104,4 +98,9 @@ int main() {
   ToVTK<T, Mesh> vtk(mesh, "cut_mesh.vtk");
   vtk.write_mesh();
   vtk.write_sol("lsf", mesh.get_lsf_nodes().data());
+}
+
+int main() {
+  mesh_test();
+  return 0;
 }
