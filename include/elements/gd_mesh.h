@@ -437,8 +437,16 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
       dir_cells[c] = 2 * dim + (freal(grad[dim]) < 0.0 ? 0 : 1);
     }
 
+    int num_nodes_old = num_nodes;
+    int num_elems_old = num_elements;
+
     num_nodes = node_verts.size();
     num_elements = elem_cells.size();
+
+#ifdef XCGD_DEBUG_MODE
+    std::printf("[Debug]Updating mesh, nnodes: %d -> %d, nelems: %d -> %d\n",
+                num_nodes_old, num_nodes, num_elems_old, num_elements);
+#endif
   }
 
   // Helper function

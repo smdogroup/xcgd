@@ -102,82 +102,76 @@ void mesh_test() {
   using Physics = VolumePhysics<T, spatial_dim>;
   using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
 
-  int nxy[2] = {32, 16};
+  // Set up grid
+  int nxy[2] = {128, 64};
   T lxy[2] = {2.0, 1.0};
   Grid grid(nxy, lxy);
 
+  // Set up analysis mesh
   Mesh mesh(grid);
   Basis basis(mesh);
   Quadrature quadrature(mesh);
 
-  Physics physics;
-  Analysis analysis(mesh, quadrature, basis, physics);
-
+  // Set up lsf mesh
   LSFMesh lsf_mesh = mesh.get_lsf_mesh();
   LSFQuadrature lsf_quadrature(lsf_mesh);
   LSFBasis lsf_basis(lsf_mesh);
-  T r0 = 0.1;
+  T r0 = 0.05;
   Filter filter(r0, lsf_mesh, lsf_quadrature, lsf_basis);
 
+  int ndv = lsf_mesh.get_num_nodes();
+  std::vector<T> x(ndv, 0.0);
+  int m = 1, n = 1;
+  for (int i = 0; i < ndv; i++) {
+    T xloc[spatial_dim];
+    lsf_mesh.get_node_xloc(i, xloc);
+    x[i] = (cos(xloc[0] / lxy[0] * 2.0 * PI * m) - 0.5) *
+               (cos(xloc[1] / lxy[1] * 2.0 * PI * n) - 0.5) * 2.0 / 3.0 -
+           0.5;
+  }
+  std::vector<T>& phi = mesh.get_lsf_dof();
+  filter.apply(x.data(), phi.data());
+  mesh.update_mesh();
+
+  // Set up bcs and loads
   std::vector<int> bc_nodes = mesh.get_left_boundary_nodes();
   std::vector<int> load_nodes = mesh.get_right_boundary_nodes();
   std::vector<int> bc_dof(spatial_dim * bc_nodes.size());
   std::vector<int> load_dof(load_nodes.size());
   std::vector<T> load_vals(load_nodes.size(), 0.0);
-
   for (int i = 0; i < bc_nodes.size(); i++) {
     for (int d = 0; d < spatial_dim; d++) {
       bc_dof[spatial_dim * i + d] = spatial_dim * bc_nodes[i] + d;
     }
   }
-
   for (int i = 0; i < load_nodes.size(); i++) {
     load_dof[i] = spatial_dim * load_nodes[i] + 1;
     load_vals[i] = -1.0;
   }
-  T E = 1e2, nu = 0.3;
-  StaticElastic static_elastic(E, nu, mesh, quadrature, basis, bc_dof, load_dof,
-                               load_vals);
 
-  using Topo =
-      Topo<T, Mesh, Quadrature, Basis, LSFMesh, LSFQuadrature, LSFBasis>;
+  ToVTK<T, GridMesh<T, Np_1d>> lsf_vtk(lsf_mesh, "lsf_mesh.vtk");
+  lsf_vtk.write_mesh();
+  lsf_vtk.write_sol("x", x.data());
+  lsf_vtk.write_sol("phi", phi.data());
 
-  Topo topo(filter, static_elastic);
-
-  int ndv = lsf_mesh.get_num_nodes();
-  std::vector<T> x(ndv, 0.0);
-
-  int m = 1, n = 1;
-  for (int i = 0; i < ndv; i++) {
-    T xloc[spatial_dim];
-    lsf_mesh.get_node_xloc(i, xloc);
-    x[i] = cos(xloc[0] / lxy[0] * 2.0 * PI * m) *
-               cos(xloc[1] / lxy[1] * 2.0 * PI * n) -
-           0.5;
-  }
-
-  std::vector<T>& phi = mesh.get_lsf_dof();
-
-  filter.apply(x.data(), phi.data());
-  mesh.update_mesh();
-
+  // Export quadrature points to a separate vtk file
   using Interpolator = Interpolator<T, Quadrature, Basis>;
   Interpolator interp(mesh, quadrature, basis);
   std::vector<T> dummy(mesh.get_num_nodes(), 0.0);
   interp.to_vtk("quadratures.vtk", dummy.data());
 
-  ToVTK<T, GridMesh<T, Np_1d>> lsf_vtk(mesh.get_lsf_mesh(), "lsf_mesh.vtk");
-  lsf_vtk.write_mesh();
-  lsf_vtk.write_sol("x", x.data());
-  lsf_vtk.write_sol("phi", phi.data());
-
   ToVTK<T, Mesh> vtk(mesh, "cut_mesh.vtk");
   vtk.write_mesh();
-  vtk.write_sol("phi", mesh.get_lsf_nodes().data());
   vtk.write_sol("x", mesh.get_lsf_nodes(x).data());
+  vtk.write_sol("phi", mesh.get_lsf_nodes().data());
 
-  ToVTK<T, Mesh> elas_vtk(mesh, "elastic.vtk");
-  elas_vtk.write_mesh();
+  // Write boundary condition to vtk
+  std::vector<T> sol_bcs(spatial_dim * mesh.get_num_nodes(), 0.0);
+  std::vector<T> sol_load(spatial_dim * mesh.get_num_nodes(), 0.0);
+  for (int bc : bc_dof) sol_bcs[bc] = 1.0;
+  for (int l : load_dof) sol_load[l] = 1.0;
+  vtk.write_vec("bc", sol_bcs.data());
+  vtk.write_vec("load", sol_load.data());
 
   std::vector<T> p(ndv, 0.0);
   for (int i = 0; i < ndv; i++) {
@@ -188,6 +182,16 @@ void mesh_test() {
   for (int i = 0; i < ndv; i++) {
     x[i] -= h * p[i];
   }
+
+  T E = 1e2, nu = 0.3;
+  StaticElastic static_elastic(E, nu, mesh, quadrature, basis, bc_dof, load_dof,
+                               load_vals);
+
+  using Topo =
+      Topo<T, Mesh, Quadrature, Basis, LSFMesh, LSFQuadrature, LSFBasis>;
+
+  Topo topo(filter, static_elastic);
+
   std::vector<T> gcomp, garea;
   T c1 = topo.eval_compliance_grad(x, gcomp);
   T a1 = topo.eval_area_grad(x, garea);
@@ -228,9 +232,7 @@ void mesh_test() {
   std::printf("relative error:  %25.15e\n",
               (garea_fd - garea_adjoint) / garea_adjoint);
 
-  elas_vtk.write_vec("sol", sol.data());
-  elas_vtk.write_sol("phi", mesh.get_lsf_nodes().data());
-  elas_vtk.write_sol("x", mesh.get_lsf_nodes(x).data());
+  vtk.write_vec("sol", sol.data());
 }
 
 int main() {

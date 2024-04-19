@@ -33,7 +33,7 @@ TEST(apps, HelmholtzFilter) {
 
   using Filter = HelmholtzFilter<T, LSFMesh, LSFQuadrature, LSFBasis>;
 
-  int nxy[2] = {32, 16};
+  int nxy[2] = {128, 64};
   T lxy[2] = {2.0, 1.0};
 
   Grid grid(nxy, lxy);
@@ -45,7 +45,7 @@ TEST(apps, HelmholtzFilter) {
   LSFQuadrature lsf_quadrature(lsf_mesh);
   LSFBasis lsf_basis(lsf_mesh);
 
-  T r0 = 0.1;
+  T r0 = 0.01;
   Filter filter(r0, lsf_mesh, lsf_quadrature, lsf_basis);
 
   int ndv = lsf_mesh.get_num_nodes();
@@ -53,20 +53,20 @@ TEST(apps, HelmholtzFilter) {
   std::vector<T> x(ndv, 0.0), phi(ndv, 0.0), w(ndv, 0.0), p(ndv, 0.0);
 
   for (int i = 0; i < ndv; i++) {
-    x[i] = (T)rand() / RAND_MAX;
+    // x[i] = (T)rand() / RAND_MAX;
     w[i] = (T)rand() / RAND_MAX;
     p[i] = (T)rand() / RAND_MAX;
   }
 
-  // // Set x
-  // int m = 1, n = 1;
-  // for (int i = 0; i < ndv; i++) {
-  //   T xloc[spatial_dim];
-  //   lsf_mesh.get_node_xloc(i, xloc);
-  //   x[i] = cos(xloc[0] / lxy[0] * 2.0 * PI * m) *
-  //              cos(xloc[1] / lxy[1] * 2.0 * PI * n) -
-  //          0.5;
-  // }
+  // Set x
+  int m = 4, n = 2;
+  for (int i = 0; i < ndv; i++) {
+    T xloc[spatial_dim];
+    lsf_mesh.get_node_xloc(i, xloc);
+    x[i] = (cos(xloc[0] / lxy[0] * 2.0 * PI * m) - 0.5) *
+               (cos(xloc[1] / lxy[1] * 2.0 * PI * n) - 0.5) * 2.0 / 3.0 -
+           0.5;
+  }
 
   filter.apply(x.data(), phi.data());
 
@@ -78,14 +78,12 @@ TEST(apps, HelmholtzFilter) {
     x[i] -= h * p[i];
   }
 
-  std::fill(phi.begin(), phi.end(), 0.0);
   filter.apply(x.data(), phi.data());
   T s1 = scalar_function(phi, w);
 
   for (int i = 0; i < ndv; i++) {
     x[i] += 2.0 * h * p[i];
   }
-  std::fill(phi.begin(), phi.end(), 0.0);
   filter.apply(x.data(), phi.data());
   T s2 = scalar_function(phi, w);
 
@@ -99,7 +97,7 @@ TEST(apps, HelmholtzFilter) {
   std::printf("dfdx_exact: %25.15e\n", dfdx_exact);
   EXPECT_NEAR((dfdx_fd - dfdx_exact) / dfdx_exact, 0.0, tol);
 
-  ToVTK<T, LSFMesh> lsf_vtk(lsf_mesh, "lsf_mesh.vtk");
+  ToVTK<T, LSFMesh> lsf_vtk(lsf_mesh, "helmholtz.vtk");
   lsf_vtk.write_mesh();
   lsf_vtk.write_sol("x", x.data());
   lsf_vtk.write_sol("phi", phi.data());
