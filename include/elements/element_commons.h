@@ -49,6 +49,8 @@ class GDMeshBase : public MeshBase<T, 2, Np_1d_ * Np_1d_, 4> {
 
   GDMeshBase(const Grid& grid) : grid(grid) { check_grid_compatibility(grid); }
 
+  inline const Grid& get_grid() const { return grid; }
+
   virtual void get_elem_vert_ranges(int elem, T* xloc_min,
                                     T* xloc_max) const = 0;
 

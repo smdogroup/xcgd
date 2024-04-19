@@ -13,6 +13,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(XCGD_SPARSE_UTILS_DIR $ENV{HOME}/installs/sparse-utils)
 set(XCGD_A2D_DIR $ENV{HOME}/installs/a2d)
 set(XCGD_ALGOIM_DIR $ENV{HOME}/git/algoim)
+set(XCGD_PAROPT_DIR $ENV{HOME}/git/paropt)
 option(XCGD_BUILD_TESTS "Build unit tests or not" ON)
 
 # If in debug mode, set the preprocessor definition
@@ -22,9 +23,10 @@ endif()
 
 # Dependencies
 include(cmake/utils.cmake)
-check_path_and_inform(a2d ${XCGD_A2D_DIR} XCGD_A2D_DIR)
-check_path_and_inform(SparseUtils ${XCGD_SPARSE_UTILS_DIR} XCGD_SPARSE_UTILS_DIR)
-check_path_and_inform(algoim ${XCGD_ALGOIM_DIR} XCGD_ALGOIM_DIR)
+check_path_and_inform(FATAL_ERROR a2d ${XCGD_A2D_DIR} XCGD_A2D_DIR)
+check_path_and_inform(FATAL_ERROR SparseUtils ${XCGD_SPARSE_UTILS_DIR} XCGD_SPARSE_UTILS_DIR)
+check_path_and_inform(FATAL_ERROR algoim ${XCGD_ALGOIM_DIR} XCGD_ALGOIM_DIR)
+check_path_and_inform(WARNING paropt ${XCGD_PAROPT_DIR} XCGD_PAROPT_DIR)
 find_package(A2D REQUIRED PATHS ${XCGD_A2D_DIR})
 find_package(SparseUtils REQUIRED PATHS ${XCGD_SPARSE_UTILS_DIR})
 
