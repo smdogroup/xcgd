@@ -17,9 +17,9 @@ T scalar_function(std::vector<T>& phi, std::vector<T>& w) {
   return ret;
 }
 
-TEST(apps, HelmholtzFilter) {
+template <int Np_1d, int Np_1d_filter>
+void test_helmholtz_filter() {
   using T = double;
-  int constexpr Np_1d = 2;
   using Grid = StructuredGrid2D<T>;
   int constexpr spatial_dim = Grid::spatial_dim;
 
@@ -27,11 +27,7 @@ TEST(apps, HelmholtzFilter) {
   using Mesh = CutMesh<T, Np_1d>;
   using Basis = GDBasis2D<T, Mesh>;
 
-  using LSFQuadrature = GDGaussQuadrature2D<T, Np_1d>;
-  using LSFMesh = GridMesh<T, Np_1d>;
-  using LSFBasis = GDBasis2D<T, LSFMesh>;
-
-  using Filter = HelmholtzFilter<T, LSFMesh, LSFQuadrature, LSFBasis>;
+  using Filter = HelmholtzFilter<T, Np_1d_filter>;
 
   int nxy[2] = {128, 64};
   T lxy[2] = {2.0, 1.0};
@@ -41,14 +37,10 @@ TEST(apps, HelmholtzFilter) {
   Basis basis(mesh);
   Quadrature quadrature(mesh);
 
-  LSFMesh lsf_mesh = mesh.get_lsf_mesh();
-  LSFQuadrature lsf_quadrature(lsf_mesh);
-  LSFBasis lsf_basis(lsf_mesh);
-
   T r0 = 0.01;
-  Filter filter(r0, lsf_mesh, lsf_quadrature, lsf_basis);
+  Filter filter(r0, grid);
 
-  int ndv = lsf_mesh.get_num_nodes();
+  int ndv = filter.get_num_nodes();
 
   std::vector<T> x(ndv, 0.0), phi(ndv, 0.0), w(ndv, 0.0), p(ndv, 0.0);
 
@@ -62,7 +54,7 @@ TEST(apps, HelmholtzFilter) {
   int m = 4, n = 2;
   for (int i = 0; i < ndv; i++) {
     T xloc[spatial_dim];
-    lsf_mesh.get_node_xloc(i, xloc);
+    grid.get_vert_xloc(i, xloc);
     x[i] = (cos(xloc[0] / lxy[0] * 2.0 * PI * m) - 0.5) *
                (cos(xloc[1] / lxy[1] * 2.0 * PI * n) - 0.5) * 2.0 / 3.0 -
            0.5;
@@ -97,8 +89,15 @@ TEST(apps, HelmholtzFilter) {
   std::printf("dfdx_exact: %25.15e\n", dfdx_exact);
   EXPECT_NEAR((dfdx_fd - dfdx_exact) / dfdx_exact, 0.0, tol);
 
-  ToVTK<T, LSFMesh> lsf_vtk(lsf_mesh, "helmholtz.vtk");
-  lsf_vtk.write_mesh();
-  lsf_vtk.write_sol("x", x.data());
-  lsf_vtk.write_sol("phi", phi.data());
+  char name[256];
+  std::snprintf(name, 256, "helmholtz_%d_%d.vtk", Np_1d, Np_1d_filter);
+  ToVTK<T, typename Filter::Mesh> vtk(filter.get_mesh(), name);
+  vtk.write_mesh();
+  vtk.write_sol("x", x.data());
+  vtk.write_sol("phi", phi.data());
+}
+
+TEST(apps, HelmholtzFilter) {
+  test_helmholtz_filter<4, 4>();
+  test_helmholtz_filter<4, 2>();
 }

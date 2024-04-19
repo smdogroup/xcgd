@@ -2,29 +2,42 @@
 #define XCGD_HELMHOLTZ_FILTER_H
 
 #include "analysis.h"
+#include "elements/gd_mesh.h"
+#include "elements/gd_vandermonde.h"
 #include "physics/helmholtz.h"
 #include "sparse_utils/sparse_utils.h"
 
-/*
-  Perform Helmholtz smoothing of a field x to get phi, and evaluate backward
-  propagation of gradient
-*/
-template <typename T, class Mesh, class Quadrature, class Basis>
+/**
+ * @brief A Helmholtz filter defined on a structural grid.
+ *
+ * @tparam T numeric type
+ * @tparam Np_1d GD degree, note that this can be different from the Np_1d used
+ * for the analysis, if wished
+ */
+template <typename T, int Np_1d>
 class HelmholtzFilter final {
+ public:
+  using Mesh = GridMesh<T, Np_1d>;
+
  private:
+  using Quadrature = GDGaussQuadrature2D<T, Np_1d>;
+  using Grid = StructuredGrid2D<T>;
+  using Basis = GDBasis2D<T, Mesh>;
   using Physics = HelmholtzPhysics<T, Basis::spatial_dim>;
   using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
   using BSRMat = GalerkinBSRMat<T, Physics::dof_per_node>;
   using CSCMat = SparseUtils::CSCMat<T>;
 
  public:
-  HelmholtzFilter(T r0, Mesh& mesh, Quadrature& quadrature, Basis& basis)
-      : mesh(mesh),
-        quadrature(quadrature),
-        basis(basis),
+  HelmholtzFilter(T r0, Grid& grid)
+      : mesh(grid),
+        quadrature(mesh),
+        basis(mesh),
         physics(r0),
         analysis(mesh, quadrature, basis, physics),
         num_nodes(mesh.get_num_nodes()) {
+    Mesh& mesh = this->mesh;
+
     // Set up Jacobian matrix's sparsity pattern
     int *rowp = nullptr, *cols = nullptr;
     SparseUtils::CSRFromConnectivityFunctor(
@@ -34,6 +47,8 @@ class HelmholtzFilter final {
 
     int nnz = rowp[num_nodes];
     jac_bsr = new BSRMat(num_nodes, nnz, rowp, cols);
+    delete[] rowp;
+    delete[] cols;
 
     // Set up the Jacobian matrix - for Helmholtz problem, the Jacobian matrix
     // does not change with x, so we can set it up and factorize it only once
@@ -57,6 +72,8 @@ class HelmholtzFilter final {
       jac_bsr = nullptr;
     }
   }
+
+  int get_num_nodes() { return num_nodes; }
 
   /**
    * @brief Smooth the input x
@@ -108,24 +125,23 @@ class HelmholtzFilter final {
   }
 
   Mesh& get_mesh() { return mesh; }
-  Quadrature& get_quadrature() { return quadrature; }
-  Basis& get_basis() { return basis; }
-  Analysis& get_analysis() { return analysis; }
+  // Quadrature& get_quadrature() { return quadrature; }
+  // Basis& get_basis() { return basis; }
+  // Analysis& get_analysis() { return analysis; }
 
  private:
-  Mesh& mesh;
-  Quadrature& quadrature;
-  Basis& basis;
-
+  Mesh mesh;
+  Quadrature quadrature;
+  Basis basis;
   Physics physics;
   Analysis analysis;
+  int num_nodes;
 
-  int num_nodes = -1;
-
-  BSRMat* jac_bsr;
+  // Jacobian matrix
+  BSRMat* jac_bsr = nullptr;
 
   // Cholesky factorization
-  SparseUtils::SparseCholesky<T>* chol;
+  SparseUtils::SparseCholesky<T>* chol = nullptr;
 };
 
 #endif  // XCGD_HELMHOLTZ_FILTER_H
