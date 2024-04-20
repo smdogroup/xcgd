@@ -1,11 +1,14 @@
 #include <vector>
 
 #include "analysis.h"
+#include "apps/helmholtz_filter.h"
 #include "elements/gd_vandermonde.h"
 #include "physics/linear_elasticity.h"
 #include "physics/poisson.h"
 #include "physics/volume.h"
 #include "test_commons.h"
+
+#define PI 3.141592653589793
 
 class Line {
  public:
@@ -141,6 +144,15 @@ TEST(adjoint, determinantGrad) {
   }
 }
 
+template <typename T, class Mesh, class Quadrature, class Basis>
+void quadratures_to_vtk(Mesh& mesh, Quadrature& quadrature, Basis& basis,
+                        std::string vtk_name) {
+  using Interpolator = Interpolator<T, Quadrature, Basis>;
+  Interpolator interp(mesh, quadrature, basis);
+  std::vector<T> dummy(mesh.get_num_nodes(), 0.0);
+  interp.to_vtk(vtk_name, dummy.data());
+}
+
 template <typename T, class Basis, class Mesh, class Quadrature, class Physics>
 void test_jac_psi_product(Basis& basis, Mesh& mesh, Quadrature& quadrature,
                           Physics& physics, double h = 1e-6,
@@ -232,6 +244,21 @@ TEST(adjoint, JacPsiProductElasticity) {
   test_jac_psi_product<T>(basis, mesh, quadrature, physics);
 }
 
+template <typename T, class Grid>
+std::vector<T> create_initial_topology(Grid& grid, int m, int n) {
+  const T* lxy = grid.get_lxy();
+  int ndv = grid.get_num_verts();
+  std::vector<T> x0(ndv, 0.0);
+  for (int i = 0; i < ndv; i++) {
+    T xloc[Grid::spatial_dim];
+    grid.get_vert_xloc(i, xloc);
+    x0[i] = (cos(xloc[0] / lxy[0] * 2.0 * PI * m) - 0.5) *
+                (cos(xloc[1] / lxy[1] * 2.0 * PI * n) - 0.5) * 2.0 / 3.0 -
+            0.5;
+  }
+  return x0;
+}
+
 TEST(adjoint, JacPsiProductPoisson) {
   constexpr int Np_1d = 4;
   using T = double;
@@ -254,6 +281,38 @@ TEST(adjoint, JacPsiProductPoisson) {
   Quadrature quadrature(mesh);
 
   Physics physics;
+
+  test_jac_psi_product<T>(basis, mesh, quadrature, physics);
+}
+
+TEST(adjoint, JacPsiProductElasticityPeriodic) {
+  constexpr int Np_1d = 4;
+  using T = double;
+
+  using Grid = StructuredGrid2D<T>;
+  using Mesh = CutMesh<T, Np_1d>;
+  using Basis = GDBasis2D<T, Mesh>;
+  using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
+  using Physics = LinearElasticity<T, Basis::spatial_dim>;
+  using Filter = HelmholtzFilter<T, Np_1d>;
+
+  int nxy[2] = {32, 16};
+  T lxy[2] = {2.0, 1.0};
+  Grid grid(nxy, lxy);
+
+  Mesh mesh(grid);
+  Basis basis(mesh);
+  Quadrature quadrature(mesh);
+
+  T E = 1e2, nu = 0.3;
+  Physics physics(E, nu);
+
+  T r0 = 0.05;
+  Filter filter(r0, grid);
+
+  std::vector<T> x = create_initial_topology<T>(grid, 5, 3);
+  filter.apply(x.data(), mesh.get_lsf_dof().data());
+  mesh.update_mesh();
 
   test_jac_psi_product<T>(basis, mesh, quadrature, physics);
 }

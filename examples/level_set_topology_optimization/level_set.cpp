@@ -11,33 +11,96 @@
 
 using fspath = std::filesystem::path;
 
-template <typename T, class Mesh, class Quadrature, class Basis, class LSFMesh,
-          class LSFQuadrature, class LSFBasis>
+template <typename T, class Mesh, class Quadrature, class Basis>
 class TopoAnalysis {
  private:
-  using HelmholtzFilter = HelmholtzFilter<T, LSFMesh, LSFQuadrature, LSFBasis>;
+  int constexpr static Np_1d_filter = 4;
+  using Grid = StructuredGrid2D<T>;
+  using Filter = HelmholtzFilter<T, Np_1d_filter>;
   using StaticElastic = StaticElastic<T, Mesh, Quadrature, Basis>;
   using Volume = VolumePhysics<T, Basis::spatial_dim>;
   using VolAnalysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Volume>;
 
- public:
-  TopoAnalysis(HelmholtzFilter& filter, StaticElastic& elastic)
-      : filter(filter),
-        elastic(elastic),
-        vol_analysis(elastic.get_mesh(), elastic.get_quadrature(),
-                     elastic.get_basis(), vol),
-        mesh(elastic.get_mesh()),
-        lsf_mesh(filter.get_mesh()),
-        phi(mesh.get_lsf_dof()) {}
+  int constexpr static spatial_dim = Grid::spatial_dim;
 
-  void eval_compliance_area(const std::vector<T>& x, T& comp, T& area) {
+ public:
+  TopoAnalysis(T r0, T E, T nu, Grid& grid, Mesh& mesh, Quadrature& quadrature,
+               Basis& basis)
+      : filter(r0, grid),
+        elastic(E, nu, mesh, quadrature, basis),
+        vol_analysis(mesh, quadrature, basis, vol),
+        mesh(mesh),
+        phi(mesh.get_lsf_dof()) {
+    const T* xy0 = grid.get_xy0();
+    const T* lxy = grid.get_lxy();
+
+    // Get bcs and load verts
+    double tol = 1e-10;
+    double frac = 1.0;
+    for (int i = 0; i < grid.get_num_verts(); i++) {
+      T xloc[spatial_dim];
+      grid.get_vert_xloc(i, xloc);
+      if (xloc[0] - xy0[0] < tol) {
+        bc_verts.push_back(i);
+      } else if (xy0[0] + lxy[0] - xloc[0] < tol and
+                 xloc[1] - xy0[1] - frac * lxy[1] < tol) {
+        load_verts.push_back(i);
+      }
+    }
+  }
+
+  // Create nodal design variables for a domain with periodic holes
+  std::vector<T> create_initial_topology(int m, int n) {
+    const T* lxy = mesh.get_grid().get_lxy();
+    int ndv = mesh.get_grid().get_num_verts();
+    std::vector<T> x0(ndv, 0.0);
+    for (int i = 0; i < ndv; i++) {
+      T xloc[spatial_dim];
+      mesh.get_grid().get_vert_xloc(i, xloc);
+      x0[i] = (cos(xloc[0] / lxy[0] * 2.0 * PI * m) - 0.5) *
+                  (cos(xloc[1] / lxy[1] * 2.0 * PI * n) - 0.5) * 2.0 / 3.0 -
+              0.5;
+    }
+    return x0;
+  }
+
+  std::vector<T> update_mesh_and_solve(const std::vector<T>& x,
+                                       bool write_vtk = true) {
     if (x.size() != phi.size()) {
       throw std::runtime_error("sizes don't match");
     }
 
+    counter++;
+
+    // Update mesh based on new LSF
     filter.apply(x.data(), phi.data());
     mesh.update_mesh();
-    std::vector<T> sol = elastic.solve();
+
+    // Update bcs and loads
+    std::vector<int> bc_dof, load_dof;
+    const std::unordered_map<int, int>& vert_nodes = mesh.get_vert_nodes();
+    for (int bc_vert : bc_verts) {
+      if (vert_nodes.count(bc_vert)) {
+        for (int d = 0; d < spatial_dim; d++) {
+          bc_dof.push_back(spatial_dim * vert_nodes.at(bc_vert) + d);
+        }
+      }
+    }
+    for (int load_vert : load_verts) {
+      if (vert_nodes.count(load_vert)) {
+        load_dof.push_back(spatial_dim * vert_nodes.at(load_vert) + 1);
+      }
+    }
+    T force = 1.0;
+    std::vector<T> load_vals(load_dof.size(), -force / load_dof.size());
+
+    // Solve the static problem
+    std::vector<T> sol = elastic.solve(bc_dof, load_dof, load_vals);
+    return sol;
+  }
+
+  void eval_compliance_area(const std::vector<T>& x, T& comp, T& area) {
+    std::vector<T> sol = update_mesh_and_solve(x);
 
     std::vector<T> dummy(mesh.get_num_nodes(), 0.0);
     comp = 2.0 * elastic.get_analysis().energy(nullptr, sol.data());
@@ -46,13 +109,7 @@ class TopoAnalysis {
 
   void eval_compliance_area_grad(const std::vector<T>& x, std::vector<T>& gcomp,
                                  std::vector<T>& garea) {
-    if (x.size() != phi.size()) {
-      throw std::runtime_error("sizes don't match");
-    }
-
-    filter.apply(x.data(), phi.data());
-    mesh.update_mesh();
-    std::vector<T> sol = elastic.solve();
+    std::vector<T> sol = update_mesh_and_solve(x);
 
     // compliance is self-adjoint
     std::vector<T> psi = sol;
@@ -72,43 +129,38 @@ class TopoAnalysis {
 
   void write_design_to_vtk(const std::string vtk_path, const std::vector<T>& x,
                            const std::vector<T>& phi) {
-    ToVTK<T, LSFMesh> vtk(lsf_mesh, vtk_path);
+    if (x.size() != phi.size()) {
+      throw std::runtime_error("sizes don't match");
+    }
+
+    ToVTK<T, typename Filter::Mesh> vtk(filter.get_mesh(), vtk_path);
     vtk.write_mesh();
     vtk.write_sol("x", x.data());
     vtk.write_sol("phi", phi.data());
+
+    std::vector<T> sol_bcs(phi.size()), sol_load(phi.size());
+    for (int v : bc_verts) sol_bcs[v] = 1.0;
+    for (int v : load_verts) sol_load[v] = 1.0;
+
+    vtk.write_sol("bc", sol_bcs.data());
+    vtk.write_sol("load", sol_load.data());
   }
 
   std::vector<T>& get_phi() { return phi; }
-  LSFMesh& get_lsf_mesh() { return lsf_mesh; }
 
  private:
-  HelmholtzFilter& filter;
-  StaticElastic& elastic;
+  Filter filter;
+  StaticElastic elastic;
   Volume vol;
   VolAnalysis vol_analysis;
-
   Mesh& mesh;
-  LSFMesh& lsf_mesh;
-
   std::vector<T>& phi;  // LSF values (filtered design variables)
-};
 
-// Create nodal design variables for a domain with periodic holes
-template <typename T, class Mesh>
-std::vector<T> create_initial_topology(const Mesh& lsf_mesh, int m = 1,
-                                       int n = 1) {
-  const T* lxy = lsf_mesh.get_grid().get_lxy();
-  int ndv = lsf_mesh.get_num_nodes();
-  std::vector<T> x0(ndv, 0.0);
-  for (int i = 0; i < ndv; i++) {
-    T xloc[Mesh::spatial_dim];
-    lsf_mesh.get_node_xloc(i, xloc);
-    x0[i] = (cos(xloc[0] / lxy[0] * 2.0 * PI * m) - 0.5) *
-                (cos(xloc[1] / lxy[1] * 2.0 * PI * n) - 0.5) * 2.0 / 3.0 -
-            0.5;
-  }
-  return x0;
-}
+  std::vector<T> bc_verts;
+  std::vector<T> load_verts;
+
+  int counter = 0;
+};
 
 template <typename T, class TopoAnalysis>
 class TopoProb : public ParOptProblem {
@@ -135,7 +187,7 @@ class TopoProb : public ParOptProblem {
     lbvec->getArray(&lb);
     ubvec->getArray(&ub);
 
-    std::vector<T> x0 = create_initial_topology<T>(topo.get_lsf_mesh(), 4, 2);
+    std::vector<T> x0 = topo.create_initial_topology(5, 3);
 
     for (int i = 0; i < nvars; i++) {
       x[i] = x0[i];
@@ -209,18 +261,10 @@ void mesh_test() {
   using Mesh = CutMesh<T, Np_1d>;
   using Basis = GDBasis2D<T, Mesh>;
 
-  using LSFQuadrature = GDGaussQuadrature2D<T, Np_1d>;
-  using LSFMesh = GridMesh<T, Np_1d>;
-  using LSFBasis = GDBasis2D<T, LSFMesh>;
-
-  using Filter = HelmholtzFilter<T, LSFMesh, LSFQuadrature, LSFBasis>;
-  using StaticElastic = StaticElastic<T, Mesh, Quadrature, Basis>;
-
-  using Physics = VolumePhysics<T, spatial_dim>;
-  using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
+  using TopoAnalysis = TopoAnalysis<T, Mesh, Quadrature, Basis>;
 
   // Set up grid
-  int nxy[2] = {128, 64};
+  int nxy[2] = {32, 16};
   T lxy[2] = {2.0, 1.0};
   Grid grid(nxy, lxy);
 
@@ -229,80 +273,9 @@ void mesh_test() {
   Basis basis(mesh);
   Quadrature quadrature(mesh);
 
-  // Set up lsf mesh
-  LSFMesh lsf_mesh = mesh.get_lsf_mesh();
-  LSFQuadrature lsf_quadrature(lsf_mesh);
-  LSFBasis lsf_basis(lsf_mesh);
-
-  // Set up filter
-  T r0 = 0.05;
-  Filter filter(r0, lsf_mesh, lsf_quadrature, lsf_basis);
-
-  // Create
-  std::vector<T> x = create_initial_topology<T>(lsf_mesh, 4, 2);
-  std::vector<T>& phi = mesh.get_lsf_dof();
-  filter.apply(x.data(), phi.data());
-  mesh.update_mesh();
-
-  // Set up bcs and loads
-  std::vector<int> bc_nodes = mesh.get_left_boundary_nodes();
-  std::vector<int> load_nodes = mesh.get_right_boundary_nodes();
-  std::vector<int> bc_dof(spatial_dim * bc_nodes.size());
-  std::vector<int> load_dof(load_nodes.size());
-  std::vector<T> load_vals(load_nodes.size(), 0.0);
-  for (int i = 0; i < bc_nodes.size(); i++) {
-    for (int d = 0; d < spatial_dim; d++) {
-      bc_dof[spatial_dim * i + d] = spatial_dim * bc_nodes[i] + d;
-    }
-  }
-  for (int i = 0; i < load_nodes.size(); i++) {
-    load_dof[i] = spatial_dim * load_nodes[i] + 1;
-    load_vals[i] = -1.0;
-  }
-
-  ToVTK<T, GridMesh<T, Np_1d>> lsf_vtk(lsf_mesh, "lsf_mesh.vtk");
-  lsf_vtk.write_mesh();
-  lsf_vtk.write_sol("x", x.data());
-  lsf_vtk.write_sol("phi", phi.data());
-
-  // Export quadrature points to a separate vtk file
-  using Interpolator = Interpolator<T, Quadrature, Basis>;
-  Interpolator interp(mesh, quadrature, basis);
-  std::vector<T> dummy(mesh.get_num_nodes(), 0.0);
-  interp.to_vtk("quadratures.vtk", dummy.data());
-
-  ToVTK<T, Mesh> vtk(mesh, "cut_mesh.vtk");
-  vtk.write_mesh();
-  vtk.write_sol("x", mesh.get_lsf_nodes(x).data());
-  vtk.write_sol("phi", mesh.get_lsf_nodes().data());
-
-  // Write boundary condition to vtk
-  std::vector<T> sol_bcs(spatial_dim * mesh.get_num_nodes(), 0.0);
-  std::vector<T> sol_load(spatial_dim * mesh.get_num_nodes(), 0.0);
-  for (int bc : bc_dof) sol_bcs[bc] = 1.0;
-  for (int l : load_dof) sol_load[l] = 1.0;
-  vtk.write_vec("bc", sol_bcs.data());
-  vtk.write_vec("load", sol_load.data());
-
-  int ndv = x.size();
-  std::vector<T> p(ndv, 0.0);
-  for (int i = 0; i < ndv; i++) {
-    p[i] = T(rand()) / RAND_MAX;
-  }
-
-  double h = 1e-6;
-  for (int i = 0; i < ndv; i++) {
-    x[i] -= h * p[i];
-  }
-
-  T E = 1e2, nu = 0.3;
-  StaticElastic static_elastic(E, nu, mesh, quadrature, basis, bc_dof, load_dof,
-                               load_vals);
-
-  using TopoAnalysis = TopoAnalysis<T, Mesh, Quadrature, Basis, LSFMesh,
-                                    LSFQuadrature, LSFBasis>;
-
-  TopoAnalysis topo(filter, static_elastic);
+  // Set up analysis
+  T r0 = 0.05, E = 1e2, nu = 0.3;
+  TopoAnalysis topo(r0, E, nu, grid, mesh, quadrature, basis);
 
   TopoProb<T, TopoAnalysis>* prob = new TopoProb<T, TopoAnalysis>(topo);
   prob->incref();
@@ -323,48 +296,6 @@ void mesh_test() {
 
   ParOptOptimizer* opt = new ParOptOptimizer(prob, options);
   opt->incref();
-
-  T c1, a1;
-  std::vector<T> gcomp, garea;
-  topo.eval_compliance_area(x, c1, a1);
-  topo.eval_compliance_area_grad(x, gcomp, garea);
-
-  for (int i = 0; i < ndv; i++) {
-    x[i] += 2.0 * h * p[i];
-  }
-  T c2, a2;
-  topo.eval_compliance_area(x, c2, a2);
-  topo.eval_compliance_area_grad(x, gcomp, garea);
-
-  T gcomp_adjoint = (c2 - c1) / 2.0 / h;
-  T garea_adjoint = (a2 - a1) / 2.0 / h;
-
-  for (int i = 0; i < ndv; i++) {
-    x[i] -= 2.0 * h * p[i];
-  }
-
-  T comp, area;
-  topo.eval_compliance_area(x, comp, area);
-  topo.eval_compliance_area_grad(x, gcomp, garea);
-
-  T gcomp_fd = 0.0, garea_fd = 0.0;
-  for (int i = 0; i < ndv; i++) {
-    gcomp_fd += gcomp[i] * p[i];
-    garea_fd += garea[i] * p[i];
-  }
-
-  std::printf("compliance:      %25.15e\n", comp);
-  std::printf("gradient fd:     %25.15e\n", gcomp_fd);
-  std::printf("gradientadjoint: %25.15e\n", gcomp_adjoint);
-  std::printf("relative error:  %25.15e\n",
-              (gcomp_fd - gcomp_adjoint) / gcomp_adjoint);
-  std::printf("\n");
-
-  std::printf("area:            %25.15e\n", area);
-  std::printf("gradient fd:     %25.15e\n", garea_fd);
-  std::printf("gradientadjoint: %25.15e\n", garea_adjoint);
-  std::printf("relative error:  %25.15e\n",
-              (garea_fd - garea_adjoint) / garea_adjoint);
 }
 
 int main(int argc, char* argv[]) {

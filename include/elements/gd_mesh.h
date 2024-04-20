@@ -462,6 +462,10 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
     return false;
   }
 
+  inline const std::unordered_map<int, int>& get_vert_nodes() const {
+    return vert_nodes;
+  }
+
  private:
   // Given the lsf dof, interpolate the gradient of the lsf at the centroid
   // a cell using bilinear quad element

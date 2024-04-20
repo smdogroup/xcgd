@@ -13,21 +13,18 @@ class StaticElastic final {
   using CSCMat = SparseUtils::CSCMat<T>;
 
  public:
-  StaticElastic(T E, T nu, Mesh& mesh, Quadrature& quadrature, Basis& basis,
-                std::vector<int>& bc_dof, std::vector<int>& load_dof,
-                std::vector<T>& load_vals)
+  StaticElastic(T E, T nu, Mesh& mesh, Quadrature& quadrature, Basis& basis)
       : mesh(mesh),
         quadrature(quadrature),
         basis(basis),
         physics(E, nu),
-        analysis(mesh, quadrature, basis, physics),
-        bc_dof(bc_dof),
-        load_dof(load_dof),
-        load_vals(load_vals) {}
+        analysis(mesh, quadrature, basis, physics) {}
 
   ~StaticElastic() = default;
 
-  std::vector<T> solve() {
+  std::vector<T> solve(const std::vector<int>& bc_dof,
+                       const std::vector<int>& load_dof,
+                       const std::vector<T>& load_vals) {
     int ndof = Physics::dof_per_node * mesh.get_num_nodes();
 
     auto& mesh = this->mesh;
@@ -105,10 +102,6 @@ class StaticElastic final {
 
   Physics physics;
   Analysis analysis;
-
-  std::vector<int>& bc_dof;
-  std::vector<int>& load_dof;
-  std::vector<T>& load_vals;
 };
 
 #endif  // XCGD_STATIC_ELASTIC_H

@@ -125,9 +125,9 @@ class HelmholtzFilter final {
   }
 
   Mesh& get_mesh() { return mesh; }
-  // Quadrature& get_quadrature() { return quadrature; }
-  // Basis& get_basis() { return basis; }
-  // Analysis& get_analysis() { return analysis; }
+  Quadrature& get_quadrature() { return quadrature; }
+  Basis& get_basis() { return basis; }
+  Analysis& get_analysis() { return analysis; }
 
  private:
   Mesh mesh;
