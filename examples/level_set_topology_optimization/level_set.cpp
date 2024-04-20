@@ -36,7 +36,7 @@ class TopoAnalysis {
 
     // Get bcs and load verts
     double tol = 1e-10;
-    double frac = 1.0;
+    double frac = 0.3;
     for (int i = 0; i < grid.get_num_verts(); i++) {
       T xloc[spatial_dim];
       grid.get_vert_xloc(i, xloc);
@@ -47,6 +47,14 @@ class TopoAnalysis {
         load_verts.push_back(i);
       }
     }
+
+    // Get load dof
+    const std::unordered_map<int, int>& vert_nodes = mesh.get_vert_nodes();
+    for (int load_vert : load_verts) {
+      load_dof.push_back(spatial_dim * vert_nodes.at(load_vert) + 1);  // y dir
+    }
+    T force = 1.0;
+    load_vals = std::vector<T>(load_verts.size(), -force / load_verts.size());
   }
 
   // Create nodal design variables for a domain with periodic holes
@@ -70,14 +78,12 @@ class TopoAnalysis {
       throw std::runtime_error("sizes don't match");
     }
 
-    counter++;
-
     // Update mesh based on new LSF
     filter.apply(x.data(), phi.data());
     mesh.update_mesh();
 
-    // Update bcs and loads
-    std::vector<int> bc_dof, load_dof;
+    // Update bcs
+    std::vector<int> bc_dof;
     const std::unordered_map<int, int>& vert_nodes = mesh.get_vert_nodes();
     for (int bc_vert : bc_verts) {
       if (vert_nodes.count(bc_vert)) {
@@ -86,15 +92,10 @@ class TopoAnalysis {
         }
       }
     }
-    for (int load_vert : load_verts) {
-      if (vert_nodes.count(load_vert)) {
-        load_dof.push_back(spatial_dim * vert_nodes.at(load_vert) + 1);
-      }
-    }
-    T force = 1.0;
-    std::vector<T> load_vals(load_dof.size(), -force / load_dof.size());
 
     // Solve the static problem
+    // Note: bc_dof might change from iteration to iteration, but load_dof
+    // remains constant
     std::vector<T> sol = elastic.solve(bc_dof, load_dof, load_vals);
     return sol;
   }
@@ -137,16 +138,10 @@ class TopoAnalysis {
     vtk.write_mesh();
     vtk.write_sol("x", x.data());
     vtk.write_sol("phi", phi.data());
-
-    std::vector<T> sol_bcs(phi.size()), sol_load(phi.size());
-    for (int v : bc_verts) sol_bcs[v] = 1.0;
-    for (int v : load_verts) sol_load[v] = 1.0;
-
-    vtk.write_sol("bc", sol_bcs.data());
-    vtk.write_sol("load", sol_load.data());
   }
 
   std::vector<T>& get_phi() { return phi; }
+  std::vector<int>& get_load_verts() { return load_verts; }
 
  private:
   Filter filter;
@@ -156,30 +151,34 @@ class TopoAnalysis {
   Mesh& mesh;
   std::vector<T>& phi;  // LSF values (filtered design variables)
 
-  std::vector<T> bc_verts;
-  std::vector<T> load_verts;
-
-  int counter = 0;
+  std::vector<int> bc_verts;
+  std::vector<int> load_verts;
+  std::vector<int> load_dof;
+  std::vector<T> load_vals;
 };
 
 template <typename T, class TopoAnalysis>
 class TopoProb : public ParOptProblem {
  public:
-  TopoProb(TopoAnalysis& topo)
+  TopoProb(TopoAnalysis& topo, double max_area)
       : ParOptProblem(MPI_COMM_SELF),
         nvars(topo.get_phi().size()),
         ncon(1),
         nineq(1),
         topo(topo),
         prefix("results"),
-        counter(0) {
+        max_area(max_area) {
     setProblemSizes(nvars, ncon, 0);
     setNumInequalities(nineq, 0);
 
     if (!std::filesystem::is_directory(prefix)) {
       std::filesystem::create_directory(prefix);
     }
+
+    reset_counter();
   }
+
+  void reset_counter() { counter = 0; }
 
   void getVarsAndBounds(ParOptVec* xvec, ParOptVec* lbvec, ParOptVec* ubvec) {
     ParOptScalar *x, *lb, *ub;
@@ -194,6 +193,11 @@ class TopoProb : public ParOptProblem {
       lb[i] = -1.0;
       ub[i] = 1.0;
     }
+
+    const std::vector<int>& load_verts = topo.get_load_verts();
+    for (int v : load_verts) {
+      ub[v] = -0.1;
+    }
   }
 
   int evalObjCon(ParOptVec* xvec, ParOptScalar* fobj, ParOptScalar* cons) {
@@ -202,7 +206,11 @@ class TopoProb : public ParOptProblem {
     ParOptScalar* xptr;
     xvec->getArray(&xptr);
     std::vector<ParOptScalar> x(xptr, xptr + nvars);
-    topo.eval_compliance_area(x, *fobj, cons[0]);
+
+    T comp, area;
+    topo.eval_compliance_area(x, comp, area);
+    *fobj = comp;
+    cons[0] = 1.0 - area / max_area;  // >= 0
 
     // Write design to vtk
     std::string vtk_name = "design_" + std::to_string(counter) + ".vtk";
@@ -229,7 +237,7 @@ class TopoProb : public ParOptProblem {
 
     for (int i = 0; i < nvars; i++) {
       g[i] = gcomp[i];
-      c[i] = garea[i];
+      c[i] = -garea[i] / max_area;
     }
     return 0;
   }
@@ -249,9 +257,11 @@ class TopoProb : public ParOptProblem {
 
   std::string prefix;
   int counter = -1;
+
+  double max_area = 0.0;
 };
 
-void mesh_test() {
+void mesh_test(int argc, char* argv[]) {
   using T = double;
   int constexpr Np_1d = 4;
   using Grid = StructuredGrid2D<T>;
@@ -263,8 +273,17 @@ void mesh_test() {
 
   using TopoAnalysis = TopoAnalysis<T, Mesh, Quadrature, Basis>;
 
+  bool smoke_test = false;
+  if (argc > 1 and "--smoke" == std::string(argv[1])) {
+    smoke_test = true;
+  }
+
   // Set up grid
-  int nxy[2] = {32, 16};
+  int nxy[2] = {128, 32};
+  if (smoke_test) {
+    nxy[0] = 8;
+    nxy[1] = 4;
+  }
   T lxy[2] = {2.0, 1.0};
   Grid grid(nxy, lxy);
 
@@ -277,30 +296,41 @@ void mesh_test() {
   T r0 = 0.05, E = 1e2, nu = 0.3;
   TopoAnalysis topo(r0, E, nu, grid, mesh, quadrature, basis);
 
-  TopoProb<T, TopoAnalysis>* prob = new TopoProb<T, TopoAnalysis>(topo);
+  double max_area = lxy[0] * lxy[1] * 0.4;
+  TopoProb<T, TopoAnalysis>* prob =
+      new TopoProb<T, TopoAnalysis>(topo, max_area);
   prob->incref();
 
   prob->checkGradients(1e-6);
-  exit(-1);
+  prob->reset_counter();
 
   // Set options
   ParOptOptions* options = new ParOptOptions;
   options->incref();
   ParOptOptimizer::addDefaultOptions(options);
 
+  int max_it = smoke_test ? 10 : 200;
+
   options->setOption("algorithm", "mma");
-  options->setOption("mma_max_iterations", 200);
+  options->setOption("mma_max_iterations", max_it);
+  options->setOption("mma_move_limit", 0.05);
   options->setOption("output_file", "paropt.out");
   options->setOption("tr_output_file", "paropt.tr");
   options->setOption("mma_output_file", "paropt.mma");
 
   ParOptOptimizer* opt = new ParOptOptimizer(prob, options);
   opt->incref();
+
+  opt->optimize();
+
+  prob->decref();
+  options->decref();
+  opt->decref();
 }
 
 int main(int argc, char* argv[]) {
   MPI_Init(&argc, &argv);
-  mesh_test();
+  mesh_test(argc, argv);
   MPI_Finalize();
   return 0;
 }
