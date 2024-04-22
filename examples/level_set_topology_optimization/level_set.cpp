@@ -30,6 +30,8 @@ class TopoAnalysis {
         elastic(E, nu, mesh, quadrature, basis),
         vol_analysis(mesh, quadrature, basis, vol),
         mesh(mesh),
+        quadrature(quadrature),
+        basis(basis),
         phi(mesh.get_lsf_dof()) {
     const T* xy0 = grid.get_xy0();
     const T* lxy = grid.get_lxy();
@@ -61,20 +63,20 @@ class TopoAnalysis {
       // x0[i] = (cos(xloc[0] / lxy[0] * 2.0 * PI * m) - 0.5) *
       //             (cos(xloc[1] / lxy[1] * 2.0 * PI * n) - 0.5) * 2.0 / 3.0 -
       //         0.5;
-      T val = cos(xloc[0] / lxy[0] * 2.0 * PI * m) *
-                  cos(xloc[1] / lxy[1] * 2.0 * PI * n) -
-              0.5;  // val in [-1.5, 0.5]
+      constexpr double t = 0.4;
+      T val = abs(cos(xloc[0] / lxy[0] * 2.0 * PI * m) *
+                  sin(xloc[1] / lxy[1] * 2.0 * PI * n)) -
+              t;
       if (val < 0) {
-        x0[i] = val / 3.0 * 2.0;
+        x0[i] = val / t;
       } else {
-        x0[i] = val * 2.0;
+        x0[i] = val / (1.0 - t);
       }
     }
     return x0;
   }
 
-  std::vector<T> update_mesh_and_solve(const std::vector<T>& x,
-                                       bool write_vtk = true) {
+  void update_mesh(const std::vector<T>& x) {
     if (x.size() != phi.size()) {
       throw std::runtime_error("sizes don't match");
     }
@@ -82,10 +84,10 @@ class TopoAnalysis {
     // Update mesh based on new LSF
     filter.apply(x.data(), phi.data());
     mesh.update_mesh();
+    const std::unordered_map<int, int>& vert_nodes = mesh.get_vert_nodes();
 
     // Update bc dof
     bc_dof.clear();
-    const std::unordered_map<int, int>& vert_nodes = mesh.get_vert_nodes();
     for (int bc_vert : bc_verts) {
       if (vert_nodes.count(bc_vert)) {
         for (int d = 0; d < spatial_dim; d++) {
@@ -96,18 +98,25 @@ class TopoAnalysis {
 
     // Update load dof
     load_dof.clear();
+    active_load_verts.clear();
     for (int load_vert : load_verts) {
-      if (vert_nodes.count(load_vert)) {
+      if (vert_nodes.count(load_vert) and x[load_vert] < 0.0) {
+        active_load_verts.push_back(load_vert);
         load_dof.push_back(spatial_dim * vert_nodes.at(load_vert) +
                            1);  // y dir
       }
     }
-    T force = 1.0;
-    std::vector<T> load_vals(load_dof.size(), -force / load_dof.size());
+  }
 
+  std::vector<T> update_mesh_and_solve(const std::vector<T>& x) {
     // Solve the static problem
     // Note: bc_dof might change from iteration to iteration, but load_dof
-    // remains constant
+    // should constant if optimizer bounds are applied properly
+    update_mesh(x);
+
+    T force = 1.0;
+    std::vector<T> load_vals(active_load_verts.size(),
+                             -force / active_load_verts.size());
     std::vector<T> sol = elastic.solve(bc_dof, load_dof, load_vals);
     return sol;
   }
@@ -141,6 +150,11 @@ class TopoAnalysis {
     std::fill(garea.begin(), garea.end(), 0.0);
     vol_analysis.LSF_volume_derivatives(garea.data());
     filter.applyGradient(x.data(), garea.data(), garea.data());
+  }
+
+  void write_quad_pts_to_vtk(const std::string vtk_path) {
+    Interpolator<T, Quadrature, Basis> interp(mesh, quadrature, basis);
+    interp.to_vtk(vtk_path);
   }
 
   void write_design_to_vtk(const std::string vtk_path, const std::vector<T>& x,
@@ -189,7 +203,7 @@ class TopoAnalysis {
   }
 
   std::vector<T>& get_phi() { return phi; }
-  std::vector<int>& get_load_verts() { return load_verts; }
+  std::vector<int>& get_active_load_verts() { return active_load_verts; }
 
  private:
   Filter filter;
@@ -197,10 +211,13 @@ class TopoAnalysis {
   Volume vol;
   VolAnalysis vol_analysis;
   Mesh& mesh;
+  Quadrature& quadrature;
+  Basis& basis;
   std::vector<T>& phi;  // LSF values (filtered design variables)
 
   std::vector<int> bc_verts;
   std::vector<int> load_verts;
+  std::vector<int> active_load_verts;
 
   std::vector<int> bc_dof;
   std::vector<int> load_dof;
@@ -236,6 +253,13 @@ class TopoProb : public ParOptProblem {
     std::printf("%-5d%-20.10e%-20.5f\n", counter, comp, 100.0 * vol_frac);
   }
 
+  void check_gradients(double dh) {
+    is_gradient_check = true;
+    checkGradients(dh);
+    is_gradient_check = false;
+    reset_counter();
+  }
+
   void reset_counter() { counter = 0; }
 
   void getVarsAndBounds(ParOptVec* xvec, ParOptVec* lbvec, ParOptVec* ubvec) {
@@ -246,15 +270,18 @@ class TopoProb : public ParOptProblem {
 
     std::vector<T> x0 = topo.create_initial_topology(2, 1);
 
+    // update mesh and bc/load dof, but don't perform the linear solve
+    topo.update_mesh(x0);
+
     for (int i = 0; i < nvars; i++) {
       x[i] = x0[i];
       lb[i] = -1.0;
       ub[i] = 1.0;
     }
 
-    const std::vector<int>& load_verts = topo.get_load_verts();
-    for (int v : load_verts) {
-      ub[v] = -0.1;
+    const std::vector<int>& active_load_verts = topo.get_active_load_verts();
+    for (int v : active_load_verts) {
+      ub[v] = -1.0e-5;  // effectively 0
     }
   }
 
@@ -279,6 +306,12 @@ class TopoProb : public ParOptProblem {
     vtk_name = "cut_" + std::to_string(counter) + ".vtk";
     topo.write_cut_design_to_vtk(fspath(prefix) / fspath(vtk_name), x,
                                  topo.get_phi(), u);
+
+    // write quadrature to vtk for gradient check
+    if (is_gradient_check) {
+      vtk_name = "fd_check_" + std::to_string(counter) + ".vtk";
+      topo.write_quad_pts_to_vtk(fspath(prefix) / fspath(vtk_name));
+    }
 
     // print optimization progress
     print_progress(comp, area / domain_area);
@@ -326,6 +359,8 @@ class TopoProb : public ParOptProblem {
 
   double domain_area = 0.0;
   double area_frac = 0.0;
+
+  bool is_gradient_check = false;
 };
 
 void mesh_test(int argc, char* argv[]) {
@@ -360,11 +395,11 @@ void mesh_test(int argc, char* argv[]) {
   Quadrature quadrature(mesh);
 
   // Set up analysis
-  T r0 = 0.05, E = 1e2, nu = 0.3;
+  T r0 = 0.1, E = 1e2, nu = 0.3;
   TopoAnalysis topo(r0, E, nu, grid, mesh, quadrature, basis);
 
   double domain_area = lxy[0] * lxy[1];
-  double area_frac = 0.6;
+  double area_frac = 0.4;
   std::string prefix = get_local_time();
   if (smoke_test) {
     prefix = "smoke_" + prefix;
@@ -375,19 +410,18 @@ void mesh_test(int argc, char* argv[]) {
       new TopoProb<T, TopoAnalysis>(topo, domain_area, area_frac, prefix);
   prob->incref();
 
-  prob->checkGradients(1e-6);
-  prob->reset_counter();
+  prob->check_gradients(1e-6);
 
   // Set options
   ParOptOptions* options = new ParOptOptions;
   options->incref();
   ParOptOptimizer::addDefaultOptions(options);
 
-  int max_it = smoke_test ? 10 : 500;
+  int max_it = smoke_test ? 10 : 1000;
 
   options->setOption("algorithm", "mma");
   options->setOption("mma_max_iterations", max_it);
-  options->setOption("mma_move_limit", 0.01);
+  options->setOption("mma_move_limit", 0.03);
   options->setOption("output_file",
                      (fspath(prefix) / fspath("paropt.out")).c_str());
   options->setOption("tr_output_file",
