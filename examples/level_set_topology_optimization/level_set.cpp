@@ -1,3 +1,5 @@
+#include <filesystem>
+
 #include "ParOptOptimizer.h"
 #include "analysis.h"
 #include "apps/helmholtz_filter.h"
@@ -5,6 +7,7 @@
 #include "elements/element_utils.h"
 #include "elements/gd_vandermonde.h"
 #include "physics/volume.h"
+#include "utils/parser.h"
 #include "utils/vtk.h"
 
 #define PI 3.141592653589793
@@ -14,7 +17,8 @@ using fspath = std::filesystem::path;
 template <typename T, class Mesh, class Quadrature, class Basis>
 class TopoAnalysis {
  private:
-  int constexpr static Np_1d_filter = 2;
+  int constexpr static Np_1d_filter =
+      2;  // This could be different from Np_1d for GD Mesh
   using Grid = StructuredGrid2D<T>;
   using Filter = HelmholtzFilter<T, Np_1d_filter>;
   using StaticElastic = StaticElastic<T, Mesh, Quadrature, Basis>;
@@ -227,13 +231,14 @@ template <typename T, class TopoAnalysis>
 class TopoProb : public ParOptProblem {
  public:
   TopoProb(TopoAnalysis& topo, double domain_area, double area_frac,
-           std::string prefix)
+           std::string prefix, const ConfigParser& parser)
       : ParOptProblem(MPI_COMM_SELF),
         nvars(topo.get_phi().size()),
         ncon(1),
         nineq(1),
         topo(topo),
         prefix(prefix),
+        parser(parser),
         domain_area(domain_area),
         area_frac(area_frac) {
     setProblemSizes(nvars, ncon, 0);
@@ -297,15 +302,17 @@ class TopoProb : public ParOptProblem {
     *fobj = comp;
     cons[0] = 1.0 - area / (domain_area * area_frac);  // >= 0
 
-    // Write design to vtk
-    std::string vtk_name = "design_" + std::to_string(counter) + ".vtk";
-    topo.write_design_to_vtk(fspath(prefix) / fspath(vtk_name), x,
-                             topo.get_phi());
+    if (counter % parser.get_int_option("write_vtk_every") == 0) {
+      // Write design to vtk
+      std::string vtk_name = "design_" + std::to_string(counter) + ".vtk";
+      topo.write_design_to_vtk(fspath(prefix) / fspath(vtk_name), x,
+                               topo.get_phi());
 
-    // Write cut mesh to vtk
-    vtk_name = "cut_" + std::to_string(counter) + ".vtk";
-    topo.write_cut_design_to_vtk(fspath(prefix) / fspath(vtk_name), x,
-                                 topo.get_phi(), u);
+      // Write cut mesh to vtk
+      vtk_name = "cut_" + std::to_string(counter) + ".vtk";
+      topo.write_cut_design_to_vtk(fspath(prefix) / fspath(vtk_name), x,
+                                   topo.get_phi(), u);
+    }
 
     // write quadrature to vtk for gradient check
     if (is_gradient_check) {
@@ -355,6 +362,8 @@ class TopoProb : public ParOptProblem {
   TopoAnalysis& topo;
 
   std::string prefix;
+  ConfigParser& parser;
+
   int counter = -1;
 
   double domain_area = 0.0;
@@ -375,18 +384,41 @@ void mesh_test(int argc, char* argv[]) {
 
   using TopoAnalysis = TopoAnalysis<T, Mesh, Quadrature, Basis>;
 
+  if (argc == 1) {
+    std::printf("Usage: ./level_set level_set.cfg [--smoke]\n");
+    exit(0);
+  }
+
   bool smoke_test = false;
-  if (argc > 1 and "--smoke" == std::string(argv[1])) {
+  if (argc > 2 and "--smoke" == std::string(argv[2])) {
+    std::printf("This is a smoke test\n");
     smoke_test = true;
   }
 
+  // Make the prefix
+  std::string prefix = get_local_time();
+  if (smoke_test) {
+    prefix = "smoke_" + prefix;
+  } else {
+    prefix = "opt_" + prefix;
+  }
+  if (!std::filesystem::is_directory(prefix)) {
+    std::filesystem::create_directory(prefix);
+  }
+
+  std::string cfg_path(argv[1]);
+  ConfigParser parser(cfg_path);
+  std::filesystem::copy(
+      cfg_path,
+      fspath(prefix) / fspath(std::filesystem::absolute(cfg_path).filename()));
+
   // Set up grid
-  int nxy[2] = {128, 64};
+  int nxy[2] = {parser.get_int_option("nx"), parser.get_int_option("ny")};
   if (smoke_test) {
     nxy[0] = 9;
     nxy[1] = 5;
   }
-  T lxy[2] = {2.0, 1.0};
+  T lxy[2] = {parser.get_double_option("lx"), parser.get_double_option("ly")};
   Grid grid(nxy, lxy);
 
   // Set up analysis mesh
@@ -395,19 +427,13 @@ void mesh_test(int argc, char* argv[]) {
   Quadrature quadrature(mesh);
 
   // Set up analysis
-  T r0 = 0.1, E = 1e2, nu = 0.3;
+  T r0 = parser.get_double_option("helmholtz_r0"), E = 1e2, nu = 0.3;
   TopoAnalysis topo(r0, E, nu, grid, mesh, quadrature, basis);
 
   double domain_area = lxy[0] * lxy[1];
-  double area_frac = 0.4;
-  std::string prefix = get_local_time();
-  if (smoke_test) {
-    prefix = "smoke_" + prefix;
-  } else {
-    prefix = "opt_" + prefix;
-  }
-  TopoProb<T, TopoAnalysis>* prob =
-      new TopoProb<T, TopoAnalysis>(topo, domain_area, area_frac, prefix);
+  double area_frac = parser.get_double_option("area_frac");
+  TopoProb<T, TopoAnalysis>* prob = new TopoProb<T, TopoAnalysis>(
+      topo, domain_area, area_frac, prefix, parser);
   prob->incref();
 
   prob->check_gradients(1e-6);
@@ -417,11 +443,12 @@ void mesh_test(int argc, char* argv[]) {
   options->incref();
   ParOptOptimizer::addDefaultOptions(options);
 
-  int max_it = smoke_test ? 10 : 1000;
+  int max_it = smoke_test ? 10 : parser.get_int_option("max_it");
 
   options->setOption("algorithm", "mma");
-  options->setOption("mma_max_iterations", max_it);
-  options->setOption("mma_move_limit", 0.03);
+  options->setOption("mma_max_iterations", parser.get_int_option("max_it"));
+  options->setOption("mma_move_limit",
+                     parser.get_double_option("mma_move_limit"));
   options->setOption("output_file",
                      (fspath(prefix) / fspath("paropt.out")).c_str());
   options->setOption("tr_output_file",
