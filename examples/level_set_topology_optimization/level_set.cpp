@@ -14,7 +14,7 @@ using fspath = std::filesystem::path;
 template <typename T, class Mesh, class Quadrature, class Basis>
 class TopoAnalysis {
  private:
-  int constexpr static Np_1d_filter = 4;
+  int constexpr static Np_1d_filter = 2;
   using Grid = StructuredGrid2D<T>;
   using Filter = HelmholtzFilter<T, Np_1d_filter>;
   using StaticElastic = StaticElastic<T, Mesh, Quadrature, Basis>;
@@ -36,25 +36,18 @@ class TopoAnalysis {
 
     // Get bcs and load verts
     double tol = 1e-10;
-    double frac = 0.3;
+    double frac = 0.1;
     for (int i = 0; i < grid.get_num_verts(); i++) {
       T xloc[spatial_dim];
       grid.get_vert_xloc(i, xloc);
       if (xloc[0] - xy0[0] < tol) {
         bc_verts.push_back(i);
       } else if (xy0[0] + lxy[0] - xloc[0] < tol and
-                 xloc[1] - xy0[1] - frac * lxy[1] < tol) {
+                 xloc[1] - (xy0[1] + (0.5 + frac) * lxy[1]) < tol and
+                 xloc[1] - (xy0[1] + (0.5 - frac) * lxy[1]) > -tol) {
         load_verts.push_back(i);
       }
     }
-
-    // Get load dof
-    const std::unordered_map<int, int>& vert_nodes = mesh.get_vert_nodes();
-    for (int load_vert : load_verts) {
-      load_dof.push_back(spatial_dim * vert_nodes.at(load_vert) + 1);  // y dir
-    }
-    T force = 1.0;
-    load_vals = std::vector<T>(load_verts.size(), -force / load_verts.size());
   }
 
   // Create nodal design variables for a domain with periodic holes
@@ -65,9 +58,17 @@ class TopoAnalysis {
     for (int i = 0; i < ndv; i++) {
       T xloc[spatial_dim];
       mesh.get_grid().get_vert_xloc(i, xloc);
-      x0[i] = (cos(xloc[0] / lxy[0] * 2.0 * PI * m) - 0.5) *
-                  (cos(xloc[1] / lxy[1] * 2.0 * PI * n) - 0.5) * 2.0 / 3.0 -
-              0.5;
+      // x0[i] = (cos(xloc[0] / lxy[0] * 2.0 * PI * m) - 0.5) *
+      //             (cos(xloc[1] / lxy[1] * 2.0 * PI * n) - 0.5) * 2.0 / 3.0 -
+      //         0.5;
+      T val = cos(xloc[0] / lxy[0] * 2.0 * PI * m) *
+                  cos(xloc[1] / lxy[1] * 2.0 * PI * n) -
+              0.5;  // val in [-1.5, 0.5]
+      if (val < 0) {
+        x0[i] = val / 3.0 * 2.0;
+      } else {
+        x0[i] = val * 2.0;
+      }
     }
     return x0;
   }
@@ -82,8 +83,8 @@ class TopoAnalysis {
     filter.apply(x.data(), phi.data());
     mesh.update_mesh();
 
-    // Update bcs
-    std::vector<int> bc_dof;
+    // Update bc dof
+    bc_dof.clear();
     const std::unordered_map<int, int>& vert_nodes = mesh.get_vert_nodes();
     for (int bc_vert : bc_verts) {
       if (vert_nodes.count(bc_vert)) {
@@ -93,6 +94,17 @@ class TopoAnalysis {
       }
     }
 
+    // Update load dof
+    load_dof.clear();
+    for (int load_vert : load_verts) {
+      if (vert_nodes.count(load_vert)) {
+        load_dof.push_back(spatial_dim * vert_nodes.at(load_vert) +
+                           1);  // y dir
+      }
+    }
+    T force = 1.0;
+    std::vector<T> load_vals(load_dof.size(), -force / load_dof.size());
+
     // Solve the static problem
     // Note: bc_dof might change from iteration to iteration, but load_dof
     // remains constant
@@ -100,12 +112,15 @@ class TopoAnalysis {
     return sol;
   }
 
-  void eval_compliance_area(const std::vector<T>& x, T& comp, T& area) {
+  std::vector<T> eval_compliance_area(const std::vector<T>& x, T& comp,
+                                      T& area) {
     std::vector<T> sol = update_mesh_and_solve(x);
 
     std::vector<T> dummy(mesh.get_num_nodes(), 0.0);
     comp = 2.0 * elastic.get_analysis().energy(nullptr, sol.data());
     area = vol_analysis.energy(nullptr, dummy.data());
+
+    return sol;
   }
 
   void eval_compliance_area_grad(const std::vector<T>& x, std::vector<T>& gcomp,
@@ -138,6 +153,39 @@ class TopoAnalysis {
     vtk.write_mesh();
     vtk.write_sol("x", x.data());
     vtk.write_sol("phi", phi.data());
+
+    std::vector<T> bcs(x.size(), 0.0);
+    std::vector<T> loads(x.size(), 0.0);
+
+    for (int v : bc_verts) bcs[v] = 1.0;
+    for (int v : load_verts) loads[v] = 1.0;
+
+    vtk.write_sol("bc-verts", bcs.data());
+    vtk.write_sol("load-verts", loads.data());
+  }
+
+  void write_cut_design_to_vtk(const std::string vtk_path,
+                               const std::vector<T>& x,
+                               const std::vector<T>& phi,
+                               const std::vector<T>& u) {
+    if (x.size() != phi.size() or
+        u.size() != spatial_dim * mesh.get_num_nodes()) {
+      throw std::runtime_error("sizes don't match");
+    }
+
+    ToVTK<T, Mesh> vtk(elastic.get_mesh(), vtk_path);
+    vtk.write_mesh();
+    vtk.write_vec("displacement", u.data());
+    vtk.write_sol("x", mesh.get_lsf_nodes(x).data());
+    vtk.write_sol("phi", mesh.get_lsf_nodes().data());
+
+    std::vector<T> dof_bcs(spatial_dim * mesh.get_num_nodes(), 0.0);
+    std::vector<T> dof_load(spatial_dim * mesh.get_num_nodes(), 0.0);
+
+    for (int i : bc_dof) dof_bcs[i] = 1.0;
+    for (int i : load_dof) dof_load[i] = 1.0;
+    vtk.write_vec("bc-dof", dof_bcs.data());
+    vtk.write_vec("load-dof", dof_load.data());
   }
 
   std::vector<T>& get_phi() { return phi; }
@@ -153,21 +201,24 @@ class TopoAnalysis {
 
   std::vector<int> bc_verts;
   std::vector<int> load_verts;
+
+  std::vector<int> bc_dof;
   std::vector<int> load_dof;
-  std::vector<T> load_vals;
 };
 
 template <typename T, class TopoAnalysis>
 class TopoProb : public ParOptProblem {
  public:
-  TopoProb(TopoAnalysis& topo, double max_area)
+  TopoProb(TopoAnalysis& topo, double domain_area, double area_frac,
+           std::string prefix)
       : ParOptProblem(MPI_COMM_SELF),
         nvars(topo.get_phi().size()),
         ncon(1),
         nineq(1),
         topo(topo),
-        prefix("results"),
-        max_area(max_area) {
+        prefix(prefix),
+        domain_area(domain_area),
+        area_frac(area_frac) {
     setProblemSizes(nvars, ncon, 0);
     setNumInequalities(nineq, 0);
 
@@ -178,6 +229,13 @@ class TopoProb : public ParOptProblem {
     reset_counter();
   }
 
+  void print_progress(T comp, T vol_frac, int header_every = 10) {
+    if (counter % header_every == 1) {
+      std::printf("\n%-5s%-20s%-20s\n", "iter", "comp", "vol (\%)");
+    }
+    std::printf("%-5d%-20.10e%-20.5f\n", counter, comp, 100.0 * vol_frac);
+  }
+
   void reset_counter() { counter = 0; }
 
   void getVarsAndBounds(ParOptVec* xvec, ParOptVec* lbvec, ParOptVec* ubvec) {
@@ -186,7 +244,7 @@ class TopoProb : public ParOptProblem {
     lbvec->getArray(&lb);
     ubvec->getArray(&ub);
 
-    std::vector<T> x0 = topo.create_initial_topology(5, 3);
+    std::vector<T> x0 = topo.create_initial_topology(2, 1);
 
     for (int i = 0; i < nvars; i++) {
       x[i] = x0[i];
@@ -208,14 +266,22 @@ class TopoProb : public ParOptProblem {
     std::vector<ParOptScalar> x(xptr, xptr + nvars);
 
     T comp, area;
-    topo.eval_compliance_area(x, comp, area);
+    std::vector<T> u = topo.eval_compliance_area(x, comp, area);
     *fobj = comp;
-    cons[0] = 1.0 - area / max_area;  // >= 0
+    cons[0] = 1.0 - area / (domain_area * area_frac);  // >= 0
 
     // Write design to vtk
     std::string vtk_name = "design_" + std::to_string(counter) + ".vtk";
     topo.write_design_to_vtk(fspath(prefix) / fspath(vtk_name), x,
                              topo.get_phi());
+
+    // Write cut mesh to vtk
+    vtk_name = "cut_" + std::to_string(counter) + ".vtk";
+    topo.write_cut_design_to_vtk(fspath(prefix) / fspath(vtk_name), x,
+                                 topo.get_phi(), u);
+
+    // print optimization progress
+    print_progress(comp, area / domain_area);
 
     return 0;
   }
@@ -237,7 +303,7 @@ class TopoProb : public ParOptProblem {
 
     for (int i = 0; i < nvars; i++) {
       g[i] = gcomp[i];
-      c[i] = -garea[i] / max_area;
+      c[i] = -garea[i] / (domain_area * area_frac);
     }
     return 0;
   }
@@ -258,12 +324,13 @@ class TopoProb : public ParOptProblem {
   std::string prefix;
   int counter = -1;
 
-  double max_area = 0.0;
+  double domain_area = 0.0;
+  double area_frac = 0.0;
 };
 
 void mesh_test(int argc, char* argv[]) {
   using T = double;
-  int constexpr Np_1d = 4;
+  int constexpr Np_1d = 2;
   using Grid = StructuredGrid2D<T>;
   int constexpr spatial_dim = Grid::spatial_dim;
 
@@ -279,10 +346,10 @@ void mesh_test(int argc, char* argv[]) {
   }
 
   // Set up grid
-  int nxy[2] = {128, 32};
+  int nxy[2] = {128, 64};
   if (smoke_test) {
-    nxy[0] = 8;
-    nxy[1] = 4;
+    nxy[0] = 9;
+    nxy[1] = 5;
   }
   T lxy[2] = {2.0, 1.0};
   Grid grid(nxy, lxy);
@@ -296,9 +363,16 @@ void mesh_test(int argc, char* argv[]) {
   T r0 = 0.05, E = 1e2, nu = 0.3;
   TopoAnalysis topo(r0, E, nu, grid, mesh, quadrature, basis);
 
-  double max_area = lxy[0] * lxy[1] * 0.4;
+  double domain_area = lxy[0] * lxy[1];
+  double area_frac = 0.6;
+  std::string prefix = get_local_time();
+  if (smoke_test) {
+    prefix = "smoke_" + prefix;
+  } else {
+    prefix = "opt_" + prefix;
+  }
   TopoProb<T, TopoAnalysis>* prob =
-      new TopoProb<T, TopoAnalysis>(topo, max_area);
+      new TopoProb<T, TopoAnalysis>(topo, domain_area, area_frac, prefix);
   prob->incref();
 
   prob->checkGradients(1e-6);
@@ -309,14 +383,17 @@ void mesh_test(int argc, char* argv[]) {
   options->incref();
   ParOptOptimizer::addDefaultOptions(options);
 
-  int max_it = smoke_test ? 10 : 200;
+  int max_it = smoke_test ? 10 : 500;
 
   options->setOption("algorithm", "mma");
   options->setOption("mma_max_iterations", max_it);
-  options->setOption("mma_move_limit", 0.05);
-  options->setOption("output_file", "paropt.out");
-  options->setOption("tr_output_file", "paropt.tr");
-  options->setOption("mma_output_file", "paropt.mma");
+  options->setOption("mma_move_limit", 0.01);
+  options->setOption("output_file",
+                     (fspath(prefix) / fspath("paropt.out")).c_str());
+  options->setOption("tr_output_file",
+                     (fspath(prefix) / fspath("paropt.tr")).c_str());
+  options->setOption("mma_output_file",
+                     (fspath(prefix) / fspath("paropt.mma")).c_str());
 
   ParOptOptimizer* opt = new ParOptOptimizer(prob, options);
   opt->incref();

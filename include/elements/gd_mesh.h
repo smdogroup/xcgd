@@ -344,7 +344,7 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
     return lsf_nodes;
   }
 
-  std::vector<T> get_lsf_nodes(std::vector<T>& lsf_dof) const {
+  std::vector<T> get_lsf_nodes(const std::vector<T>& lsf_dof) const {
     std::vector<T> lsf_nodes(get_num_nodes());
     for (auto kv : node_verts) {
       // lsf_nodes[node] = lsf_dof[vert]
