@@ -9,6 +9,7 @@
 #include "elements/fe_tetrahedral.h"
 #include "elements/gd_mesh.h"
 #include "elements/gd_vandermonde.h"
+#include "physics/grad_penalization.h"
 #include "physics/helmholtz.h"
 #include "physics/linear_elasticity.h"
 #include "physics/neohookean.h"
@@ -21,7 +22,8 @@ using T = std::complex<double>;
 
 template <class Physics, class Mesh, class Quadrature, class Basis>
 void test_physics(std::tuple<Mesh *, Quadrature *, Basis *> tuple,
-                  Physics &physics, double h = 1e-30, double tol = 1e-14) {
+                  Physics &physics, double h = 1e-30, double tol = 1e-14,
+                  bool check_res_only = false) {
   Mesh *mesh = std::get<0>(tuple);
   Quadrature *quadrature = std::get<1>(tuple);
   Basis *basis = std::get<2>(tuple);
@@ -79,13 +81,14 @@ void test_physics(std::tuple<Mesh *, Quadrature *, Basis *> tuple,
   std::printf("complex step derivatives: %25.15e\n", dres_cs);
   std::printf("exact derivatives:        %25.15e\n", dres_exact);
   std::printf("relative error:           %25.15e\n", dres_relerr);
+  EXPECT_NEAR(dres_relerr, 0.0, tol);
+
+  if (check_res_only) return;
 
   std::printf("\nDerivatives check for the Jacobian-vector product\n");
   std::printf("complex step derivatives: %25.15e\n", dJp_cs);
   std::printf("exact derivatives:        %25.15e\n", dJp_exact);
   std::printf("relative error:           %25.15e\n", dJp_relerr);
-
-  EXPECT_NEAR(dres_relerr, 0.0, tol);
   EXPECT_NEAR(dJp_relerr, 0.0, tol);
 
   int *rowp = nullptr, *cols = nullptr;
@@ -206,6 +209,15 @@ void test_helmholtz(
   test_physics(tuple, physics, h, tol);
 }
 
+template <class Quadrature, class Basis>
+void test_grad_penalization(
+    std::tuple<typename Basis::Mesh *, Quadrature *, Basis *> tuple,
+    double h = 1e-30, double tol = 1e-14) {
+  using Physics = GradPenalization<T, Basis::spatial_dim>;
+  Physics physics;
+  test_physics(tuple, physics, h, tol, true);
+}
+
 TEST(physics, NeohookeanQuad) { test_neohookean(create_quad_basis()); }
 TEST(physics, NeohookeanTet) { test_neohookean(create_tet_basis()); }
 TEST(physics, NeohookeanGD) { test_neohookean(create_gd_basis(), 1e-8, 1e-6); }
@@ -226,4 +238,14 @@ TEST(physics, LinearElasticityQuad) { test_elasticity(create_quad_basis()); }
 TEST(physics, LinearElasticityTet) { test_elasticity(create_tet_basis()); }
 TEST(physics, LinearElasticityGD) {
   test_elasticity(create_gd_basis(), 1e-8, 1e-8);
+}
+
+TEST(physics, GradPenalizationQuad) {
+  test_grad_penalization(create_quad_basis());
+}
+TEST(physics, GradPenalizationTet) {
+  test_grad_penalization(create_tet_basis());
+}
+TEST(physics, GradPenalizationGD) {
+  test_grad_penalization(create_gd_basis(), 1e-8, 1e-8);
 }
