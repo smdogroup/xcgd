@@ -47,28 +47,28 @@ class ConfigParser {
     }
   }
 
-  int get_int_option(std::string key) {
+  int get_int_option(std::string key) const {
     if (cfg.count(key) == 0) {
       key_not_found(key);
     }
-    return std::stoi(cfg[key]);
+    return std::stoi(cfg.at(key));
   }
-  double get_double_option(std::string key) {
+  double get_double_option(std::string key) const {
     if (cfg.count(key) == 0) {
       key_not_found(key);
     }
-    return std::stod(cfg[key]);
+    return std::stod(cfg.at(key));
   }
-  std::string get_str_option(std::string key) {
+  std::string get_str_option(std::string key) const {
     if (cfg.count(key) == 0) {
       key_not_found(key);
     }
-    return cfg[key];
+    return cfg.at(key);
   }
-  int get_num_options() { return cfg.size(); }
+  int get_num_options() const { return cfg.size(); }
 
  private:
-  void key_not_found(std::string key) {
+  void key_not_found(std::string key) const {
     std::fprintf(stderr, "key %s not found in config file %s\n", key.c_str(),
                  abs_path);
     exit(-1);

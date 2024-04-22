@@ -316,7 +316,7 @@ class TopoProb : public ParOptProblem {
 
     // write quadrature to vtk for gradient check
     if (is_gradient_check) {
-      vtk_name = "fd_check_" + std::to_string(counter) + ".vtk";
+      std::string vtk_name = "fd_check_" + std::to_string(counter) + ".vtk";
       topo.write_quad_pts_to_vtk(fspath(prefix) / fspath(vtk_name));
     }
 
@@ -362,7 +362,7 @@ class TopoProb : public ParOptProblem {
   TopoAnalysis& topo;
 
   std::string prefix;
-  ConfigParser& parser;
+  const ConfigParser& parser;
 
   int counter = -1;
 
