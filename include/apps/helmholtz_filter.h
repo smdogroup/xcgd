@@ -18,11 +18,11 @@ template <typename T, int Np_1d>
 class HelmholtzFilter final {
  public:
   using Mesh = GridMesh<T, Np_1d>;
+  using Quadrature = GDGaussQuadrature2D<T, Np_1d>;
+  using Basis = GDBasis2D<T, Mesh>;
 
  private:
-  using Quadrature = GDGaussQuadrature2D<T, Np_1d>;
   using Grid = StructuredGrid2D<T>;
-  using Basis = GDBasis2D<T, Mesh>;
   using Physics = HelmholtzPhysics<T, Basis::spatial_dim>;
   using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
   using BSRMat = GalerkinBSRMat<T, Physics::dof_per_node>;

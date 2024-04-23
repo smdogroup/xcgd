@@ -1,6 +1,7 @@
 #ifndef XCGD_PARSER_H
 #define XCGD_PARSER_H
 
+#include <cctype>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
@@ -65,6 +66,23 @@ class ConfigParser {
     }
     return cfg.at(key);
   }
+  bool get_bool_option(std::string key) const {
+    if (cfg.count(key) == 0) {
+      key_not_found(key);
+    }
+    std::string val = cfg.at(key);
+    std::transform(val.begin(), val.end(), val.begin(), ::tolower);
+    if (val == "true") {
+      return true;
+    } else if (val == "false") {
+      return false;
+    } else {
+      std::fprintf(stderr, "invalid value %s for a boolean option %s\n",
+                   cfg.at(key).c_str(), key.c_str());
+      exit(-1);
+    }
+  }
+
   int get_num_options() const { return cfg.size(); }
 
  private:

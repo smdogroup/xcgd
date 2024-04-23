@@ -12,12 +12,15 @@ class GradPenalization final : public PhysicsBase<T, spatial_dim, 0, 1> {
   using PhysicsBase::data_per_node;
   using PhysicsBase::dof_per_node;
   using PhysicsBase::spatial_dim;
+
+  GradPenalization(T coeff) : coeff(coeff) {}
+
   T energy(T weight, T _, const A2D::Mat<T, spatial_dim, spatial_dim>& J,
            T& val, A2D::Vec<T, spatial_dim>& grad) const {
     T detJ, dot;
     A2D::MatDet(J, detJ);
     A2D::VecDot(grad, grad, dot);
-    return 0.5 * weight * (dot - 1.0) * (dot - 1.0);
+    return 0.5 * coeff * weight * (dot - 1.0) * (dot - 1.0);
   }
 
   void residual(T weight, T _, A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
@@ -30,11 +33,14 @@ class GradPenalization final : public PhysicsBase<T, spatial_dim, 0, 1> {
 
     auto stack = A2D::MakeStack(
         A2D::MatDet(J_obj, detJ_obj), A2D::VecDot(grad_obj, grad_obj, dot_obj),
-        A2D::Eval(0.5 * weight * (dot_obj - 1.0) * (dot_obj - 1.0),
+        A2D::Eval(0.5 * coeff * weight * (dot_obj - 1.0) * (dot_obj - 1.0),
                   output_obj));
 
     output_obj.bvalue() = 1.0;
     stack.reverse();
   }
+
+ private:
+  T coeff;
 };
 #endif

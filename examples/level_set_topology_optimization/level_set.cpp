@@ -6,6 +6,7 @@
 #include "apps/static_elastic.h"
 #include "elements/element_utils.h"
 #include "elements/gd_vandermonde.h"
+#include "physics/grad_penalization.h"
 #include "physics/volume.h"
 #include "utils/parser.h"
 #include "utils/vtk.h"
@@ -14,25 +15,31 @@
 
 using fspath = std::filesystem::path;
 
-template <typename T, class Mesh, class Quadrature, class Basis>
+template <typename T, int Np_1d_filter, class Mesh, class Quadrature,
+          class Basis>
 class TopoAnalysis {
  private:
-  int constexpr static Np_1d_filter =
-      2;  // This could be different from Np_1d for GD Mesh
   using Grid = StructuredGrid2D<T>;
   using Filter = HelmholtzFilter<T, Np_1d_filter>;
   using StaticElastic = StaticElastic<T, Mesh, Quadrature, Basis>;
   using Volume = VolumePhysics<T, Basis::spatial_dim>;
+  using Penalization = GradPenalization<T, Basis::spatial_dim>;
   using VolAnalysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Volume>;
+  using PenalizationAnalysis =
+      GalerkinAnalysis<T, typename Filter::Mesh, typename Filter::Quadrature,
+                       typename Filter::Basis, Penalization>;
 
   int constexpr static spatial_dim = Grid::spatial_dim;
 
  public:
-  TopoAnalysis(T r0, T E, T nu, Grid& grid, Mesh& mesh, Quadrature& quadrature,
-               Basis& basis)
+  TopoAnalysis(T r0, T E, T nu, T penalty, Grid& grid, Mesh& mesh,
+               Quadrature& quadrature, Basis& basis)
       : filter(r0, grid),
         elastic(E, nu, mesh, quadrature, basis),
         vol_analysis(mesh, quadrature, basis, vol),
+        pen(penalty),
+        pen_analysis(filter.get_mesh(), filter.get_quadrature(),
+                     filter.get_basis(), pen),
         mesh(mesh),
         quadrature(quadrature),
         basis(basis),
@@ -57,7 +64,8 @@ class TopoAnalysis {
   }
 
   // Create nodal design variables for a domain with periodic holes
-  std::vector<T> create_initial_topology(int m, int n) {
+  std::vector<T> create_initial_topology(int m, int n, double t,
+                                         bool take_abs = true) {
     const T* lxy = mesh.get_grid().get_lxy();
     int ndv = mesh.get_grid().get_num_verts();
     std::vector<T> x0(ndv, 0.0);
@@ -67,14 +75,31 @@ class TopoAnalysis {
       // x0[i] = (cos(xloc[0] / lxy[0] * 2.0 * PI * m) - 0.5) *
       //             (cos(xloc[1] / lxy[1] * 2.0 * PI * n) - 0.5) * 2.0 / 3.0 -
       //         0.5;
-      constexpr double t = 0.4;
-      T val = abs(cos(xloc[0] / lxy[0] * 2.0 * PI * m) *
+      T val;
+      if (take_abs) {
+        val = abs(cos(xloc[0] / lxy[0] * 2.0 * PI * m) *
                   sin(xloc[1] / lxy[1] * 2.0 * PI * n)) -
               t;
-      if (val < 0) {
-        x0[i] = val / t;
+        if (val < 0) {
+          x0[i] = val / t;
+        } else {
+          x0[i] = val / (1.0 - t);
+        }
       } else {
-        x0[i] = val / (1.0 - t);
+        if (n % 2) {
+          val = cos(xloc[0] / lxy[0] * 2.0 * PI * m) *
+                    cos(xloc[1] / lxy[1] * 2.0 * PI * n) -
+                t;
+        } else {
+          val = -cos(xloc[0] / lxy[0] * 2.0 * PI * m) *
+                    cos(xloc[1] / lxy[1] * 2.0 * PI * n) -
+                t;
+        }
+        if (val < 0) {
+          x0[i] = val / (1.0 + t);
+        } else {
+          x0[i] = val / (1.0 - t);
+        }
       }
     }
     return x0;
@@ -134,6 +159,15 @@ class TopoAnalysis {
     area = vol_analysis.energy(nullptr, dummy.data());
 
     return sol;
+  }
+
+  T eval_grad_penalization(const std::vector<T>& x) {
+    return pen_analysis.energy(nullptr, x.data());
+  }
+
+  void eval_grad_penalization_grad(const std::vector<T>& x, std::vector<T>& g) {
+    g.resize(x.size());
+    pen_analysis.residual(nullptr, x.data(), g.data());
   }
 
   void eval_compliance_area_grad(const std::vector<T>& x, std::vector<T>& gcomp,
@@ -214,6 +248,9 @@ class TopoAnalysis {
   StaticElastic elastic;
   Volume vol;
   VolAnalysis vol_analysis;
+  Penalization pen;
+  PenalizationAnalysis pen_analysis;
+
   Mesh& mesh;
   Quadrature& quadrature;
   Basis& basis;
@@ -251,11 +288,15 @@ class TopoProb : public ParOptProblem {
     reset_counter();
   }
 
-  void print_progress(T comp, T vol_frac, int header_every = 10) {
+  void print_progress(T comp, T pterm, T vol_frac, int header_every = 10) {
     if (counter % header_every == 1) {
-      std::printf("\n%-5s%-20s%-20s\n", "iter", "comp", "vol (\%)");
+      char phead[30];
+      std::snprintf(phead, 30, "gradx penalty(c:%9.2e)",
+                    parser.get_double_option("grad_penalty_coeff"));
+      std::printf("\n%5s%20s%30s%20s\n", "iter", "comp", phead, "vol (\%)");
     }
-    std::printf("%-5d%-20.10e%-20.5f\n", counter, comp, 100.0 * vol_frac);
+    std::printf("%5d%20.10e%30.10e%20.5f\n", counter, comp, pterm,
+                100.0 * vol_frac);
   }
 
   void check_gradients(double dh) {
@@ -273,7 +314,11 @@ class TopoProb : public ParOptProblem {
     lbvec->getArray(&lb);
     ubvec->getArray(&ub);
 
-    std::vector<T> x0 = topo.create_initial_topology(2, 1);
+    std::vector<T> x0 = topo.create_initial_topology(
+        parser.get_int_option("init_topology_m"),
+        parser.get_int_option("init_topology_n"),
+        parser.get_double_option("init_topology_t"),
+        parser.get_bool_option("init_topology_abs"));
 
     // update mesh and bc/load dof, but don't perform the linear solve
     topo.update_mesh(x0);
@@ -297,9 +342,10 @@ class TopoProb : public ParOptProblem {
     xvec->getArray(&xptr);
     std::vector<ParOptScalar> x(xptr, xptr + nvars);
 
-    T comp, area;
+    T comp, area, pterm;
     std::vector<T> u = topo.eval_compliance_area(x, comp, area);
-    *fobj = comp;
+    pterm = topo.eval_grad_penalization(x);
+    *fobj = comp + pterm;
     cons[0] = 1.0 - area / (domain_area * area_frac);  // >= 0
 
     if (counter % parser.get_int_option("write_vtk_every") == 0) {
@@ -316,12 +362,20 @@ class TopoProb : public ParOptProblem {
 
     // write quadrature to vtk for gradient check
     if (is_gradient_check) {
-      std::string vtk_name = "fd_check_" + std::to_string(counter) + ".vtk";
+      std::string vtk_name = "fdcheck_quad_" + std::to_string(counter) + ".vtk";
       topo.write_quad_pts_to_vtk(fspath(prefix) / fspath(vtk_name));
+
+      vtk_name = "fdcheck_design_" + std::to_string(counter) + ".vtk";
+      topo.write_design_to_vtk(fspath(prefix) / fspath(vtk_name), x,
+                               topo.get_phi());
+
+      vtk_name = "fdcheck_cut_" + std::to_string(counter) + ".vtk";
+      topo.write_cut_design_to_vtk(fspath(prefix) / fspath(vtk_name), x,
+                                   topo.get_phi(), u);
     }
 
     // print optimization progress
-    print_progress(comp, area / domain_area);
+    print_progress(comp, pterm, area / domain_area);
 
     return 0;
   }
@@ -338,11 +392,12 @@ class TopoProb : public ParOptProblem {
     Ac[0]->getArray(&c);
     Ac[0]->zeroEntries();
 
-    std::vector<ParOptScalar> gcomp, garea;
+    std::vector<ParOptScalar> gcomp, garea, gpen;
     topo.eval_compliance_area_grad(x, gcomp, garea);
+    topo.eval_grad_penalization_grad(x, gpen);
 
     for (int i = 0; i < nvars; i++) {
-      g[i] = gcomp[i];
+      g[i] = gcomp[i] + gpen[i];
       c[i] = -garea[i] / (domain_area * area_frac);
     }
     return 0;
@@ -374,7 +429,8 @@ class TopoProb : public ParOptProblem {
 
 void mesh_test(int argc, char* argv[]) {
   using T = double;
-  int constexpr Np_1d = 2;
+  int constexpr Np_1d = 4;
+  int constexpr Np_1d_filter = 4;
   using Grid = StructuredGrid2D<T>;
   int constexpr spatial_dim = Grid::spatial_dim;
 
@@ -382,7 +438,7 @@ void mesh_test(int argc, char* argv[]) {
   using Mesh = CutMesh<T, Np_1d>;
   using Basis = GDBasis2D<T, Mesh>;
 
-  using TopoAnalysis = TopoAnalysis<T, Mesh, Quadrature, Basis>;
+  using TopoAnalysis = TopoAnalysis<T, Np_1d_filter, Mesh, Quadrature, Basis>;
 
   if (argc == 1) {
     std::printf("Usage: ./level_set level_set.cfg [--smoke]\n");
@@ -428,7 +484,8 @@ void mesh_test(int argc, char* argv[]) {
 
   // Set up analysis
   T r0 = parser.get_double_option("helmholtz_r0"), E = 1e2, nu = 0.3;
-  TopoAnalysis topo(r0, E, nu, grid, mesh, quadrature, basis);
+  T penalty = parser.get_double_option("grad_penalty_coeff");
+  TopoAnalysis topo(r0, E, nu, penalty, grid, mesh, quadrature, basis);
 
   double domain_area = lxy[0] * lxy[1];
   double area_frac = parser.get_double_option("area_frac");
