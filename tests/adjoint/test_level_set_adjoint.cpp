@@ -264,7 +264,6 @@ TEST(adjoint, JacPsiProductPoisson) {
   using T = double;
 
   using Grid = StructuredGrid2D<T>;
-  using GridMesh = GridMesh<T, Np_1d>;
   using CutMesh = CutMesh<T, Np_1d>;
   using Basis = GDBasis2D<T, CutMesh>;
   using LSF = Line;

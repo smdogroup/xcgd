@@ -37,7 +37,6 @@ TEST(adjoint, JacPsiProductHelmholtz) {
   int constexpr Np_1d = 4;
   using Grid = StructuredGrid2D<T>;
   using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
-  using GridMesh = GridMesh<T, Np_1d>;
   using Mesh = CutMesh<T, Np_1d>;
   using Basis = GDBasis2D<T, Mesh>;
   int nxy[2] = {5, 5};
@@ -68,8 +67,6 @@ TEST(adjoint, JacPsiProductHelmholtz) {
 
   using Physics = HelmholtzPhysics<T, Basis::spatial_dim>;
   using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
-  using BSRMat = GalerkinBSRMat<T, Physics::dof_per_node>;
-  using CSCMat = SparseUtils::CSCMat<T>;
 
   T r0 = 5.0;
   Physics physics(r0);

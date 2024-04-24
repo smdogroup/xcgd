@@ -10,7 +10,6 @@ TEST(mesh, GDMeshStructured) {
   using T = double;
   using Grid = StructuredGrid2D<T>;
   using Mesh = GridMesh<T, Np_1d>;
-  using Basis = GDBasis2D<T, Mesh>;
 
   int nxy[2] = {4, 3};
   T lxy[2] = {1.0, 1.0};

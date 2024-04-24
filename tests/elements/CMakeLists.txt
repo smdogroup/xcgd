@@ -3,11 +3,15 @@ add_executable(test_interpolation test_interpolation.cpp)
 add_executable(test_integration test_integration.cpp)
 
 target_include_directories(test_elements PRIVATE
-    ${PROJECT_SOURCE_DIR}/include ${PROJECT_SOURCE_DIR}/tests ${XCGD_ALGOIM_DIR}/algoim)
+    ${PROJECT_SOURCE_DIR}/include ${PROJECT_SOURCE_DIR}/tests)
 target_include_directories(test_interpolation PRIVATE
-    ${PROJECT_SOURCE_DIR}/include ${PROJECT_SOURCE_DIR}/tests ${XCGD_ALGOIM_DIR}/algoim)
+    ${PROJECT_SOURCE_DIR}/include ${PROJECT_SOURCE_DIR}/tests)
 target_include_directories(test_integration PRIVATE
-    ${PROJECT_SOURCE_DIR}/include ${PROJECT_SOURCE_DIR}/tests ${XCGD_ALGOIM_DIR}/algoim)
+    ${PROJECT_SOURCE_DIR}/include ${PROJECT_SOURCE_DIR}/tests)
+
+target_include_directories(test_elements SYSTEM PRIVATE ${XCGD_ALGOIM_DIR}/algoim)
+target_include_directories(test_interpolation SYSTEM PRIVATE ${XCGD_ALGOIM_DIR}/algoim)
+target_include_directories(test_integration SYSTEM PRIVATE ${XCGD_ALGOIM_DIR}/algoim)
 
 # Link to the default main from Google Test
 target_link_libraries(test_elements PRIVATE gtest_main A2D::A2D SparseUtils::SparseUtils)

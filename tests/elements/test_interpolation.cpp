@@ -104,7 +104,6 @@ TEST(elements, GDInterpolationLSFQuadrature) {
   constexpr int Np_1d = 4;
   using T = double;
   using Grid = StructuredGrid2D<T>;
-  using GridMesh = GridMesh<T, Np_1d>;
   using Mesh = CutMesh<T, Np_1d>;
   using Basis = GDBasis2D<T, Mesh>;
   using LSF = Line;

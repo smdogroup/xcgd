@@ -17,7 +17,6 @@ TEST(elements, GD_N_Nxi_Nxixi) {
   using Grid = StructuredGrid2D<T>;
   using Mesh = GridMesh<T, Np_1d>;
   using Basis = GDBasis2D<T, Mesh>;
-  using Quadrature = GDGaussQuadrature2D<T, Np_1d>;
 
   int constexpr spatial_dim = Mesh::spatial_dim;
 

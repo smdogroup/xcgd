@@ -214,7 +214,7 @@ void test_grad_penalization(
     std::tuple<typename Basis::Mesh *, Quadrature *, Basis *> tuple,
     double h = 1e-30, double tol = 1e-14) {
   using Physics = GradPenalization<T, Basis::spatial_dim>;
-  Physics physics;
+  Physics physics(1.23);
   test_physics(tuple, physics, h, tol, true);
 }
 

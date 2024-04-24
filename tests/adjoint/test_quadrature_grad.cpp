@@ -35,9 +35,6 @@ TEST(adjoint, GDLSFQuadratureGradient) {
   using LSF = Line;
   using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
 
-  using Physics = LinearElasticity<T, Basis::spatial_dim>;
-  using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
-
   constexpr int spatial_dim = Mesh::spatial_dim;
   constexpr int nodes_per_element = Basis::nodes_per_element;
 

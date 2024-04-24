@@ -33,7 +33,6 @@ void write_gd_mesh_to_vtk() {
   using T = double;
   constexpr int Np_1d = 2;
   using Mesh = GridMesh<T, Np_1d>;
-  using Basis = GDBasis2D<T, Mesh>;
   using Grid = StructuredGrid2D<T>;
 
   int nxy[2] = {10, 10};
