@@ -22,15 +22,13 @@ class StaticElastic final {
 
   ~StaticElastic() = default;
 
-  std::vector<T> solve(const std::vector<int>& bc_dof,
-                       const std::vector<int>& load_dof,
-                       const std::vector<T>& load_vals) {
+  // Compute Jacobian matrix with boundary conditions
+  CSCMat* jacobian(const std::vector<int>& bc_dof) {
     int ndof = Physics::dof_per_node * mesh.get_num_nodes();
-
-    auto& mesh = this->mesh;
 
     // Set up Jacobian matrix
     int *rowp = nullptr, *cols = nullptr;
+    auto& mesh = this->mesh;
     SparseUtils::CSRFromConnectivityFunctor(
         mesh.get_num_nodes(), mesh.get_num_elements(), mesh.nodes_per_element,
         [&mesh](int elem, int* nodes) { mesh.get_elem_dof_nodes(elem, nodes); },
@@ -47,6 +45,21 @@ class StaticElastic final {
     jac_bsr->zero_rows(bc_dof.size(), bc_dof.data());
     CSCMat* jac_csc = SparseUtils::bsr_to_csc(jac_bsr);
     jac_csc->zero_columns(bc_dof.size(), bc_dof.data());
+
+    if (rowp) delete rowp;
+    if (cols) delete cols;
+    if (jac_bsr) delete jac_bsr;
+
+    return jac_csc;
+  }
+
+  std::vector<T> solve(const std::vector<int>& bc_dof,
+                       const std::vector<int>& load_dof,
+                       const std::vector<T>& load_vals) {
+    int ndof = Physics::dof_per_node * mesh.get_num_nodes();
+
+    // Compute Jacobian matrix
+    CSCMat* jac_csc = jacobian(bc_dof);
 
     // Set right hand side
     std::vector<T> rhs(ndof, 0.0);
@@ -81,9 +94,6 @@ class StaticElastic final {
     std::printf("||Ku - f||_2: %25.15e\n", sqrt(err));
 #endif
 
-    if (rowp) delete rowp;
-    if (cols) delete cols;
-    if (jac_bsr) delete jac_bsr;
     if (jac_csc) delete jac_csc;
     if (chol) delete chol;
 
