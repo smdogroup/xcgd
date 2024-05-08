@@ -1,13 +1,16 @@
 #include "analysis.h"
 #include "physics/linear_elasticity.h"
+#include "sparse_utils/sparse_utils.h"
 
 #ifndef XCGD_STATIC_ELASTIC_H
 #define XCGD_STATIC_ELASTIC_H
 
 template <typename T, class Mesh, class Quadrature, class Basis>
 class StaticElastic final {
- private:
+ public:
   using Physics = LinearElasticity<T, Basis::spatial_dim>;
+
+ private:
   using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
   using BSRMat = GalerkinBSRMat<T, Physics::dof_per_node>;
   using CSCMat = SparseUtils::CSCMat<T>;
@@ -23,7 +26,7 @@ class StaticElastic final {
   ~StaticElastic() = default;
 
   // Compute Jacobian matrix with boundary conditions
-  CSCMat* jacobian(const std::vector<int>& bc_dof) {
+  BSRMat* jacobian(const std::vector<int>& bc_dof) {
     int ndof = Physics::dof_per_node * mesh.get_num_nodes();
 
     // Set up Jacobian matrix
@@ -43,14 +46,11 @@ class StaticElastic final {
 
     // Apply bcs
     jac_bsr->zero_rows(bc_dof.size(), bc_dof.data());
-    CSCMat* jac_csc = SparseUtils::bsr_to_csc(jac_bsr);
-    jac_csc->zero_columns(bc_dof.size(), bc_dof.data());
 
     if (rowp) delete rowp;
     if (cols) delete cols;
-    if (jac_bsr) delete jac_bsr;
 
-    return jac_csc;
+    return jac_bsr;
   }
 
   std::vector<T> solve(const std::vector<int>& bc_dof,
@@ -59,7 +59,9 @@ class StaticElastic final {
     int ndof = Physics::dof_per_node * mesh.get_num_nodes();
 
     // Compute Jacobian matrix
-    CSCMat* jac_csc = jacobian(bc_dof);
+    BSRMat* jac_bsr = jacobian(bc_dof);
+    CSCMat* jac_csc = SparseUtils::bsr_to_csc(jac_bsr);
+    jac_csc->zero_columns(bc_dof.size(), bc_dof.data());
 
     // Set right hand side
     std::vector<T> rhs(ndof, 0.0);
@@ -94,6 +96,7 @@ class StaticElastic final {
     std::printf("||Ku - f||_2: %25.15e\n", sqrt(err));
 #endif
 
+    if (jac_bsr) delete jac_bsr;
     if (jac_csc) delete jac_csc;
     if (chol) delete chol;
 

@@ -259,8 +259,8 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
   CutMesh(const Grid& grid, const Func& lsf)
       : MeshBase(grid), lsf_mesh(grid), lsf_dof(lsf_mesh.get_num_nodes()) {
     for (int i = 0; i < lsf_dof.size(); i++) {
-      algoim::uvector<T, spatial_dim> xloc;
-      lsf_mesh.get_node_xloc(i, xloc.data());
+      T xloc[spatial_dim];
+      lsf_mesh.get_node_xloc(i, xloc);
       lsf_dof[i] = lsf(xloc);
     }
     update_mesh();
