@@ -119,12 +119,11 @@ class ArgParser {
 
  private:
   void show_help_info_and_exit() {
-    std::printf("Usage: ./prog_name");
-    for (auto kv : args) {
-      std::string k = kv.first;
+    std::printf("Usage: ./prog_name [-h,--help]");
+    for (std::string k : keys) {
       std::printf(" --%s=...", k.c_str());
     }
-    std::printf(" [-h,--help]\n");
+    std::printf("\n");
     exit(0);
   }
 
