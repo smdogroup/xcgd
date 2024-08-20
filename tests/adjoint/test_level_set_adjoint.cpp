@@ -16,8 +16,8 @@ class Line {
   Line(double k = 0.4, double b = 0.7) : k(k), b(b) {}
 
   template <typename T>
-  T operator()(const algoim::uvector<T, spatial_dim>& x) const {
-    return -k * x(0) + x(1) - b;
+  T operator()(const T* x) const {
+    return -k * x[0] + x[1] - b;
   }
 
  private:

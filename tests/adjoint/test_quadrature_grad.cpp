@@ -12,13 +12,8 @@ class Line {
   Line(double k = 0.4, double b = 0.7) : k(k), b(b) {}
 
   template <typename T>
-  T operator()(const algoim::uvector<T, spatial_dim>& x) const {
-    return -k * x(0) + x(1) - b;
-  }
-
-  template <typename T>
-  algoim::uvector<T, spatial_dim> grad(const algoim::uvector<T, 2>& x) const {
-    return algoim::uvector<T, spatial_dim>(-k, 1.0);
+  T operator()(const T* x) const {
+    return -k * x[0] + x[1] - b;
   }
 
  private:

@@ -111,16 +111,9 @@ class Circle {
   }
 
   template <typename T>
-  T operator()(const algoim::uvector<T, spatial_dim> &x) const {
-    return sign * ((x(0) - x0[0]) * (x(0) - x0[0]) +
-                   (x(1) - x0[1]) * (x(1) - x0[1]) - r * r);
-  }
-
-  template <typename T>
-  algoim::uvector<T, spatial_dim> grad(
-      const algoim::uvector<T, spatial_dim> &x) const {
-    return algoim::uvector<T, spatial_dim>(2.0 * sign * (x(0) - x0[0]),
-                                           2.0 * sign * (x(1) - x0[1]));
+  T operator()(const T *x) const {
+    return sign * ((x[0] - x0[0]) * (x[0] - x0[0]) +
+                   (x[1] - x0[1]) * (x[1] - x0[1]) - r * r);
   }
 
  private:

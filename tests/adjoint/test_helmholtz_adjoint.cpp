@@ -17,13 +17,9 @@ class Circle {
     }
   }
 
-  T operator()(const algoim::uvector<T, 2> &x) const {
-    return sign * ((x(0) - x0[0]) * (x(0) - x0[0]) +
-                   (x(1) - x0[1]) * (x(1) - x0[1]) - r * r);
-  }
-  algoim::uvector<T, 2> grad(const algoim::uvector<T, 2> &x) const {
-    return algoim::uvector<T, 2>(2.0 * sign * (x(0) - x0[0]),
-                                 2.0 * sign * (x(1) - x0[1]));
+  T operator()(const T *x) const {
+    return sign * ((x[0] - x0[0]) * (x[0] - x0[0]) +
+                   (x[1] - x0[1]) * (x[1] - x0[1]) - r * r);
   }
 
  private:
