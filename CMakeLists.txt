@@ -7,6 +7,9 @@ project("XCGD"
   HOMEPAGE_URL "https://github.com/smdogroup/xcgd"
   LANGUAGES CXX)
 
+# Export the compile commands that clangd LS uses
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 # C++ 17 is required for XCGD
 set(CMAKE_CXX_STANDARD 17)
 

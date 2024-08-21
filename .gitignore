@@ -1,6 +1,7 @@
 .vscode
 *.dSYM
 .DS_Store
+.cache
 
 # build
 build*/*
