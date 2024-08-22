@@ -22,17 +22,17 @@
  * @param grad ∇_x u, output
  */
 template <typename T, int spatial_dim>
-inline void transform(const A2D::Mat<T, spatial_dim, spatial_dim>& J,
-                      const A2D::Vec<T, spatial_dim>& grad_ref,
-                      A2D::Vec<T, spatial_dim>& grad) {
+inline void transform(const A2D::Mat<T, spatial_dim, spatial_dim> &J,
+                      const A2D::Vec<T, spatial_dim> &grad_ref,
+                      A2D::Vec<T, spatial_dim> &grad) {
   A2D::Mat<T, spatial_dim, spatial_dim> Jinv;
   A2D::MatInv(J, Jinv);
   A2D::MatVecMult<A2D::MatOp::TRANSPOSE>(Jinv, grad_ref, grad);
 }
 template <typename T, int dim, int spatial_dim>
-inline void transform(const A2D::Mat<T, spatial_dim, spatial_dim>& J,
-                      const A2D::Mat<T, dim, spatial_dim>& grad_ref,
-                      A2D::Mat<T, dim, spatial_dim>& grad) {
+inline void transform(const A2D::Mat<T, spatial_dim, spatial_dim> &J,
+                      const A2D::Mat<T, dim, spatial_dim> &grad_ref,
+                      A2D::Mat<T, dim, spatial_dim> &grad) {
   A2D::Mat<T, spatial_dim, spatial_dim> Jinv;
   A2D::MatInv(J, Jinv);
   A2D::MatMatMult(grad_ref, Jinv, grad);
@@ -50,17 +50,17 @@ inline void transform(const A2D::Mat<T, spatial_dim, spatial_dim>& J,
  * @param grad_ref ∂e/∂∇_ξ, output
  */
 template <typename T, int spatial_dim>
-inline void rtransform(const A2D::Mat<T, spatial_dim, spatial_dim>& J,
-                       const A2D::Vec<T, spatial_dim>& grad,
-                       A2D::Vec<T, spatial_dim>& grad_ref) {
+inline void rtransform(const A2D::Mat<T, spatial_dim, spatial_dim> &J,
+                       const A2D::Vec<T, spatial_dim> &grad,
+                       A2D::Vec<T, spatial_dim> &grad_ref) {
   A2D::Mat<T, spatial_dim, spatial_dim> Jinv;
   A2D::MatInv(J, Jinv);
   A2D::MatVecMult(Jinv, grad, grad_ref);
 }
 template <typename T, int dim, int spatial_dim>
-inline void rtransform(const A2D::Mat<T, spatial_dim, spatial_dim>& J,
-                       const A2D::Mat<T, dim, spatial_dim>& grad,
-                       A2D::Mat<T, dim, spatial_dim>& grad_ref) {
+inline void rtransform(const A2D::Mat<T, spatial_dim, spatial_dim> &J,
+                       const A2D::Mat<T, dim, spatial_dim> &grad,
+                       A2D::Mat<T, dim, spatial_dim> &grad_ref) {
   A2D::Mat<T, spatial_dim, spatial_dim> Jinv;
   A2D::MatInv(J, Jinv);
   A2D::MatMatMult<A2D::MatOp::NORMAL, A2D::MatOp::TRANSPOSE>(grad, Jinv,
@@ -78,10 +78,10 @@ inline void rtransform(const A2D::Mat<T, spatial_dim, spatial_dim>& J,
  * @param hess_ref ∂^2e/∂∇_ξ^2, output
  */
 template <typename T, int dim, int spatial_dim>
-inline void jtransform(
-    const A2D::Mat<T, spatial_dim, spatial_dim>& J,
-    const A2D::Mat<T, dim * spatial_dim, dim * spatial_dim>& hess,
-    A2D::Mat<T, dim * spatial_dim, dim * spatial_dim>& hess_ref) {
+inline void
+jtransform(const A2D::Mat<T, spatial_dim, spatial_dim> &J,
+           const A2D::Mat<T, dim * spatial_dim, dim * spatial_dim> &hess,
+           A2D::Mat<T, dim * spatial_dim, dim * spatial_dim> &hess_ref) {
   A2D::Mat<T, spatial_dim, spatial_dim> Jinv;
   A2D::MatInv(J, Jinv);
   hess_ref.zero();
@@ -105,7 +105,7 @@ inline void jtransform(
 }
 
 template <typename T, class Mesh, class Basis>
-void get_element_xloc(const Mesh& mesh, int e, T element_xloc[]) {
+void get_element_xloc(const Mesh &mesh, int e, T element_xloc[]) {
   int constexpr nodes_per_element = Basis::nodes_per_element;
   int constexpr spatial_dim = Basis::spatial_dim;
   int nodes[nodes_per_element];
@@ -117,7 +117,7 @@ void get_element_xloc(const Mesh& mesh, int e, T element_xloc[]) {
 }
 
 template <typename T, int dim, class Mesh, class Basis>
-void get_element_vars(const Mesh& mesh, int e, const T dof[], T element_dof[]) {
+void get_element_vars(const Mesh &mesh, int e, const T dof[], T element_dof[]) {
   int constexpr nodes_per_element = Basis::nodes_per_element;
   int constexpr spatial_dim = Basis::spatial_dim;
   int nodes[nodes_per_element];
@@ -130,7 +130,7 @@ void get_element_vars(const Mesh& mesh, int e, const T dof[], T element_dof[]) {
 }
 
 template <typename T, int dim, class Mesh, class Basis>
-void add_element_res(const Mesh& mesh, int e, const T element_res[], T res[]) {
+void add_element_res(const Mesh &mesh, int e, const T element_res[], T res[]) {
   int constexpr nodes_per_element = Basis::nodes_per_element;
   int constexpr spatial_dim = Basis::spatial_dim;
   int nodes[nodes_per_element];
@@ -143,7 +143,7 @@ void add_element_res(const Mesh& mesh, int e, const T element_res[], T res[]) {
 }
 
 template <typename T, class Mesh, class Basis>
-void add_element_dfdx(const Mesh& mesh, int e, const T element_dfdx[],
+void add_element_dfdx(const Mesh &mesh, int e, const T element_dfdx[],
                       T dfdx[]) {
   int constexpr nodes_per_element = Basis::nodes_per_element;
   int nodes[nodes_per_element];
@@ -155,7 +155,7 @@ void add_element_dfdx(const Mesh& mesh, int e, const T element_dfdx[],
 }
 
 template <typename T, class Mesh, class Basis>
-void add_element_dfdphi(const Mesh& lsf_mesh, int c, const T element_dfdphi[],
+void add_element_dfdphi(const Mesh &lsf_mesh, int c, const T element_dfdphi[],
                         T dfdphi[]) {
   int constexpr nodes_per_element = Basis::nodes_per_element;
   int nodes[nodes_per_element];
@@ -183,8 +183,8 @@ void add_element_dfdphi(const Mesh& lsf_mesh, int c, const T element_dfdphi[],
  */
 template <typename T, class Basis, int dim>
 void interp_val_grad(const T dof[], const T N[], const T Nxi[],
-                     A2D::Vec<T, dim>* vals,
-                     A2D::Mat<T, dim, Basis::spatial_dim>* grad) {
+                     A2D::Vec<T, dim> *vals,
+                     A2D::Mat<T, dim, Basis::spatial_dim> *grad) {
   static constexpr int spatial_dim = Basis::spatial_dim;
   static constexpr int nodes_per_element = Basis::nodes_per_element;
 
@@ -216,8 +216,8 @@ void interp_val_grad(const T dof[], const T N[], const T Nxi[],
 
 // dim == 1
 template <typename T, class Basis>
-void interp_val_grad(const T* dof, const T* N, const T* Nxi, T* val,
-                     A2D::Vec<T, Basis::spatial_dim>* grad) {
+void interp_val_grad(const T *dof, const T *N, const T *Nxi, T *val,
+                     A2D::Vec<T, Basis::spatial_dim> *grad) {
   static constexpr int spatial_dim = Basis::spatial_dim;
   static constexpr int nodes_per_element = Basis::nodes_per_element;
 
@@ -259,8 +259,8 @@ void interp_val_grad(const T* dof, const T* N, const T* Nxi, T* val,
  */
 template <typename T, class Basis, int dim>
 void interp_hess(
-    const T* dof, const T* Nxixi,
-    A2D::Mat<T, dim, Basis::spatial_dim * Basis::spatial_dim>& hess) {
+    const T *dof, const T *Nxixi,
+    A2D::Mat<T, dim, Basis::spatial_dim * Basis::spatial_dim> &hess) {
   static constexpr int spatial_dim = Basis::spatial_dim;
   static constexpr int nodes_per_element = Basis::nodes_per_element;
 
@@ -281,8 +281,8 @@ void interp_hess(
 
 // dim == 1
 template <typename T, class Basis>
-void interp_hess(const T* dof, const T* Nxixi,
-                 A2D::Vec<T, Basis::spatial_dim * Basis::spatial_dim>& hess) {
+void interp_hess(const T *dof, const T *Nxixi,
+                 A2D::Vec<T, Basis::spatial_dim * Basis::spatial_dim> &hess) {
   static constexpr int spatial_dim = Basis::spatial_dim;
   static constexpr int nodes_per_element = Basis::nodes_per_element;
 
@@ -322,8 +322,8 @@ void interp_hess(const T* dof, const T* Nxixi,
  * @param elem_res de/du
  */
 template <typename T, class Basis, int dim>
-void add_grad(const T N[], const T Nxi[], const A2D::Vec<T, dim>& coef_vals,
-              A2D::Mat<T, dim, Basis::spatial_dim>& coef_grad, T elem_res[]) {
+void add_grad(const T N[], const T Nxi[], const A2D::Vec<T, dim> &coef_vals,
+              A2D::Mat<T, dim, Basis::spatial_dim> &coef_grad, T elem_res[]) {
   static constexpr int spatial_dim = Basis::spatial_dim;
   static constexpr int nodes_per_element = Basis::nodes_per_element;
 
@@ -339,8 +339,8 @@ void add_grad(const T N[], const T Nxi[], const A2D::Vec<T, dim>& coef_vals,
 
 // dim == 1
 template <typename T, class Basis>
-void add_grad(const T N[], const T Nxi[], const T& coef_val,
-              const A2D::Vec<T, Basis::spatial_dim>& coef_grad, T elem_res[]) {
+void add_grad(const T N[], const T Nxi[], const T &coef_val,
+              const A2D::Vec<T, Basis::spatial_dim> &coef_grad, T elem_res[]) {
   static constexpr int spatial_dim = Basis::spatial_dim;
   static constexpr int nodes_per_element = Basis::nodes_per_element;
 
@@ -376,9 +376,9 @@ void add_grad(const T N[], const T Nxi[], const T& coef_val,
  */
 template <typename T, class Basis, int dim>
 void add_matrix(const T N[], const T Nxi[],
-                const A2D::Mat<T, dim, dim>& coef_vals,
+                const A2D::Mat<T, dim, dim> &coef_vals,
                 const A2D::Mat<T, dim * Basis::spatial_dim,
-                               dim * Basis::spatial_dim>& coef_hess,
+                               dim * Basis::spatial_dim> &coef_hess,
                 T elem_jac[]) {
   static constexpr int spatial_dim = Basis::spatial_dim;
   static constexpr int nodes_per_element = Basis::nodes_per_element;
@@ -418,8 +418,8 @@ void add_matrix(const T N[], const T Nxi[],
 // dim == 1
 template <typename T, class Basis>
 void add_matrix(
-    const T N[], const T Nxi[], const T& coef_val,
-    const A2D::Mat<T, Basis::spatial_dim, Basis::spatial_dim>& coef_grad,
+    const T N[], const T Nxi[], const T &coef_val,
+    const A2D::Mat<T, Basis::spatial_dim, Basis::spatial_dim> &coef_grad,
     T elem_jac[]) {
   static constexpr int spatial_dim = Basis::spatial_dim;
   static constexpr int nodes_per_element = Basis::nodes_per_element;
@@ -464,15 +464,15 @@ void add_matrix(
  * @param grad, output
  */
 template <typename T, class Basis>
-void det_deriv(const T* elem_xloc, const T* Nxixi,
-               const A2D::Mat<T, Basis::spatial_dim, Basis::spatial_dim>& J,
-               A2D::Vec<T, Basis::spatial_dim>& grad) {
+void det_deriv(const T *elem_xloc, const T *Nxixi,
+               const A2D::Mat<T, Basis::spatial_dim, Basis::spatial_dim> &J,
+               A2D::Vec<T, Basis::spatial_dim> &grad) {
   static constexpr int spatial_dim = Basis::spatial_dim;
   static constexpr int nodes_per_element = Basis::nodes_per_element;
 
   // Get derivatives of detJ w.r.t. J
   T detJ, detJb = 1.0;
-  A2D::ADObj<T&> detJ_obj(detJ, detJb);
+  A2D::ADObj<T &> detJ_obj(detJ, detJb);
   A2D::ADObj<A2D::Mat<T, spatial_dim, spatial_dim>> J_obj(J);
   auto stack = A2D::MakeStack(A2D::MatDet(J_obj, detJ_obj));
   stack.reverse();
@@ -501,7 +501,7 @@ void det_deriv(const T* elem_xloc, const T* Nxixi,
  * quadrature point
  */
 template <typename T, class Basis>
-void add_jac_adj_product(const T N[], const T& x_val, T elem_dfdx[]) {
+void add_jac_adj_product(const T N[], const T &x_val, T elem_dfdx[]) {
   static constexpr int spatial_dim = Basis::spatial_dim;
   static constexpr int nodes_per_element = Basis::nodes_per_element;
 
@@ -537,17 +537,17 @@ void add_jac_adj_product(const T N[], const T& x_val, T elem_dfdx[]) {
 template <typename T, class GDBasis, int dim>
 void add_jac_adj_product(
     T weight, T detJ, const T wts_grad[], const T pts_grad[],
-    const A2D::Vec<T, dim>& psiq,
-    const A2D::Mat<T, dim, GDBasis::spatial_dim>& ugrad_ref,
-    const A2D::Mat<T, dim, GDBasis::spatial_dim>& pgrad_ref,
-    const A2D::Mat<T, dim, GDBasis::spatial_dim * GDBasis::spatial_dim>&
-        uhess_ref,
-    const A2D::Mat<T, dim, GDBasis::spatial_dim * GDBasis::spatial_dim>&
-        phess_ref,
-    const A2D::Vec<T, dim>& coef_uq,
-    const A2D::Mat<T, dim, GDBasis::spatial_dim>& coef_ugrad_ref,
-    const A2D::Vec<T, dim>& jp_uq,
-    const A2D::Mat<T, dim, GDBasis::spatial_dim>& jp_ugrad_ref,
+    const A2D::Vec<T, dim> &psiq,
+    const A2D::Mat<T, dim, GDBasis::spatial_dim> &ugrad_ref,
+    const A2D::Mat<T, dim, GDBasis::spatial_dim> &pgrad_ref,
+    const A2D::Mat<T, dim, GDBasis::spatial_dim * GDBasis::spatial_dim>
+        &uhess_ref,
+    const A2D::Mat<T, dim, GDBasis::spatial_dim * GDBasis::spatial_dim>
+        &phess_ref,
+    const A2D::Vec<T, dim> &coef_uq,
+    const A2D::Mat<T, dim, GDBasis::spatial_dim> &coef_ugrad_ref,
+    const A2D::Vec<T, dim> &jp_uq,
+    const A2D::Mat<T, dim, GDBasis::spatial_dim> &jp_ugrad_ref,
     T elem_dfdphi[]) {
   static_assert(GDBasis::is_gd_basis, "This method only works with GD Basis");
 
@@ -626,12 +626,12 @@ void add_jac_adj_product(
 template <typename T, class GDBasis>
 void add_jac_adj_product(
     T weight, T detJ, const T wts_grad[], const T pts_grad[], T psiq,
-    const A2D::Vec<T, GDBasis::spatial_dim>& ugrad_ref,
-    const A2D::Vec<T, GDBasis::spatial_dim>& pgrad_ref,
-    const A2D::Vec<T, GDBasis::spatial_dim * GDBasis::spatial_dim>& uhess_ref,
-    const A2D::Vec<T, GDBasis::spatial_dim * GDBasis::spatial_dim>& phess_ref,
-    T coef_uq, const A2D::Vec<T, GDBasis::spatial_dim>& coef_ugrad_ref, T jp_uq,
-    const A2D::Vec<T, GDBasis::spatial_dim>& jp_ugrad_ref, T elem_dfdphi[]) {
+    const A2D::Vec<T, GDBasis::spatial_dim> &ugrad_ref,
+    const A2D::Vec<T, GDBasis::spatial_dim> &pgrad_ref,
+    const A2D::Vec<T, GDBasis::spatial_dim * GDBasis::spatial_dim> &uhess_ref,
+    const A2D::Vec<T, GDBasis::spatial_dim * GDBasis::spatial_dim> &phess_ref,
+    T coef_uq, const A2D::Vec<T, GDBasis::spatial_dim> &coef_ugrad_ref, T jp_uq,
+    const A2D::Vec<T, GDBasis::spatial_dim> &jp_ugrad_ref, T elem_dfdphi[]) {
   static_assert(GDBasis::is_gd_basis, "This method only works with GD Basis");
 
   static constexpr int spatial_dim = GDBasis::spatial_dim;
@@ -694,15 +694,16 @@ void add_jac_adj_product(
 
 template <typename T, int samples_1d, class Mesh>
 class GDSampler2D final : public QuadratureBase<T> {
- private:
+private:
   static constexpr int spatial_dim = Mesh::spatial_dim;
   static constexpr int samples = samples_1d * samples_1d;
 
- public:
-  GDSampler2D(const Mesh& mesh) : mesh(mesh) {}
+public:
+  GDSampler2D(const Mesh &mesh, double t1 = 0.05, double t2 = 0.05)
+      : mesh(mesh), t1(t1), t2(t2) {}
 
-  int get_quadrature_pts(int elem, std::vector<T>& pts,
-                         std::vector<T>& _) const {
+  int get_quadrature_pts(int elem, std::vector<T> &pts,
+                         std::vector<T> &_) const {
     pts.resize(spatial_dim * samples);
 
     T xymin[2], xymax[2];
@@ -710,13 +711,13 @@ class GDSampler2D final : public QuadratureBase<T> {
 
     T lxy[2], xy0[2];
     for (int d = 0; d < spatial_dim; d++) {
-      xy0[d] = xymin[d] + 0.05 * (xymax[d] - xymin[d]);
-      lxy[d] = 0.9 * (xymax[d] - xymin[d]);
+      xy0[d] = xymin[d] + t1 * (xymax[d] - xymin[d]);
+      lxy[d] = (1.0 - t1 - t2) * (xymax[d] - xymin[d]);
     }
     int nxy[2] = {samples_1d - 1, samples_1d - 1};
     StructuredGrid2D<T> grid(nxy, lxy, xy0);
 
-    T* pts_ptr = pts.data();
+    T *pts_ptr = pts.data();
     for (int i = 0; i < samples; i++) {
       grid.get_vert_xloc(i, pts_ptr);
       pts_ptr += spatial_dim;
@@ -725,8 +726,10 @@ class GDSampler2D final : public QuadratureBase<T> {
     return samples;
   }
 
- private:
-  const Mesh& mesh;
+private:
+  double t1; // normalized gap before the first sampling point
+  double t2; // normalized gap after the last sampling point
+  const Mesh &mesh;
 };
 
 /**
@@ -734,8 +737,7 @@ class GDSampler2D final : public QuadratureBase<T> {
  *
  * Note: This is useful for sanity check and debugging.
  */
-template <typename T, class Sampler, class Basis>
-class Interpolator final {
+template <typename T, class Sampler, class Basis> class Interpolator final {
   using Mesh = typename Basis::Mesh;
 
   static int constexpr dof_per_node = 1;
@@ -744,11 +746,11 @@ class Interpolator final {
 
   using Physics = PhysicsBase<T, spatial_dim, data_per_node, dof_per_node>;
 
- public:
-  Interpolator(const Mesh& mesh, const Sampler& sampler, const Basis& basis)
+public:
+  Interpolator(const Mesh &mesh, const Sampler &sampler, const Basis &basis)
       : mesh(mesh), basis(basis), sampler(sampler) {}
 
-  void to_vtk(const std::string name, T* dof = (T*)nullptr) const {
+  void to_vtk(const std::string name, T *dof = (T *)nullptr) const {
     FieldToVTK<T, spatial_dim> field_vtk(name);
 
     for (int elem = 0; elem < mesh.get_num_elements(); elem++) {
@@ -794,11 +796,11 @@ class Interpolator final {
     field_vtk.write_vtk();
   }
 
- private:
-  const Mesh& mesh;
-  const Basis& basis;
-  const Sampler& sampler;
+private:
+  const Mesh &mesh;
+  const Basis &basis;
+  const Sampler &sampler;
   Physics physics;
 };
 
-#endif  // XCGD_ELEMENT_UTILS_H
+#endif // XCGD_ELEMENT_UTILS_H
