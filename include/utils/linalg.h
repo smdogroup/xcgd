@@ -40,12 +40,26 @@ void direct_inverse(int n, T A[]) {
   std::vector<int> ipiv(n);
   int info = -1;
   SparseUtils::LAPACKgetrf(n, n, A, n, ipiv.data(), &info);
-  std::vector<T> work(n);
-  // Get optimal lwork
+
+  // First we let LAPACK determine the optimal lwork value
+  std::vector<T> work(1);
   int lwork = -1;
   SparseUtils::LAPACKgetri(n, A, n, ipiv.data(), work.data(), lwork, &info);
+  if (info != 0) {
+    char msg[256];
+    std::snprintf(msg, 256,
+                  "direct inverse failed to determine the optimal lwork with "
+                  "exit code %d",
+                  info);
+    throw std::runtime_error(msg);
+  }
   lwork = int(freal(work[0]));
-  // std::printf("optimal lwork for n = %d: %d\n", n, lwork);
+  if (lwork < 1) {
+    lwork = 1;
+  }
+
+  // Compute the inverse of the matrix using LU factorization
+  work.resize(lwork);
   SparseUtils::LAPACKgetri(n, A, n, ipiv.data(), work.data(), lwork, &info);
   if (info != 0) {
     char msg[256];

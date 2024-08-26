@@ -78,10 +78,10 @@ inline void rtransform(const A2D::Mat<T, spatial_dim, spatial_dim> &J,
  * @param hess_ref ∂^2e/∂∇_ξ^2, output
  */
 template <typename T, int dim, int spatial_dim>
-inline void
-jtransform(const A2D::Mat<T, spatial_dim, spatial_dim> &J,
-           const A2D::Mat<T, dim * spatial_dim, dim * spatial_dim> &hess,
-           A2D::Mat<T, dim * spatial_dim, dim * spatial_dim> &hess_ref) {
+inline void jtransform(
+    const A2D::Mat<T, spatial_dim, spatial_dim> &J,
+    const A2D::Mat<T, dim * spatial_dim, dim * spatial_dim> &hess,
+    A2D::Mat<T, dim * spatial_dim, dim * spatial_dim> &hess_ref) {
   A2D::Mat<T, spatial_dim, spatial_dim> Jinv;
   A2D::MatInv(J, Jinv);
   hess_ref.zero();
@@ -694,13 +694,13 @@ void add_jac_adj_product(
 
 template <typename T, int samples_1d, class Mesh>
 class GDSampler2D final : public QuadratureBase<T> {
-private:
+ private:
   static constexpr int spatial_dim = Mesh::spatial_dim;
   static constexpr int samples = samples_1d * samples_1d;
 
-public:
+ public:
   GDSampler2D(const Mesh &mesh, double t1 = 0.05, double t2 = 0.05)
-      : mesh(mesh), t1(t1), t2(t2) {}
+      : t1(t1), t2(t2), mesh(mesh) {}
 
   int get_quadrature_pts(int elem, std::vector<T> &pts,
                          std::vector<T> &_) const {
@@ -726,9 +726,9 @@ public:
     return samples;
   }
 
-private:
-  double t1; // normalized gap before the first sampling point
-  double t2; // normalized gap after the last sampling point
+ private:
+  double t1;  // normalized gap before the first sampling point
+  double t2;  // normalized gap after the last sampling point
   const Mesh &mesh;
 };
 
@@ -737,7 +737,8 @@ private:
  *
  * Note: This is useful for sanity check and debugging.
  */
-template <typename T, class Sampler, class Basis> class Interpolator final {
+template <typename T, class Sampler, class Basis>
+class Interpolator final {
   using Mesh = typename Basis::Mesh;
 
   static int constexpr dof_per_node = 1;
@@ -746,7 +747,7 @@ template <typename T, class Sampler, class Basis> class Interpolator final {
 
   using Physics = PhysicsBase<T, spatial_dim, data_per_node, dof_per_node>;
 
-public:
+ public:
   Interpolator(const Mesh &mesh, const Sampler &sampler, const Basis &basis)
       : mesh(mesh), basis(basis), sampler(sampler) {}
 
@@ -796,11 +797,11 @@ public:
     field_vtk.write_vtk();
   }
 
-private:
+ private:
   const Mesh &mesh;
   const Basis &basis;
   const Sampler &sampler;
   Physics physics;
 };
 
-#endif // XCGD_ELEMENT_UTILS_H
+#endif  // XCGD_ELEMENT_UTILS_H
