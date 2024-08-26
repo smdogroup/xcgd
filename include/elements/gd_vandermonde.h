@@ -30,7 +30,7 @@ class VandermondeEvaluator {
   static constexpr int Nk = Mesh::nodes_per_element;
 
  public:
-  VandermondeEvaluator(const Mesh& mesh, int elem) {
+  VandermondeEvaluator(const Mesh& mesh, int elem) : Ck(Nk * Np) {
     int nodes[Nk];
     std::vector<T> xpows(Np_1d), ypows(Np_1d);
 
@@ -59,7 +59,7 @@ class VandermondeEvaluator {
         }
       }
     }
-    direct_inverse(Nk, Ck);
+    direct_inverse(Nk, Ck.data());
   }
 
   // Evaluate the shape function and derivatives given a quadrature point
@@ -119,7 +119,7 @@ class VandermondeEvaluator {
   }
 
  private:
-  T Ck[Nk * Np];
+  std::vector<T> Ck;
 };
 
 template <typename T, int Np_1d>
