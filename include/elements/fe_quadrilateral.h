@@ -36,12 +36,12 @@ class QuadrilateralQuadrature final : public QuadratureBase<T> {
 template <typename T>
 class QuadrilateralBasis final : public BasisBase<T, FEMesh<T, 2, 4>> {
  private:
-  using BasisBase = BasisBase<T, FEMesh<T, 2, 4>>;
+  using BasisBase_ = BasisBase<T, FEMesh<T, 2, 4>>;
 
  public:
-  using BasisBase::nodes_per_element;
-  using BasisBase::spatial_dim;
-  using typename BasisBase::Mesh;
+  using BasisBase_::nodes_per_element;
+  using BasisBase_::spatial_dim;
+  using typename BasisBase_::Mesh;
 
   void eval_basis_grad(int _, const std::vector<T>& pts, std::vector<T>& N,
                        std::vector<T>& Nxi) const {

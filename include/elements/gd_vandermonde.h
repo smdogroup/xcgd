@@ -174,15 +174,15 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
  private:
   // algoim limit, see gaussquad.hpp
   static_assert(Np_1d <= algoim::GaussQuad::p_max);  // algoim limit
-  using GridMesh = GridMesh<T, Np_1d>;
-  using CutMesh = CutMesh<T, Np_1d>;
-  using Basis = GDBasis2D<T, CutMesh>;
+  using GridMesh_ = GridMesh<T, Np_1d>;
+  using CutMesh_ = CutMesh<T, Np_1d>;
+  using Basis = GDBasis2D<T, CutMesh_>;
 
   constexpr static int spatial_dim = Basis::spatial_dim;
   constexpr static int nodes_per_element = Basis::nodes_per_element;
 
  public:
-  GDLSFQuadrature2D(const CutMesh& mesh)
+  GDLSFQuadrature2D(const CutMesh_& mesh)
       : mesh(mesh), lsf_mesh(mesh.get_lsf_mesh()) {}
 
   /**
@@ -210,13 +210,13 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
 
     // Create the functor that evaluates the interpolation given an arbitrary
     // point within the computational coordinates
-    VandermondeEvaluator<T, GridMesh> eval(lsf_mesh, cell);
+    VandermondeEvaluator<T, GridMesh_> eval(lsf_mesh, cell);
 
     // Get element LSF dofs
     const std::vector<T>& lsf_dof = mesh.get_lsf_dof();
     T element_lsf[nodes_per_element];
-    get_element_vars<T, 1, GridMesh, Basis>(lsf_mesh, cell, lsf_dof.data(),
-                                            element_lsf);
+    get_element_vars<T, 1, GridMesh_, Basis>(lsf_mesh, cell, lsf_dof.data(),
+                                             element_lsf);
 
     // Get quadrature points and weights
     getQuadrature(xi_min, xi_max, xi_min_lsf, xi_max_lsf, element_lsf, eval,
@@ -255,13 +255,13 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
 
     // Create the functor that evaluates the interpolation given an arbitrary
     // point within the computational coordinates
-    VandermondeEvaluator<T, GridMesh> eval(lsf_mesh, cell);
+    VandermondeEvaluator<T, GridMesh_> eval(lsf_mesh, cell);
 
     // Get element LSF dofs
     const std::vector<T>& lsf_dof = mesh.get_lsf_dof();
     T element_lsf[nodes_per_element];
-    get_element_vars<T, 1, GridMesh, Basis>(lsf_mesh, cell, lsf_dof.data(),
-                                            element_lsf);
+    get_element_vars<T, 1, GridMesh_, Basis>(lsf_mesh, cell, lsf_dof.data(),
+                                             element_lsf);
 
     // Get quadrature points and weights
     getQuadrature(xi_min, xi_max, xi_min_lsf, xi_max_lsf, element_lsf, eval,
@@ -311,7 +311,7 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
 
  private:
   template <typename T2>
-  void get_phi_vals(const VandermondeEvaluator<T, GridMesh>& eval,
+  void get_phi_vals(const VandermondeEvaluator<T, GridMesh_>& eval,
                     const algoim::uvector<T, spatial_dim>& xi_min,
                     const algoim::uvector<T, spatial_dim>& xi_max,
                     const T2 element_dof[],
@@ -335,7 +335,7 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
                      const algoim::uvector<T, spatial_dim>& xi_min_lsf,
                      const algoim::uvector<T, spatial_dim>& xi_max_lsf,
                      const T2 element_lsf[],
-                     const VandermondeEvaluator<T, GridMesh>& eval,
+                     const VandermondeEvaluator<T, GridMesh_>& eval,
                      const T wcoef, std::vector<T>& pts,
                      std::vector<T>& wts) const {
     constexpr bool is_dual = is_specialization<T2, duals::dual>::value;
@@ -374,10 +374,10 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
 
   // Mesh for physical dof. Dof nodes is a subset of grid verts due to
   // LSF-cut.
-  const CutMesh& mesh;
+  const CutMesh_& mesh;
 
   // Mesh for the LSF dof. All grid verts are dof nodes.
-  const GridMesh& lsf_mesh;
+  const GridMesh_& lsf_mesh;
 };
 
 /**
@@ -390,12 +390,12 @@ template <typename T, class Mesh_>
 class GDBasis2D final : public BasisBase<T, Mesh_> {
  private:
   static_assert(Mesh_::is_gd_mesh, "This basis requires a GD Mesh");
-  using BasisBase = BasisBase<T, Mesh_>;
+  using BasisBase_ = BasisBase<T, Mesh_>;
 
  public:
   static constexpr bool is_gd_basis = true;
-  using BasisBase::nodes_per_element;
-  using BasisBase::spatial_dim;
+  using BasisBase_::nodes_per_element;
+  using BasisBase_::spatial_dim;
   using Mesh = Mesh_;
 
  public:

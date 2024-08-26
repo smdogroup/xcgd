@@ -3,17 +3,17 @@
 
 #include "element_commons.h"
 
-template <typename T, int spatial_dim, int nodes_per_element_>
+template <typename T, int spatial_dim_, int nodes_per_element_>
 class FEMesh final
-    : public MeshBase<T, spatial_dim, nodes_per_element_, nodes_per_element_> {
+    : public MeshBase<T, spatial_dim_, nodes_per_element_, nodes_per_element_> {
  private:
-  using MeshBase =
-      MeshBase<T, spatial_dim, nodes_per_element_, nodes_per_element_>;
+  using MeshBase_ =
+      MeshBase<T, spatial_dim_, nodes_per_element_, nodes_per_element_>;
 
  public:
-  using MeshBase::corner_nodes_per_element;
-  using MeshBase::nodes_per_element;
-  using MeshBase::spatial_dim;
+  using MeshBase_::corner_nodes_per_element;
+  using MeshBase_::nodes_per_element;
+  using MeshBase_::spatial_dim;
 
   FEMesh(int num_elements, int num_nodes, int* element_nodes, T* xloc)
       : num_elements(num_elements),

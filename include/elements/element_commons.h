@@ -35,14 +35,14 @@ class StructuredGrid2D;
 template <typename T, int Np_1d_>
 class GDMeshBase : public MeshBase<T, 2, Np_1d_ * Np_1d_, 4> {
  private:
-  using MeshBase = MeshBase<T, 2, Np_1d_ * Np_1d_, 4>;
+  using MeshBase_ = MeshBase<T, 2, Np_1d_ * Np_1d_, 4>;
   static_assert(Np_1d_ % 2 == 0);
 
  public:
   using Grid = StructuredGrid2D<T>;
-  using MeshBase::corner_nodes_per_element;
-  using MeshBase::nodes_per_element;
-  using MeshBase::spatial_dim;
+  using MeshBase_::corner_nodes_per_element;
+  using MeshBase_::nodes_per_element;
+  using MeshBase_::spatial_dim;
   static constexpr bool is_gd_mesh = true;
   static constexpr bool is_cut_mesh = false;
   static constexpr int Np_1d = Np_1d_;
