@@ -2,6 +2,7 @@
 *.dSYM
 .DS_Store
 .cache
+.clangd
 
 # build
 build*/*
