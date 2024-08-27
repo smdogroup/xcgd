@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <array>
+#include <limits>
 #include <map>
 #include <set>
 #include <unordered_map>
@@ -427,7 +428,7 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
 
     for (int c = 0; c < ncells; c++) {
       std::array<T, spatial_dim> grad = interp_lsf_grad(c);
-      double tmp = 0.0;
+      double tmp = std::numeric_limits<double>::lowest();
       int dim = -1;
       for (int d = 0; d < spatial_dim; d++) {
         if (fabs(grad[d]) > tmp) {
