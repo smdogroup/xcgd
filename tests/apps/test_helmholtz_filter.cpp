@@ -18,7 +18,8 @@ T scalar_function(std::vector<T>& phi, std::vector<T>& w) {
 }
 
 template <int Np_1d, int Np_1d_filter>
-void test_helmholtz_filter() {
+void test_helmholtz_filter(bool use_robust_projection, double beta,
+                           double eta) {
   using T = double;
   using Grid = StructuredGrid2D<T>;
   int constexpr spatial_dim = Grid::spatial_dim;
@@ -38,7 +39,7 @@ void test_helmholtz_filter() {
   Quadrature quadrature(mesh);
 
   T r0 = 0.01;
-  Filter filter(r0, grid);
+  Filter filter(r0, grid, use_robust_projection, beta, eta);
 
   int ndv = filter.get_num_nodes();
 
@@ -98,6 +99,8 @@ void test_helmholtz_filter() {
 }
 
 TEST(apps, HelmholtzFilter) {
-  test_helmholtz_filter<4, 4>();
-  test_helmholtz_filter<4, 2>();
+  test_helmholtz_filter<4, 4>(false, -1.0, -1.0);
+  test_helmholtz_filter<4, 2>(false, -1.0, -1.0);
+  test_helmholtz_filter<4, 4>(true, 12.3, 0.54);
+  test_helmholtz_filter<4, 2>(true, 3.6, 0.78);
 }

@@ -2,6 +2,7 @@
 #define XCGD_HELMHOLTZ_FILTER_H
 
 #include "analysis.h"
+#include "apps/robust_projection.h"
 #include "elements/gd_mesh.h"
 #include "elements/gd_vandermonde.h"
 #include "physics/helmholtz.h"
@@ -27,9 +28,11 @@ class HelmholtzFilter final {
   using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
   using BSRMat = GalerkinBSRMat<T, Physics::dof_per_node>;
   using CSCMat = SparseUtils::CSCMat<T>;
+  using Proj = RobustProjection<T>;
 
  public:
-  HelmholtzFilter(T r0, Grid& grid)
+  HelmholtzFilter(T r0, Grid& grid, bool use_robust_projection = false,
+                  double proj_beta = -1.0, double proj_eta = -1.0)
       : mesh(grid),
         quadrature(mesh),
         basis(mesh),
@@ -60,6 +63,11 @@ class HelmholtzFilter final {
     SparseUtils::CholOrderingType order = SparseUtils::CholOrderingType::ND;
     chol = new SparseUtils::SparseCholesky<T>(jac_csc);
     chol->factor();
+
+    // Set up the robust projector if specified
+    if (use_robust_projection) {
+      proj = new Proj(proj_beta, proj_eta, mesh.get_num_nodes());
+    }
   }
 
   ~HelmholtzFilter() {
@@ -71,6 +79,10 @@ class HelmholtzFilter final {
       delete jac_bsr;
       jac_bsr = nullptr;
     }
+    if (proj) {
+      delete proj;
+      proj = nullptr;
+    }
   }
 
   int get_num_nodes() { return num_nodes; }
@@ -79,9 +91,39 @@ class HelmholtzFilter final {
    * @brief Smooth the input x
    *
    * @param x input, the raw nodal field
-   * @param phi output, smoothed nodal field
+   * @param phi output, smoothed (and projected, if specified) nodal field
    */
   void apply(const T* x, T* phi) {
+    filterApply(x, phi);
+    if (proj) {
+      proj->apply(phi, phi);
+    }
+  }
+
+  /**
+   * @brief Get gradient w.r.t. the raw field
+   *
+   * @param dfdphi input, derivatives of some scalar functional w.r.t. phi
+   * @param dfdx output, derivatives of the same scalar functional w.r.t. x
+   */
+  void applyGradient(const T* x, const T* dfdphi, T* dfdx) {
+    if (proj) {
+      std::vector<T> t(num_nodes, T(0.0)), dfdt(num_nodes, T(0.0));
+      filterApply(x, t.data());
+      proj->applyGradient(t.data(), dfdphi, dfdt.data());
+      filterApplyGradient(x, dfdt.data(), dfdx);
+    } else {
+      filterApplyGradient(x, dfdphi, dfdx);
+    }
+  }
+
+  Mesh& get_mesh() { return mesh; }
+  Quadrature& get_quadrature() { return quadrature; }
+  Basis& get_basis() { return basis; }
+  Analysis& get_analysis() { return analysis; }
+
+ private:
+  void filterApply(const T* x, T* phi) {
     std::fill(phi, phi + num_nodes, 0.0);
     std::vector<T> zeros(num_nodes, 0.0);
     analysis.residual(x, zeros.data(), phi);
@@ -107,13 +149,7 @@ class HelmholtzFilter final {
 #endif
   }
 
-  /**
-   * @brief Get gradient w.r.t. the raw field
-   *
-   * @param dfdphi input, derivatives of some scalar functional w.r.t. phi
-   * @param dfdx output, derivatives of the same scalar functional w.r.t. x
-   */
-  void applyGradient(const T* x, const T* dfdphi, T* dfdx) {
+  void filterApplyGradient(const T* x, const T* dfdphi, T* dfdx) {
     std::vector<T> zeros(num_nodes, 0.0);
     std::vector<T> psi(dfdphi, dfdphi + num_nodes);
     chol->solve(psi.data());
@@ -124,12 +160,6 @@ class HelmholtzFilter final {
     analysis.jacobian_adjoint_product(x, zeros.data(), psi.data(), dfdx);
   }
 
-  Mesh& get_mesh() { return mesh; }
-  Quadrature& get_quadrature() { return quadrature; }
-  Basis& get_basis() { return basis; }
-  Analysis& get_analysis() { return analysis; }
-
- private:
   Mesh mesh;
   Quadrature quadrature;
   Basis basis;
@@ -142,6 +172,9 @@ class HelmholtzFilter final {
 
   // Cholesky factorization
   SparseUtils::SparseCholesky<T>* chol = nullptr;
+
+  // Robust projection
+  Proj* proj = nullptr;
 };
 
 #endif  // XCGD_HELMHOLTZ_FILTER_H
