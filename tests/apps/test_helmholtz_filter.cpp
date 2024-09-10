@@ -91,7 +91,8 @@ void test_helmholtz_filter(bool use_robust_projection, double beta,
   EXPECT_NEAR((dfdx_fd - dfdx_exact) / dfdx_exact, 0.0, tol);
 
   char name[256];
-  std::snprintf(name, 256, "helmholtz_%d_%d.vtk", Np_1d, Np_1d_filter);
+  std::snprintf(name, 256, "helmholtz_%d_%d_%d.vtk", Np_1d, Np_1d_filter,
+                use_robust_projection);
   ToVTK<T, typename Filter::Mesh> vtk(filter.get_mesh(), name);
   vtk.write_mesh();
   vtk.write_sol("x", x.data());
@@ -99,8 +100,10 @@ void test_helmholtz_filter(bool use_robust_projection, double beta,
 }
 
 TEST(apps, HelmholtzFilter) {
+  test_helmholtz_filter<2, 2>(false, -1.0, -1.0);
   test_helmholtz_filter<4, 4>(false, -1.0, -1.0);
   test_helmholtz_filter<4, 2>(false, -1.0, -1.0);
+  test_helmholtz_filter<2, 2>(true, 12.3, 0.54);
   test_helmholtz_filter<4, 4>(true, 12.3, 0.54);
-  test_helmholtz_filter<4, 2>(true, 3.6, 0.78);
+  test_helmholtz_filter<4, 2>(true, 5.0, 0.5);
 }

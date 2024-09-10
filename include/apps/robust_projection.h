@@ -50,8 +50,8 @@ class RobustProjection {
         ymax(1.0),
         ymin(-1.0),
         c1(std::tanh(beta * eta)),
-        denom(std::tanh(beta * eta) +
-              std::tanh(beta * (1.0 - eta)) / (ymax - ymin)) {
+        denom((std::tanh(beta * eta) + std::tanh(beta * (1.0 - eta))) /
+              (ymax - ymin)) {
     if (beta <= 0.0) {
       char msg[256];
       std::snprintf(msg, 256,
@@ -71,15 +71,16 @@ class RobustProjection {
 
   void apply(const T* x, T* y) {
     for (int i = 0; i < size; i++) {
-      y[i] = (c1 + std::tanh(beta * (x[i] - eta - xoffset))) / denom + ymin;
+      y[i] =
+          (c1 + std::tanh(beta * (0.5 * x[i] - eta - xoffset))) / denom + ymin;
     }
   }
 
   void applyGradient(const T* x, const T* dfdy, T* dfdx) {
     for (int i = 0; i < size; i++) {
-      dfdx[i] = dfdy[i] * beta / denom *
-                (1.0 - std::tanh(beta * (x[i] - eta - xoffset)) *
-                           std::tanh(beta * (x[i] - eta - xoffset)));
+      dfdx[i] = 0.5 * dfdy[i] * beta / denom *
+                (1.0 - std::tanh(beta * (0.5 * x[i] - eta - xoffset)) *
+                           std::tanh(beta * (0.5 * x[i] - eta - xoffset)));
     }
   }
 

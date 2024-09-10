@@ -32,9 +32,10 @@ class TopoAnalysis {
   int constexpr static spatial_dim = Grid::spatial_dim;
 
  public:
-  TopoAnalysis(T r0, T E, T nu, T penalty, Grid& grid, Mesh& mesh,
+  TopoAnalysis(T r0, T E, T nu, T penalty, bool use_robust_projection,
+               double proj_beta, double proj_eta, Grid& grid, Mesh& mesh,
                Quadrature& quadrature, Basis& basis)
-      : filter(r0, grid),
+      : filter(r0, grid, use_robust_projection, proj_beta, proj_eta),
         elastic(E, nu, mesh, quadrature, basis),
         vol_analysis(mesh, quadrature, basis, vol),
         pen(penalty),
@@ -484,8 +485,12 @@ void mesh_test(int argc, char* argv[]) {
 
   // Set up analysis
   T r0 = parser.get_double_option("helmholtz_r0"), E = 1e2, nu = 0.3;
+  bool use_robust_projection = parser.get_bool_option("use_robust_projection");
+  double robust_proj_beta = parser.get_double_option("robust_proj_beta");
+  double robust_proj_eta = parser.get_double_option("robust_proj_eta");
   T penalty = parser.get_double_option("grad_penalty_coeff");
-  TopoAnalysis topo(r0, E, nu, penalty, grid, mesh, quadrature, basis);
+  TopoAnalysis topo(r0, E, nu, penalty, use_robust_projection, robust_proj_beta,
+                    robust_proj_eta, grid, mesh, quadrature, basis);
 
   double domain_area = lxy[0] * lxy[1];
   double area_frac = parser.get_double_option("area_frac");
