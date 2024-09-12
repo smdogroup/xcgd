@@ -1,3 +1,5 @@
+#include <mpi.h>
+
 #include <filesystem>
 
 #include "ParOptOptimizer.h"
@@ -428,10 +430,11 @@ class TopoProb : public ParOptProblem {
   bool is_gradient_check = false;
 };
 
-void mesh_test(int argc, char* argv[]) {
+template <int Np_1d, int Np_1d_filter>
+void execute(int argc, char* argv[]) {
+  MPI_Init(&argc, &argv);
+
   using T = double;
-  int constexpr Np_1d = 4;
-  int constexpr Np_1d_filter = 4;
   using Grid = StructuredGrid2D<T>;
   int constexpr spatial_dim = Grid::spatial_dim;
 
@@ -440,11 +443,6 @@ void mesh_test(int argc, char* argv[]) {
   using Basis = GDBasis2D<T, Mesh>;
 
   using TopoAnalysis = TopoAnalysis<T, Np_1d_filter, Mesh, Quadrature, Basis>;
-
-  if (argc == 1) {
-    std::printf("Usage: ./level_set level_set.cfg [--smoke]\n");
-    exit(0);
-  }
 
   bool smoke_test = false;
   if (argc > 2 and "--smoke" == std::string(argv[2])) {
@@ -526,11 +524,116 @@ void mesh_test(int argc, char* argv[]) {
   prob->decref();
   options->decref();
   opt->decref();
+
+  MPI_Finalize();
 }
 
 int main(int argc, char* argv[]) {
-  MPI_Init(&argc, &argv);
-  mesh_test(argc, argv);
-  MPI_Finalize();
+  if (argc == 1) {
+    std::printf("Usage: ./level_set level_set.cfg [--smoke]\n");
+    exit(0);
+  }
+
+  std::string cfg_path(argv[1]);
+  ConfigParser parser(cfg_path);
+  int Np_1d = parser.get_int_option("Np_1d");
+  int Np_1d_filter = parser.get_int_option("Np_1d_filter");
+
+  if (Np_1d % 2) {
+    std::printf("[Error]Invalid input, expect even Np_1d, got %d\n", Np_1d);
+    exit(-1);
+  }
+  if (Np_1d_filter % 2) {
+    std::printf("[Error]Invalid input, expect even Np_1d_filter, got %d\n",
+                Np_1d_filter);
+    exit(-1);
+  }
+
+  switch (Np_1d) {
+    case 2:
+      switch (Np_1d_filter) {
+        case 2:
+          execute<2, 2>(argc, argv);
+          break;
+
+        case 4:
+          execute<2, 4>(argc, argv);
+          break;
+
+        case 6:
+          execute<2, 6>(argc, argv);
+          break;
+
+        default:
+          std::printf(
+              "(Np_1d, Np_1d_filter) = (%d, %d) and not pre-compiled, "
+              "enumerate it in the source code if you intend to use this "
+              "combination.\n",
+              Np_1d, Np_1d_filter);
+          exit(-1);
+          break;
+      }
+      break;
+
+    case 4:
+      switch (Np_1d_filter) {
+        case 2:
+          execute<4, 2>(argc, argv);
+          break;
+
+        case 4:
+          execute<4, 4>(argc, argv);
+          break;
+
+        case 6:
+          execute<4, 6>(argc, argv);
+          break;
+
+        default:
+          std::printf(
+              "(Np_1d, Np_1d_filter) = (%d, %d) and not pre-compiled, "
+              "enumerate it in the source code if you intend to use this "
+              "combination.\n",
+              Np_1d, Np_1d_filter);
+          exit(-1);
+          break;
+      }
+      break;
+
+    case 6:
+      switch (Np_1d_filter) {
+        case 2:
+          execute<6, 2>(argc, argv);
+          break;
+
+        case 4:
+          execute<6, 4>(argc, argv);
+          break;
+
+        case 6:
+          execute<6, 6>(argc, argv);
+          break;
+
+        default:
+          std::printf(
+              "(Np_1d, Np_1d_filter) = (%d, %d) and not pre-compiled, "
+              "enumerate it in the source code if you intend to use this "
+              "combination.\n",
+              Np_1d, Np_1d_filter);
+          exit(-1);
+          break;
+      }
+      break;
+
+    default:
+      std::printf(
+          "(Np_1d, Np_1d_filter) = (%d, %d) and not pre-compiled, "
+          "enumerate it in the source code if you intend to use this "
+          "combination.\n",
+          Np_1d, Np_1d_filter);
+      exit(-1);
+      break;
+  }
+
   return 0;
 }
