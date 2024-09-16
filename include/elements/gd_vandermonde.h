@@ -21,7 +21,7 @@
 // This class implements a functor that evaluate basis values and basis
 // gradients given a set of computational coordinates
 template <typename T, class Mesh>
-class VandermondeEvaluator {
+class VandermondeEvaluatorDeprecated {
  private:
   static_assert(Mesh::is_gd_mesh, "VandermondeEvaluator requires a GD Mesh");
   static constexpr int spatial_dim = Mesh::spatial_dim;
@@ -30,7 +30,7 @@ class VandermondeEvaluator {
   static constexpr int Nk = Mesh::nodes_per_element;
 
  public:
-  VandermondeEvaluator(const Mesh& mesh, int elem) : Ck(Nk * Np) {
+  VandermondeEvaluatorDeprecated(const Mesh& mesh, int elem) : Ck(Nk * Np) {
     int nodes[Nk];
     std::vector<T> xpows(Np_1d), ypows(Np_1d);
 
@@ -120,6 +120,141 @@ class VandermondeEvaluator {
 
  private:
   std::vector<T> Ck;
+};
+
+// An adaptive Vandermonde evaluator. Adaptive meaning we might locally drop
+// order when there's not enough nodes for certain elements. Number of nodes per
+// element is no longer constant in this case.
+template <typename T, class Mesh>
+class VandermondeEvaluator {
+ private:
+  static_assert(Mesh::is_gd_mesh, "VandermondeEvaluator requires a GD Mesh");
+  static constexpr int spatial_dim = Mesh::spatial_dim;
+  static constexpr int Np_1d = Mesh::Np_1d;
+  static constexpr int p = Np_1d - 1;
+
+ public:
+  VandermondeEvaluator(const Mesh& mesh, int elem) {
+    int nodes[Np_1d * Np_1d];
+    nnodes = mesh.get_elem_dof_nodes(elem, nodes);
+    Ck.resize(nnodes * nnodes);
+
+    // Create the index sequence for polynomial terms, for example, for p=3,
+    // we want the following sequence of polynomial terms:
+    // 1
+    // x,      y
+    // x^2,    xy,       y^2
+    // x^3,    x^2y,     xy^2,     y^3
+    // x^3y,   x^2y^2,   xy^3
+    // x^3y^2, x^2y^3
+    // x^3y^3
+    //
+    // Hence the sequence of the index pairs is:
+    // (0, 0)
+    // (1, 0)  (0, 1)
+    // (2, 0)  (1, 1)  (0, 2)
+    // (3, 0)  (2, 1)  (1, 2), (0, 3)
+    // (3, 1)  (2, 2)  (1, 3)
+    // (3, 2)  (2, 3)
+    // (3, 3)
+    //
+    // So that when we drop terms when available nodes are less than needed,
+    // we drop terms in the reverse order of this sequence
+    for (int sum = 0; sum <= 2 * p; sum++) {
+      for (int j = 0; j <= sum; j++) {
+        int i = sum - j;
+        if (i > p or j > p) continue;
+        pterm_indices.push_back({i, j});
+      }
+    }
+
+    std::vector<T> xpows(Np_1d), ypows(Np_1d);
+
+    T xloc_min[spatial_dim], xloc_max[spatial_dim];
+    mesh.get_elem_node_ranges(elem, xloc_min, xloc_max);
+
+    for (int i = 0; i < nnodes; i++) {
+      T xloc[spatial_dim];
+      mesh.get_node_xloc(nodes[i], xloc);
+
+      // make x, y in [-1, 1]
+      T x = -1.0 + 2.0 * (xloc[0] - xloc_min[0]) / (xloc_max[0] - xloc_min[0]);
+      T y = -1.0 + 2.0 * (xloc[1] - xloc_min[1]) / (xloc_max[1] - xloc_min[1]);
+
+      for (int ii = 0; ii < Np_1d; ii++) {
+        xpows[ii] = pow(x, ii);
+        ypows[ii] = pow(y, ii);
+      }
+
+      for (int col = 0; col < nnodes; col++) {
+        auto indices = pterm_indices[col];
+        Ck[i + nnodes * col] = xpows[indices.first] * ypows[indices.second];
+      }
+    }
+    direct_inverse(nnodes, Ck.data());
+  }
+
+  // Evaluate the shape function and derivatives given a quadrature point
+  template <typename T2>
+  void operator()(const T2* pt, T2* N, T2* Nxi,
+                  T2* Nxixi = (T2*)nullptr) const {
+    std::vector<T2> xpows(Np_1d), ypows(Np_1d), dxpows(Np_1d), dypows(Np_1d),
+        dx2pows(Np_1d), dy2pows(Np_1d);
+
+    for (int ii = 0; ii < Np_1d; ii++) {
+      xpows[ii] = pow(pt[0], ii);
+      ypows[ii] = pow(pt[1], ii);
+      dxpows[ii] = ii > 0 ? T(ii) * pow(pt[0], ii - 1) : T(0.0);
+      dypows[ii] = ii > 0 ? T(ii) * pow(pt[1], ii - 1) : T(0.0);
+      dx2pows[ii] = ii > 1 ? T(ii) * T(ii - 1) * pow(pt[0], ii - 2) : T(0.0);
+      dy2pows[ii] = ii > 1 ? T(ii) * T(ii - 1) * pow(pt[1], ii - 2) : T(0.0);
+    }
+
+    for (int i = 0; i < nnodes; i++) {
+      if (N) {
+        N[i] = 0.0;
+      }
+      if (Nxi) {
+        Nxi[spatial_dim * i] = 0.0;
+        Nxi[spatial_dim * i + 1] = 0.0;
+      }
+      if (Nxixi) {
+        Nxixi[spatial_dim * spatial_dim * i] = 0.0;
+        Nxixi[spatial_dim * spatial_dim * i + 1] = 0.0;
+        Nxixi[spatial_dim * spatial_dim * i + 2] = 0.0;
+        Nxixi[spatial_dim * spatial_dim * i + 3] = 0.0;
+      }
+
+      for (int row = 0; row < nnodes; row++) {
+        auto indices = pterm_indices[row];
+        int j = indices.first;
+        int k = indices.second;
+        if (N) {
+          N[i] += Ck[row + nnodes * i] * xpows[j] * ypows[k];
+        }
+        if (Nxi) {
+          Nxi[spatial_dim * i] += Ck[row + nnodes * i] * dxpows[j] * ypows[k];
+          Nxi[spatial_dim * i + 1] +=
+              Ck[row + nnodes * i] * xpows[j] * dypows[k];
+        }
+        if (Nxixi) {
+          Nxixi[spatial_dim * spatial_dim * i] +=
+              Ck[row + nnodes * i] * dx2pows[j] * ypows[k];
+          Nxixi[spatial_dim * spatial_dim * i + 1] +=
+              Ck[row + nnodes * i] * dxpows[j] * dypows[k];
+          Nxixi[spatial_dim * spatial_dim * i + 2] +=
+              Ck[row + nnodes * i] * dxpows[j] * dypows[k];
+          Nxixi[spatial_dim * spatial_dim * i + 3] +=
+              Ck[row + nnodes * i] * xpows[j] * dy2pows[k];
+        }
+      }
+    }
+  }
+
+ private:
+  int nnodes;
+  std::vector<T> Ck;
+  std::vector<std::pair<int, int>> pterm_indices;
 };
 
 template <typename T, int Np_1d>

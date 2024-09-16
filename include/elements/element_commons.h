@@ -22,7 +22,7 @@ class MeshBase {
   virtual int get_num_nodes() const = 0;
   virtual int get_num_elements() const = 0;
   virtual void get_node_xloc(int node, T* xloc) const = 0;
-  virtual void get_elem_dof_nodes(int elem, int* nodes) const = 0;
+  virtual int get_elem_dof_nodes(int elem, int* nodes) const = 0;
   virtual void get_elem_corner_nodes(int elem, int* nodes) const = 0;
 };
 

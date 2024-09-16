@@ -29,10 +29,11 @@ class FEMesh final
     }
   }
 
-  inline void get_elem_dof_nodes(int elem, int* nodes) const {
+  inline int get_elem_dof_nodes(int elem, int* nodes) const {
     for (int i = 0; i < nodes_per_element; i++) {
       nodes[i] = element_nodes[elem * nodes_per_element + i];
     }
+    return nodes_per_element;
   }
 
   inline void get_elem_corner_nodes(int elem, int* nodes) const {

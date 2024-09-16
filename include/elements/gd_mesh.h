@@ -192,8 +192,9 @@ class GridMesh final : public GDMeshBase<T, Np_1d> {
    * @param elem element index
    * @param nodes dof node indices, length: nodes_per_element
    */
-  void get_elem_dof_nodes(int elem, int* nodes) const {
+  int get_elem_dof_nodes(int elem, int* nodes) const {
     this->get_cell_ground_stencil(elem, nodes);
+    return nodes_per_element;
   }
 
   inline void get_elem_corner_nodes(int elem, int* nodes) const {
@@ -288,8 +289,10 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
    *
    * @param elem element index
    * @param nodes dof node indices, length: nodes_per_element
+   *
+   * @return number of nodes associated to this element
    */
-  void get_elem_dof_nodes(int elem, int* nodes) const {
+  int get_elem_dof_nodes(int elem, int* nodes) const {
     int nnodes = 0;
     int cell = elem_cells.at(elem);
     this->get_cell_ground_stencil(cell, nodes);
@@ -304,8 +307,7 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
 
       nnodes++;
     }
-    // return nnodes; // TODO: eventually we would like to support returning
-    // this
+    return nnodes;
   }
 
   inline void get_elem_corner_nodes(int elem, int* nodes) const {
