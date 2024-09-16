@@ -21,7 +21,8 @@ class GalerkinAnalysis final {
   static constexpr int dof_per_node = Physics::dof_per_node;
 
   // Derived static data
-  static constexpr int dof_per_element = dof_per_node * max_nnodes_per_element;
+  static constexpr int max_dof_per_element =
+      dof_per_node * max_nnodes_per_element;
 
   GalerkinAnalysis(const Mesh& mesh, const Quadrature& quadrature,
                    const Basis& basis, const Physics& physics)
@@ -43,7 +44,7 @@ class GalerkinAnalysis final {
       }
 
       // Get the element degrees of freedom
-      T element_dof[dof_per_element];
+      T element_dof[max_dof_per_element];
       get_element_vars<T, dof_per_node, Mesh, Basis>(mesh, i, dof, element_dof);
 
       std::vector<T> pts, wts;
@@ -93,7 +94,7 @@ class GalerkinAnalysis final {
       get_element_xloc<T, Mesh, Basis>(mesh, i, element_xloc);
 
       // Get the element degrees of freedom
-      T element_dof[dof_per_element];
+      T element_dof[max_dof_per_element];
       get_element_vars<T, dof_per_node, Mesh, Basis>(mesh, i, dof, element_dof);
 
       // Get element design variable if needed
@@ -102,8 +103,8 @@ class GalerkinAnalysis final {
       }
 
       // Create the element residual
-      T element_res[dof_per_element];
-      for (int j = 0; j < dof_per_element; j++) {
+      T element_res[max_dof_per_element];
+      for (int j = 0; j < max_dof_per_element; j++) {
         element_res[j] = 0.0;
       }
 
@@ -169,17 +170,17 @@ class GalerkinAnalysis final {
       }
 
       // Get the element degrees of freedom
-      T element_dof[dof_per_element];
+      T element_dof[max_dof_per_element];
       get_element_vars<T, dof_per_node, Mesh, Basis>(mesh, i, dof, element_dof);
 
       // Get the element directions for the Jacobian-vector product
-      T element_direct[dof_per_element];
+      T element_direct[max_dof_per_element];
       get_element_vars<T, dof_per_node, Mesh, Basis>(mesh, i, direct,
                                                      element_direct);
 
       // Create the element residual
-      T element_res[dof_per_element];
-      for (int j = 0; j < dof_per_element; j++) {
+      T element_res[max_dof_per_element];
+      for (int j = 0; j < max_dof_per_element; j++) {
         element_res[j] = 0.0;
       }
 
@@ -262,16 +263,16 @@ class GalerkinAnalysis final {
       }
 
       // Get the element degrees of freedom
-      T element_dof[dof_per_element];
+      T element_dof[max_dof_per_element];
       get_element_vars<T, dof_per_node, Mesh, Basis>(mesh, i, dof, element_dof);
 
       // Get the element psi for the Jacobian-vector product
-      T element_psi[dof_per_element];
+      T element_psi[max_dof_per_element];
       get_element_vars<T, dof_per_node, Mesh, Basis>(mesh, i, psi, element_psi);
 
       // Create the element residual
-      T element_dfdx[dof_per_element];
-      for (int j = 0; j < dof_per_element; j++) {
+      T element_dfdx[max_dof_per_element];
+      for (int j = 0; j < max_dof_per_element; j++) {
         element_dfdx[j] = 0.0;
       }
 
@@ -345,12 +346,12 @@ class GalerkinAnalysis final {
       }
 
       // Get the element degrees of freedom
-      T element_dof[dof_per_element];
+      T element_dof[max_dof_per_element];
       get_element_vars<T, dof_per_node, Mesh, Basis>(mesh, i, dof, element_dof);
 
       // Create the element Jacobian
-      T element_jac[dof_per_element * dof_per_element];
-      for (int j = 0; j < dof_per_element * dof_per_element; j++) {
+      T element_jac[max_dof_per_element * max_dof_per_element];
+      for (int j = 0; j < max_dof_per_element * max_dof_per_element; j++) {
         element_jac[j] = 0.0;
       }
 
@@ -399,7 +400,7 @@ class GalerkinAnalysis final {
                              jac_grad_ref, element_jac);
       }
 
-      mat->add_block_values(i, max_nnodes_per_element, mesh, element_jac);
+      mat->add_block_values(i, mesh, element_jac);
     }
   }
 
@@ -422,7 +423,7 @@ class GalerkinAnalysis final {
       get_element_xloc<T, Mesh, Basis>(mesh, i, element_xloc);
 
       // Get the element states and adjoints
-      T element_dof[dof_per_element], element_psi[dof_per_element];
+      T element_dof[max_dof_per_element], element_psi[max_dof_per_element];
       get_element_vars<T, dof_per_node, Mesh, Basis>(mesh, i, dof, element_dof);
       get_element_vars<T, dof_per_node, Mesh, Basis>(mesh, i, psi, element_psi);
 

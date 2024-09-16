@@ -383,7 +383,7 @@ void add_matrix(const T N[], const T Nxi[],
   static constexpr int spatial_dim = Basis::spatial_dim;
   static constexpr int max_nnodes_per_element = Basis::max_nnodes_per_element;
 
-  constexpr int dof_per_element = dim * max_nnodes_per_element;
+  constexpr int max_dof_per_element = dim * max_nnodes_per_element;
 
   for (int i = 0; i < max_nnodes_per_element; i++) {
     T ni = N[i];
@@ -407,7 +407,7 @@ void add_matrix(const T N[], const T Nxi[],
                      nxi[kk] * nxj[ll];
             }
           }
-          elem_jac[col + row * dof_per_element] +=
+          elem_jac[col + row * max_dof_per_element] +=
               val + coef_vals(ii, jj) * ni * nj;
         }
       }
@@ -424,7 +424,7 @@ void add_matrix(
   static constexpr int spatial_dim = Basis::spatial_dim;
   static constexpr int max_nnodes_per_element = Basis::max_nnodes_per_element;
 
-  constexpr int dof_per_element = max_nnodes_per_element;
+  constexpr int max_dof_per_element = max_nnodes_per_element;
 
   for (int i = 0; i < max_nnodes_per_element; i++) {
     T ni = N[i];
@@ -442,7 +442,7 @@ void add_matrix(
           val += coef_grad(kk, ll) * nxi[kk] * nxj[ll];
         }
       }
-      elem_jac[j + i * dof_per_element] += val + coef_val * ni * nj;
+      elem_jac[j + i * max_dof_per_element] += val + coef_val * ni * nj;
     }
   }
 }

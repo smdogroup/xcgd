@@ -80,15 +80,15 @@ class GalerkinBSRMat final : public SparseUtils::BSRMat<T, M, M> {
   }
 
   template <class Mesh>
-  void add_block_values(int elem, const int m, const Mesh &mesh, T mat[]) {
-    int n = m;
+  void add_block_values(int elem, const Mesh &mesh, T mat[]) {
     constexpr int N = M;
-    int nodes[m];
-    mesh.get_elem_dof_nodes(elem, nodes);
-    for (int ii = 0; ii < m; ii++) {
+    int nodes[Mesh::max_nnodes_per_element];
+    int nnodes = mesh.get_elem_dof_nodes(elem, nodes);
+
+    for (int ii = 0; ii < nnodes; ii++) {
       int block_row = nodes[ii];
 
-      for (int jj = 0; jj < n; jj++) {
+      for (int jj = 0; jj < nnodes; jj++) {
         int block_col = nodes[jj];
 
         int jp = this->find_value_index(block_row, block_col);
@@ -96,7 +96,8 @@ class GalerkinBSRMat final : public SparseUtils::BSRMat<T, M, M> {
           for (int local_row = 0; local_row < M; local_row++) {
             for (int local_col = 0; local_col < N; local_col++) {
               this->vals[M * N * jp + N * local_row + local_col] +=
-                  mat[(M * ii + local_row) * n * N + N * jj + local_col];
+                  mat[(M * ii + local_row) * Mesh::max_nnodes_per_element * N +
+                      N * jj + local_col];
             }
           }
         }
