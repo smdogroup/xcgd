@@ -10,12 +10,12 @@
  * @brief The abstract base class for a Galerkin (finite element or Galerkin
  * difference) mesh
  */
-template <typename T, int spatial_dim_, int nodes_per_element_,
+template <typename T, int spatial_dim_, int max_nnodes_per_element_,
           int corner_nodes_per_element_>
 class MeshBase {
  public:
   static constexpr int spatial_dim = spatial_dim_;
-  static constexpr int nodes_per_element = nodes_per_element_;
+  static constexpr int max_nnodes_per_element = max_nnodes_per_element_;
   static constexpr int corner_nodes_per_element = corner_nodes_per_element_;
   static constexpr bool is_gd_mesh = false;
 
@@ -41,7 +41,7 @@ class GDMeshBase : public MeshBase<T, 2, Np_1d_ * Np_1d_, 4> {
  public:
   using Grid = StructuredGrid2D<T>;
   using MeshBase_::corner_nodes_per_element;
-  using MeshBase_::nodes_per_element;
+  using MeshBase_::max_nnodes_per_element;
   using MeshBase_::spatial_dim;
   static constexpr bool is_gd_mesh = true;
   static constexpr bool is_cut_mesh = false;
@@ -59,29 +59,29 @@ class GDMeshBase : public MeshBase<T, 2, Np_1d_ * Np_1d_, 4> {
    */
   void get_elem_node_ranges(int elem, T* xloc_min, T* xloc_max) const {
     // [x0, ..., xN, y0, ..., yN, ...]
-    std::vector<T> coords(spatial_dim * nodes_per_element);
+    std::vector<T> coords(spatial_dim * max_nnodes_per_element);
 
-    int nodes[nodes_per_element];
+    int nodes[max_nnodes_per_element];
     this->get_elem_dof_nodes(elem, nodes);
 
-    for (int i = 0; i < nodes_per_element; i++) {
+    for (int i = 0; i < max_nnodes_per_element; i++) {
       T xloc[spatial_dim];
       this->get_node_xloc(nodes[i], xloc);
       for (int d = 0; d < spatial_dim; d++) {
-        coords[i + d * nodes_per_element] = xloc[d];
+        coords[i + d * max_nnodes_per_element] = xloc[d];
       }
     }
 
     for (int d = 0; d < spatial_dim; d++) {
-      xloc_min[d] =
-          *std::min_element(&coords[d * nodes_per_element],
-                            &coords[d * nodes_per_element] + nodes_per_element,
-                            [](T& a, T& b) { return freal(a) < freal(b); });
+      xloc_min[d] = *std::min_element(
+          &coords[d * max_nnodes_per_element],
+          &coords[d * max_nnodes_per_element] + max_nnodes_per_element,
+          [](T& a, T& b) { return freal(a) < freal(b); });
 
-      xloc_max[d] =
-          *std::max_element(&coords[d * nodes_per_element],
-                            &coords[d * nodes_per_element] + nodes_per_element,
-                            [](T& a, T& b) { return freal(a) < freal(b); });
+      xloc_max[d] = *std::max_element(
+          &coords[d * max_nnodes_per_element],
+          &coords[d * max_nnodes_per_element] + max_nnodes_per_element,
+          [](T& a, T& b) { return freal(a) < freal(b); });
     }
   }
 
@@ -151,7 +151,7 @@ class BasisBase {
  public:
   using Mesh = Mesh_;
   static constexpr int spatial_dim = Mesh::spatial_dim;
-  static constexpr int nodes_per_element = Mesh::nodes_per_element;
+  static constexpr int max_nnodes_per_element = Mesh::max_nnodes_per_element;
   static constexpr bool is_gd_basis = false;
 
   virtual void eval_basis_grad(int elem, const std::vector<T>& pts,

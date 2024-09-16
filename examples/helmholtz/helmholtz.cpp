@@ -27,7 +27,8 @@ void solve_helmholtz(T r0, const Func &xfunc, Mesh &mesh,
   // Set up Jacobian matrix
   int *rowp = nullptr, *cols = nullptr;
   SparseUtils::CSRFromConnectivityFunctor(
-      mesh.get_num_nodes(), mesh.get_num_elements(), mesh.nodes_per_element,
+      mesh.get_num_nodes(), mesh.get_num_elements(),
+      mesh.max_nnodes_per_element,
       [&mesh](int elem, int *nodes) { mesh.get_elem_dof_nodes(elem, nodes); },
       &rowp, &cols);
 

@@ -39,9 +39,9 @@ void interpolate_dof_at_quadratures(const Mesh& mesh,
 
   for (int elem = 0; elem < mesh.get_num_elements(); elem++) {
     std::vector<T> dof(mesh.get_num_nodes(), 0.0);
-    int nodes[Basis::Mesh::nodes_per_element];
+    int nodes[Basis::Mesh::max_nnodes_per_element];
     mesh.get_elem_dof_nodes(elem, nodes);
-    for (int i = 0; i < Basis::Mesh::nodes_per_element; i++) {
+    for (int i = 0; i < Basis::Mesh::max_nnodes_per_element; i++) {
       dof[nodes[i]] = 1.0;
     }
     char name[256];

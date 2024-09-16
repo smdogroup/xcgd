@@ -49,19 +49,19 @@ class TetrahedralBasis final : public BasisBase<T, FEMesh<T, 3, 10>> {
   using BasisBase = BasisBase<T, FEMesh<T, 3, 10>>;
 
  public:
-  using BasisBase::nodes_per_element;
+  using BasisBase::max_nnodes_per_element;
   using BasisBase::spatial_dim;
   using typename BasisBase::Mesh;
 
   void eval_basis_grad(int _, const std::vector<T>& pts, std::vector<T>& N,
                        std::vector<T>& Nxi) const {
     int num_quad_pts = pts.size() / spatial_dim;
-    N.resize(nodes_per_element * num_quad_pts);
-    Nxi.resize(nodes_per_element * num_quad_pts * spatial_dim);
+    N.resize(max_nnodes_per_element * num_quad_pts);
+    Nxi.resize(max_nnodes_per_element * num_quad_pts * spatial_dim);
 
     for (int q = 0; q < num_quad_pts; q++) {
-      int offset_n = q * nodes_per_element;
-      int offset_nxi = q * nodes_per_element * spatial_dim;
+      int offset_n = q * max_nnodes_per_element;
+      int offset_nxi = q * max_nnodes_per_element * spatial_dim;
 
       N[offset_n] =
           2.0 * (pts[0] + pts[1] + pts[2]) * (pts[0] + pts[1] + pts[2]) -

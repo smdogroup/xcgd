@@ -15,13 +15,13 @@ class GalerkinAnalysis final {
  public:
   // Static data taken from the element basis
   static constexpr int spatial_dim = Basis::spatial_dim;
-  static constexpr int nodes_per_element = Basis::nodes_per_element;
+  static constexpr int max_nnodes_per_element = Basis::max_nnodes_per_element;
 
   // Static data taken from the physics
   static constexpr int dof_per_node = Physics::dof_per_node;
 
   // Derived static data
-  static constexpr int dof_per_element = dof_per_node * nodes_per_element;
+  static constexpr int dof_per_element = dof_per_node * max_nnodes_per_element;
 
   GalerkinAnalysis(const Mesh& mesh, const Quadrature& quadrature,
                    const Basis& basis, const Physics& physics)
@@ -30,11 +30,11 @@ class GalerkinAnalysis final {
   T energy(const T x[], const T dof[]) const {
     T total_energy = 0.0;
     T xq = 0.0;
-    std::vector<T> element_x(nodes_per_element);
+    std::vector<T> element_x(max_nnodes_per_element);
 
     for (int i = 0; i < mesh.get_num_elements(); i++) {
       // Get the element node locations
-      T element_xloc[spatial_dim * nodes_per_element];
+      T element_xloc[spatial_dim * max_nnodes_per_element];
       get_element_xloc<T, Mesh, Basis>(mesh, i, element_xloc);
 
       // Get element design variable if needed
@@ -53,8 +53,8 @@ class GalerkinAnalysis final {
       basis.eval_basis_grad(i, pts, N, Nxi);
 
       for (int j = 0; j < num_quad_pts; j++) {
-        int offset_n = j * nodes_per_element;
-        int offset_nxi = j * nodes_per_element * spatial_dim;
+        int offset_n = j * max_nnodes_per_element;
+        int offset_nxi = j * max_nnodes_per_element * spatial_dim;
 
         // Evaluate the derivative of the spatial dof in the computational
         // coordinates
@@ -85,11 +85,11 @@ class GalerkinAnalysis final {
 
   void residual(const T x[], const T dof[], T res[]) const {
     T xq = 0.0;
-    std::vector<T> element_x(nodes_per_element);
+    std::vector<T> element_x(max_nnodes_per_element);
 
     for (int i = 0; i < mesh.get_num_elements(); i++) {
       // Get the element node locations
-      T element_xloc[spatial_dim * nodes_per_element];
+      T element_xloc[spatial_dim * max_nnodes_per_element];
       get_element_xloc<T, Mesh, Basis>(mesh, i, element_xloc);
 
       // Get the element degrees of freedom
@@ -114,8 +114,8 @@ class GalerkinAnalysis final {
       basis.eval_basis_grad(i, pts, N, Nxi);
 
       for (int j = 0; j < num_quad_pts; j++) {
-        int offset_n = j * nodes_per_element;
-        int offset_nxi = j * nodes_per_element * spatial_dim;
+        int offset_n = j * max_nnodes_per_element;
+        int offset_nxi = j * max_nnodes_per_element * spatial_dim;
 
         // Evaluate the derivative of the spatial dof in the computational
         // coordinates
@@ -156,11 +156,11 @@ class GalerkinAnalysis final {
   void jacobian_product(const T x[], const T dof[], const T direct[],
                         T res[]) const {
     T xq = 0.0;
-    std::vector<T> element_x(nodes_per_element);
+    std::vector<T> element_x(max_nnodes_per_element);
 
     for (int i = 0; i < mesh.get_num_elements(); i++) {
       // Get the element node locations
-      T element_xloc[spatial_dim * nodes_per_element];
+      T element_xloc[spatial_dim * max_nnodes_per_element];
       get_element_xloc<T, Mesh, Basis>(mesh, i, element_xloc);
 
       // Get element design variable if needed
@@ -190,8 +190,8 @@ class GalerkinAnalysis final {
       basis.eval_basis_grad(i, pts, N, Nxi);
 
       for (int j = 0; j < num_quad_pts; j++) {
-        int offset_n = j * nodes_per_element;
-        int offset_nxi = j * nodes_per_element * spatial_dim;
+        int offset_n = j * max_nnodes_per_element;
+        int offset_nxi = j * max_nnodes_per_element * spatial_dim;
 
         // Evaluate the derivative of the spatial dof in the computational
         // coordinates
@@ -249,11 +249,11 @@ class GalerkinAnalysis final {
   void jacobian_adjoint_product(const T x[], const T dof[], const T psi[],
                                 T dfdx[]) const {
     T xq = 0.0;
-    std::vector<T> element_x(nodes_per_element);
+    std::vector<T> element_x(max_nnodes_per_element);
 
     for (int i = 0; i < mesh.get_num_elements(); i++) {
       // Get the element node locations
-      T element_xloc[spatial_dim * nodes_per_element];
+      T element_xloc[spatial_dim * max_nnodes_per_element];
       get_element_xloc<T, Mesh, Basis>(mesh, i, element_xloc);
 
       // Get element design variable if needed
@@ -282,8 +282,8 @@ class GalerkinAnalysis final {
       basis.eval_basis_grad(i, pts, N, Nxi);
 
       for (int j = 0; j < num_quad_pts; j++) {
-        int offset_n = j * nodes_per_element;
-        int offset_nxi = j * nodes_per_element * spatial_dim;
+        int offset_n = j * max_nnodes_per_element;
+        int offset_nxi = j * max_nnodes_per_element * spatial_dim;
 
         // Evaluate the derivative of the spatial dof in the computational
         // coordinates
@@ -332,11 +332,11 @@ class GalerkinAnalysis final {
     mat->zero();
 
     T xq = 0.0;
-    std::vector<T> element_x(nodes_per_element);
+    std::vector<T> element_x(max_nnodes_per_element);
 
     for (int i = 0; i < mesh.get_num_elements(); i++) {
       // Get the element node locations
-      T element_xloc[spatial_dim * nodes_per_element];
+      T element_xloc[spatial_dim * max_nnodes_per_element];
       get_element_xloc<T, Mesh, Basis>(mesh, i, element_xloc);
 
       // Get element design variable if needed
@@ -361,8 +361,8 @@ class GalerkinAnalysis final {
       basis.eval_basis_grad(i, pts, N, Nxi);
 
       for (int j = 0; j < num_quad_pts; j++) {
-        int offset_n = j * nodes_per_element;
-        int offset_nxi = j * nodes_per_element * spatial_dim;
+        int offset_n = j * max_nnodes_per_element;
+        int offset_nxi = j * max_nnodes_per_element * spatial_dim;
 
         // Evaluate the derivative of the spatial dof in the computational
         // coordinates
@@ -399,7 +399,7 @@ class GalerkinAnalysis final {
                              jac_grad_ref, element_jac);
       }
 
-      mat->add_block_values(i, nodes_per_element, mesh, element_jac);
+      mat->add_block_values(i, max_nnodes_per_element, mesh, element_jac);
     }
   }
 
@@ -418,7 +418,7 @@ class GalerkinAnalysis final {
 
     for (int i = 0; i < mesh.get_num_elements(); i++) {
       // Get the element node locations
-      T element_xloc[spatial_dim * nodes_per_element];
+      T element_xloc[spatial_dim * max_nnodes_per_element];
       get_element_xloc<T, Mesh, Basis>(mesh, i, element_xloc);
 
       // Get the element states and adjoints
@@ -427,7 +427,7 @@ class GalerkinAnalysis final {
       get_element_vars<T, dof_per_node, Mesh, Basis>(mesh, i, psi, element_psi);
 
       // Create the element dfdphi
-      std::vector<T> element_dfdphi(nodes_per_element, 0.0);
+      std::vector<T> element_dfdphi(max_nnodes_per_element, 0.0);
 
       std::vector<T> pts, wts, pts_grad, wts_grad;
       int num_quad_pts =
@@ -437,9 +437,10 @@ class GalerkinAnalysis final {
       basis.eval_basis_grad(i, pts, N, Nxi, Nxixi);
 
       for (int j = 0; j < num_quad_pts; j++) {
-        int offset_n = j * nodes_per_element;
-        int offset_nxi = j * nodes_per_element * spatial_dim;
-        int offset_nxixi = j * nodes_per_element * spatial_dim * spatial_dim;
+        int offset_n = j * max_nnodes_per_element;
+        int offset_nxi = j * max_nnodes_per_element * spatial_dim;
+        int offset_nxixi =
+            j * max_nnodes_per_element * spatial_dim * spatial_dim;
 
         A2D::Mat<T, spatial_dim, spatial_dim> J;
         interp_val_grad<T, Basis, spatial_dim>(element_xloc, nullptr,
@@ -483,8 +484,8 @@ class GalerkinAnalysis final {
         rtransform(J, coef_ugrad, coef_ugrad_ref);
         rtransform(J, jp_ugrad, jp_ugrad_ref);
 
-        int offset_wts = j * nodes_per_element;
-        int offset_pts = j * nodes_per_element * spatial_dim;
+        int offset_wts = j * max_nnodes_per_element;
+        int offset_pts = j * max_nnodes_per_element * spatial_dim;
 
         add_jac_adj_product<T, Basis>(
             wts[j], detJ, &wts_grad[offset_wts], &pts_grad[offset_pts], psiq,
@@ -513,11 +514,11 @@ class GalerkinAnalysis final {
 
     for (int i = 0; i < mesh.get_num_elements(); i++) {
       // Get the element node locations
-      T element_xloc[spatial_dim * nodes_per_element];
+      T element_xloc[spatial_dim * max_nnodes_per_element];
       get_element_xloc<T, Mesh, Basis>(mesh, i, element_xloc);
 
       // Create the element dfdphi
-      std::vector<T> element_dfdphi(nodes_per_element, 0.0);
+      std::vector<T> element_dfdphi(max_nnodes_per_element, 0.0);
 
       std::vector<T> pts, wts, pts_grad, wts_grad;
       int num_quad_pts =
@@ -527,15 +528,15 @@ class GalerkinAnalysis final {
       basis.eval_basis_grad(i, pts, N, Nxi);
 
       for (int j = 0; j < num_quad_pts; j++) {
-        int offset_nxi = j * nodes_per_element * spatial_dim;
+        int offset_nxi = j * max_nnodes_per_element * spatial_dim;
         A2D::Mat<T, spatial_dim, spatial_dim> J;
         interp_val_grad<T, Basis, spatial_dim>(element_xloc, nullptr,
                                                &Nxi[offset_nxi], nullptr, &J);
 
         T detJ;
         A2D::MatDet(J, detJ);
-        int offset_wts = j * nodes_per_element;
-        for (int n = 0; n < nodes_per_element; n++) {
+        int offset_wts = j * max_nnodes_per_element;
+        for (int n = 0; n < max_nnodes_per_element; n++) {
           element_dfdphi[n] += wts_grad[offset_wts + n] * detJ;
         }
       }

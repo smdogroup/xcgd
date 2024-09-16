@@ -31,7 +31,7 @@ TEST(adjoint, GDLSFQuadratureGradient) {
   using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
 
   constexpr int spatial_dim = Mesh::spatial_dim;
-  constexpr int nodes_per_element = Basis::nodes_per_element;
+  constexpr int max_nnodes_per_element = Basis::max_nnodes_per_element;
 
   int nxy[2] = {5, 5};
   T lxy[2] = {1.0, 1.0};
@@ -53,8 +53,8 @@ TEST(adjoint, GDLSFQuadratureGradient) {
     vtk.add_scalar_field(pts, wts);
     vtk.write_vtk();
 
-    T elem_p[nodes_per_element];
-    for (int i = 0; i < nodes_per_element; i++) {
+    T elem_p[max_nnodes_per_element];
+    for (int i = 0; i < max_nnodes_per_element; i++) {
       elem_p[i] = T(rand()) / RAND_MAX;
     }
 
@@ -102,15 +102,15 @@ TEST(adjoint, GDLSFQuadratureGradient) {
 
     for (int i = 0; i < num_quad_pts1; i++) {
       wts_grad_fd[i] += (wts2[i] - wts1[i]) / (2.0 * h);
-      for (int j = 0; j < nodes_per_element; j++) {
-        wts_grad_ad[i] += wts_grad[i * nodes_per_element + j] * elem_p[j];
+      for (int j = 0; j < max_nnodes_per_element; j++) {
+        wts_grad_ad[i] += wts_grad[i * max_nnodes_per_element + j] * elem_p[j];
       }
       for (int d = 0; d < spatial_dim; d++) {
         int index = spatial_dim * i + d;
         pts_grad_fd[index] += (pts2[index] - pts1[index]) / (2.0 * h);
-        for (int j = 0; j < nodes_per_element; j++) {
+        for (int j = 0; j < max_nnodes_per_element; j++) {
           pts_grad_ad[index] +=
-              pts_grad[d + spatial_dim * (j + i * nodes_per_element)] *
+              pts_grad[d + spatial_dim * (j + i * max_nnodes_per_element)] *
               elem_p[j];
         }
       }

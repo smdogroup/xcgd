@@ -106,11 +106,11 @@ inline void jtransform(
 
 template <typename T, class Mesh, class Basis>
 void get_element_xloc(const Mesh &mesh, int e, T element_xloc[]) {
-  int constexpr nodes_per_element = Basis::nodes_per_element;
+  int constexpr max_nnodes_per_element = Basis::max_nnodes_per_element;
   int constexpr spatial_dim = Basis::spatial_dim;
-  int nodes[nodes_per_element];
+  int nodes[max_nnodes_per_element];
   mesh.get_elem_dof_nodes(e, nodes);
-  for (int j = 0; j < nodes_per_element; j++) {
+  for (int j = 0; j < max_nnodes_per_element; j++) {
     mesh.get_node_xloc(nodes[j], element_xloc);
     element_xloc += spatial_dim;
   }
@@ -118,11 +118,11 @@ void get_element_xloc(const Mesh &mesh, int e, T element_xloc[]) {
 
 template <typename T, int dim, class Mesh, class Basis>
 void get_element_vars(const Mesh &mesh, int e, const T dof[], T element_dof[]) {
-  int constexpr nodes_per_element = Basis::nodes_per_element;
+  int constexpr max_nnodes_per_element = Basis::max_nnodes_per_element;
   int constexpr spatial_dim = Basis::spatial_dim;
-  int nodes[nodes_per_element];
+  int nodes[max_nnodes_per_element];
   mesh.get_elem_dof_nodes(e, nodes);
-  for (int j = 0; j < nodes_per_element; j++) {
+  for (int j = 0; j < max_nnodes_per_element; j++) {
     for (int k = 0; k < dim; k++, element_dof++) {
       element_dof[0] = dof[dim * nodes[j] + k];
     }
@@ -131,11 +131,11 @@ void get_element_vars(const Mesh &mesh, int e, const T dof[], T element_dof[]) {
 
 template <typename T, int dim, class Mesh, class Basis>
 void add_element_res(const Mesh &mesh, int e, const T element_res[], T res[]) {
-  int constexpr nodes_per_element = Basis::nodes_per_element;
+  int constexpr max_nnodes_per_element = Basis::max_nnodes_per_element;
   int constexpr spatial_dim = Basis::spatial_dim;
-  int nodes[nodes_per_element];
+  int nodes[max_nnodes_per_element];
   mesh.get_elem_dof_nodes(e, nodes);
-  for (int j = 0; j < nodes_per_element; j++) {
+  for (int j = 0; j < max_nnodes_per_element; j++) {
     for (int k = 0; k < dim; k++, element_res++) {
       res[dim * nodes[j] + k] += element_res[0];
     }
@@ -145,11 +145,11 @@ void add_element_res(const Mesh &mesh, int e, const T element_res[], T res[]) {
 template <typename T, class Mesh, class Basis>
 void add_element_dfdx(const Mesh &mesh, int e, const T element_dfdx[],
                       T dfdx[]) {
-  int constexpr nodes_per_element = Basis::nodes_per_element;
-  int nodes[nodes_per_element];
+  int constexpr max_nnodes_per_element = Basis::max_nnodes_per_element;
+  int nodes[max_nnodes_per_element];
   mesh.get_elem_dof_nodes(e, nodes);
 
-  for (int j = 0; j < nodes_per_element; j++) {
+  for (int j = 0; j < max_nnodes_per_element; j++) {
     dfdx[nodes[j]] += element_dfdx[j];
   }
 }
@@ -157,11 +157,11 @@ void add_element_dfdx(const Mesh &mesh, int e, const T element_dfdx[],
 template <typename T, class Mesh, class Basis>
 void add_element_dfdphi(const Mesh &lsf_mesh, int c, const T element_dfdphi[],
                         T dfdphi[]) {
-  int constexpr nodes_per_element = Basis::nodes_per_element;
-  int nodes[nodes_per_element];
+  int constexpr max_nnodes_per_element = Basis::max_nnodes_per_element;
+  int nodes[max_nnodes_per_element];
   lsf_mesh.get_elem_dof_nodes(c, nodes);
 
-  for (int j = 0; j < nodes_per_element; j++) {
+  for (int j = 0; j < max_nnodes_per_element; j++) {
     dfdphi[nodes[j]] += element_dfdphi[j];
   }
 }
@@ -174,10 +174,10 @@ void add_element_dfdphi(const Mesh &lsf_mesh, int c, const T element_dfdphi[],
  * @tparam T numeric type
  * @tparam Basis Basis type
  * @tparam dim number of dof components at each dof node
- * @param dof node dof values of size nodes_per_element * dim
- * @param N shape function values, size of nodes_per_element
+ * @param dof node dof values of size max_nnodes_per_element * dim
+ * @param N shape function values, size of max_nnodes_per_element
  * @param Nxi shape function gradients w.r.t. computational coordinates, size of
- * nodes_per_element * spatial_dim
+ * max_nnodes_per_element * spatial_dim
  * @param vals interpolated dof
  * @param grad gradients of vals w.r.t. computational coordinates dv/dxi
  */
@@ -186,7 +186,7 @@ void interp_val_grad(const T dof[], const T N[], const T Nxi[],
                      A2D::Vec<T, dim> *vals,
                      A2D::Mat<T, dim, Basis::spatial_dim> *grad) {
   static constexpr int spatial_dim = Basis::spatial_dim;
-  static constexpr int nodes_per_element = Basis::nodes_per_element;
+  static constexpr int max_nnodes_per_element = Basis::max_nnodes_per_element;
 
   if (vals) {
     for (int k = 0; k < dim; k++) {
@@ -200,7 +200,7 @@ void interp_val_grad(const T dof[], const T N[], const T Nxi[],
     }
   }
 
-  for (int i = 0; i < nodes_per_element; i++) {
+  for (int i = 0; i < max_nnodes_per_element; i++) {
     for (int k = 0; k < dim; k++) {
       if (vals) {
         (*vals)(k) += N[i] * dof[dim * i + k];
@@ -219,7 +219,7 @@ template <typename T, class Basis>
 void interp_val_grad(const T *dof, const T *N, const T *Nxi, T *val,
                      A2D::Vec<T, Basis::spatial_dim> *grad) {
   static constexpr int spatial_dim = Basis::spatial_dim;
-  static constexpr int nodes_per_element = Basis::nodes_per_element;
+  static constexpr int max_nnodes_per_element = Basis::max_nnodes_per_element;
 
   if (val) {
     *val = 0.0;
@@ -231,7 +231,7 @@ void interp_val_grad(const T *dof, const T *N, const T *Nxi, T *val,
     }
   }
 
-  for (int i = 0; i < nodes_per_element; i++) {
+  for (int i = 0; i < max_nnodes_per_element; i++) {
     if (val) {
       *val += N[i] * dof[i];
     }
@@ -251,7 +251,7 @@ void interp_val_grad(const T *dof, const T *N, const T *Nxi, T *val,
  * @tparam T numeric type
  * @tparam Basis Basis type
  * @tparam dim number of dof components at each dof node
- * @param dof node dof values of size nodes_per_element * dim
+ * @param dof node dof values of size max_nnodes_per_element * dim
  * @param Nxixi shape function Hessians, concatenation of (∂2/∂ξξ, ∂2/∂ξη,
  * ∂2/∂ηξ, ∂2/∂ηη) N_q
  * @param hess ∇2u, hess(i, :) = (∂2u[i]/∂ξξ, ∂2u[i]/∂ξη, ∂2u[i]/∂ηξ,
@@ -262,12 +262,12 @@ void interp_hess(
     const T *dof, const T *Nxixi,
     A2D::Mat<T, dim, Basis::spatial_dim * Basis::spatial_dim> &hess) {
   static constexpr int spatial_dim = Basis::spatial_dim;
-  static constexpr int nodes_per_element = Basis::nodes_per_element;
+  static constexpr int max_nnodes_per_element = Basis::max_nnodes_per_element;
 
   hess.zero();
 
   for (int j = 0; j < dim; j++) {
-    for (int i = 0; i < nodes_per_element; i++) {
+    for (int i = 0; i < max_nnodes_per_element; i++) {
       int offset = spatial_dim * spatial_dim * i;
       for (int d1 = 0; d1 < spatial_dim; d1++) {
         for (int d2 = 0; d2 < spatial_dim; d2++) {
@@ -284,11 +284,11 @@ template <typename T, class Basis>
 void interp_hess(const T *dof, const T *Nxixi,
                  A2D::Vec<T, Basis::spatial_dim * Basis::spatial_dim> &hess) {
   static constexpr int spatial_dim = Basis::spatial_dim;
-  static constexpr int nodes_per_element = Basis::nodes_per_element;
+  static constexpr int max_nnodes_per_element = Basis::max_nnodes_per_element;
 
   hess.zero();
 
-  for (int i = 0; i < nodes_per_element; i++) {
+  for (int i = 0; i < max_nnodes_per_element; i++) {
     int offset = spatial_dim * spatial_dim * i;
     for (int d1 = 0; d1 < spatial_dim; d1++) {
       for (int d2 = 0; d2 < spatial_dim; d2++) {
@@ -314,9 +314,9 @@ void interp_hess(const T *dof, const T *Nxixi,
  * @tparam T numeric type
  * @tparam Basis Basis type
  * @tparam dim number of dof components at each dof node
- * @param N shape function values, size of nodes_per_element
+ * @param N shape function values, size of max_nnodes_per_element
  * @param Nxi shape function gradients w.r.t. computational coordinates ξ,
- * size of nodes_per_element * spatial_dim
+ * size of max_nnodes_per_element * spatial_dim
  * @param coef_vals ∂e/∂uq
  * @param coef_grad ∂e/∂((∇_ξ)uq)
  * @param elem_res de/du
@@ -325,9 +325,9 @@ template <typename T, class Basis, int dim>
 void add_grad(const T N[], const T Nxi[], const A2D::Vec<T, dim> &coef_vals,
               A2D::Mat<T, dim, Basis::spatial_dim> &coef_grad, T elem_res[]) {
   static constexpr int spatial_dim = Basis::spatial_dim;
-  static constexpr int nodes_per_element = Basis::nodes_per_element;
+  static constexpr int max_nnodes_per_element = Basis::max_nnodes_per_element;
 
-  for (int i = 0; i < nodes_per_element; i++) {
+  for (int i = 0; i < max_nnodes_per_element; i++) {
     for (int k = 0; k < dim; k++) {
       elem_res[dim * i + k] += coef_vals(k) * N[i];
       for (int j = 0; j < spatial_dim; j++) {
@@ -342,9 +342,9 @@ template <typename T, class Basis>
 void add_grad(const T N[], const T Nxi[], const T &coef_val,
               const A2D::Vec<T, Basis::spatial_dim> &coef_grad, T elem_res[]) {
   static constexpr int spatial_dim = Basis::spatial_dim;
-  static constexpr int nodes_per_element = Basis::nodes_per_element;
+  static constexpr int max_nnodes_per_element = Basis::max_nnodes_per_element;
 
-  for (int i = 0; i < nodes_per_element; i++) {
+  for (int i = 0; i < max_nnodes_per_element; i++) {
     elem_res[i] += coef_val * N[i];
     for (int j = 0; j < spatial_dim; j++) {
       elem_res[i] += (coef_grad(j) * Nxi[spatial_dim * i + j]);
@@ -367,9 +367,9 @@ void add_grad(const T N[], const T Nxi[], const T &coef_val,
  * @tparam T numeric type
  * @tparam Basis Basis type
  * @tparam dim number of dof components at each dof node
- * @param N shape function values, size of nodes_per_element
+ * @param N shape function values, size of max_nnodes_per_element
  * @param Nxi shape function gradients w.r.t. computational coordinates ξ,
- * size of nodes_per_element * spatial_dim
+ * size of max_nnodes_per_element * spatial_dim
  * @param coef_vals ∂^2e/∂(uq)^2
  * @param coef_hess ∂^2e/∂((∇_ξ)uq)^2
  * @param elem_jac d^2e/du^2
@@ -381,16 +381,16 @@ void add_matrix(const T N[], const T Nxi[],
                                dim * Basis::spatial_dim> &coef_hess,
                 T elem_jac[]) {
   static constexpr int spatial_dim = Basis::spatial_dim;
-  static constexpr int nodes_per_element = Basis::nodes_per_element;
+  static constexpr int max_nnodes_per_element = Basis::max_nnodes_per_element;
 
-  constexpr int dof_per_element = dim * nodes_per_element;
+  constexpr int dof_per_element = dim * max_nnodes_per_element;
 
-  for (int i = 0; i < nodes_per_element; i++) {
+  for (int i = 0; i < max_nnodes_per_element; i++) {
     T ni = N[i];
     std::vector<T> nxi(&Nxi[spatial_dim * i],
                        &Nxi[spatial_dim * i] + spatial_dim);
 
-    for (int j = 0; j < nodes_per_element; j++) {
+    for (int j = 0; j < max_nnodes_per_element; j++) {
       T nj = N[j];
       std::vector<T> nxj(&Nxi[spatial_dim * j],
                          &Nxi[spatial_dim * j] + spatial_dim);
@@ -422,16 +422,16 @@ void add_matrix(
     const A2D::Mat<T, Basis::spatial_dim, Basis::spatial_dim> &coef_grad,
     T elem_jac[]) {
   static constexpr int spatial_dim = Basis::spatial_dim;
-  static constexpr int nodes_per_element = Basis::nodes_per_element;
+  static constexpr int max_nnodes_per_element = Basis::max_nnodes_per_element;
 
-  constexpr int dof_per_element = nodes_per_element;
+  constexpr int dof_per_element = max_nnodes_per_element;
 
-  for (int i = 0; i < nodes_per_element; i++) {
+  for (int i = 0; i < max_nnodes_per_element; i++) {
     T ni = N[i];
     std::vector<T> nxi(&Nxi[spatial_dim * i],
                        &Nxi[spatial_dim * i] + spatial_dim);
 
-    for (int j = 0; j < nodes_per_element; j++) {
+    for (int j = 0; j < max_nnodes_per_element; j++) {
       T nj = N[j];
       std::vector<T> nxj(&Nxi[spatial_dim * j],
                          &Nxi[spatial_dim * j] + spatial_dim);
@@ -468,7 +468,7 @@ void det_deriv(const T *elem_xloc, const T *Nxixi,
                const A2D::Mat<T, Basis::spatial_dim, Basis::spatial_dim> &J,
                A2D::Vec<T, Basis::spatial_dim> &grad) {
   static constexpr int spatial_dim = Basis::spatial_dim;
-  static constexpr int nodes_per_element = Basis::nodes_per_element;
+  static constexpr int max_nnodes_per_element = Basis::max_nnodes_per_element;
 
   // Get derivatives of detJ w.r.t. J
   T detJ, detJb = 1.0;
@@ -482,7 +482,7 @@ void det_deriv(const T *elem_xloc, const T *Nxixi,
   grad.zero();
 
   // sum_j ∇^2_ξ N_j * Jbar^T * xj
-  for (int j = 0; j < nodes_per_element; j++) {
+  for (int j = 0; j < max_nnodes_per_element; j++) {
     int Nxixi_offset = j * spatial_dim * spatial_dim;
     int xloc_offset = j * spatial_dim;
     for (int ii = 0; ii < spatial_dim; ii++) {
@@ -503,9 +503,9 @@ void det_deriv(const T *elem_xloc, const T *Nxixi,
 template <typename T, class Basis>
 void add_jac_adj_product(const T N[], const T &x_val, T elem_dfdx[]) {
   static constexpr int spatial_dim = Basis::spatial_dim;
-  static constexpr int nodes_per_element = Basis::nodes_per_element;
+  static constexpr int max_nnodes_per_element = Basis::max_nnodes_per_element;
 
-  for (int i = 0; i < nodes_per_element; i++) {
+  for (int i = 0; i < max_nnodes_per_element; i++) {
     elem_dfdx[i] += x_val * N[i];
   }
 }
@@ -552,7 +552,7 @@ void add_jac_adj_product(
   static_assert(GDBasis::is_gd_basis, "This method only works with GD Basis");
 
   static constexpr int spatial_dim = GDBasis::spatial_dim;
-  static constexpr int nodes_per_element = GDBasis::nodes_per_element;
+  static constexpr int max_nnodes_per_element = GDBasis::max_nnodes_per_element;
 
   // ∂e/∂u * ψ
   // = ∂e/∂uq * ψq + ∂e/∂(∇_ξ)uq * (∇_ξ)ψq
@@ -606,7 +606,7 @@ void add_jac_adj_product(
 
   T wdetJ = weight * detJ;
 
-  for (int n = 0; n < nodes_per_element; n++) {
+  for (int n = 0; n < max_nnodes_per_element; n++) {
     // AJP_{1,n}
     elem_dfdphi[n] += detJ * dedu_psi * wts_grad[n];
 
@@ -635,7 +635,7 @@ void add_jac_adj_product(
   static_assert(GDBasis::is_gd_basis, "This method only works with GD Basis");
 
   static constexpr int spatial_dim = GDBasis::spatial_dim;
-  static constexpr int nodes_per_element = GDBasis::nodes_per_element;
+  static constexpr int max_nnodes_per_element = GDBasis::max_nnodes_per_element;
 
   // ∂e/∂u * ψ
   // = ∂e/∂uq * ψq + ∂e/∂(∇_ξ)uq * (∇_ξ)ψq
@@ -676,7 +676,7 @@ void add_jac_adj_product(
 
   T wdetJ = weight * detJ;
 
-  for (int n = 0; n < nodes_per_element; n++) {
+  for (int n = 0; n < max_nnodes_per_element; n++) {
     // AJP_{1,n}
     elem_dfdphi[n] += detJ * dedu_psi * wts_grad[n];
 
@@ -757,12 +757,13 @@ class Interpolator final {
     for (int elem = 0; elem < mesh.get_num_elements(); elem++) {
       std::vector<T> element_dof;
       if (dof) {
-        element_dof.resize(Mesh::nodes_per_element);
+        element_dof.resize(Mesh::max_nnodes_per_element);
         get_element_vars<T, dof_per_node, Mesh, Basis>(mesh, elem, dof,
                                                        element_dof.data());
       }
 
-      std::vector<T> element_xloc(Mesh::nodes_per_element * Basis::spatial_dim);
+      std::vector<T> element_xloc(Mesh::max_nnodes_per_element *
+                                  Basis::spatial_dim);
       get_element_xloc<T, Mesh, Basis>(mesh, elem, element_xloc.data());
 
       std::vector<T> pts, wts;
@@ -778,7 +779,7 @@ class Interpolator final {
       std::vector<T> ptx(nsamples * Basis::spatial_dim);
 
       for (int i = 0; i < nsamples; i++) {
-        int offset_n = i * Basis::nodes_per_element;
+        int offset_n = i * Basis::max_nnodes_per_element;
         T val = 0.0;
         if (dof) {
           interp_val_grad<T, Basis>(element_dof.data(), &N[offset_n], nullptr,

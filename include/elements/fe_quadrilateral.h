@@ -39,20 +39,20 @@ class QuadrilateralBasis final : public BasisBase<T, FEMesh<T, 2, 4>> {
   using BasisBase_ = BasisBase<T, FEMesh<T, 2, 4>>;
 
  public:
-  using BasisBase_::nodes_per_element;
+  using BasisBase_::max_nnodes_per_element;
   using BasisBase_::spatial_dim;
   using typename BasisBase_::Mesh;
 
   void eval_basis_grad(int _, const std::vector<T>& pts, std::vector<T>& N,
                        std::vector<T>& Nxi) const {
     int num_quad_pts = pts.size() / spatial_dim;
-    N.resize(nodes_per_element * num_quad_pts);
-    Nxi.resize(nodes_per_element * num_quad_pts * spatial_dim);
+    N.resize(max_nnodes_per_element * num_quad_pts);
+    Nxi.resize(max_nnodes_per_element * num_quad_pts * spatial_dim);
 
     for (int q = 0; q < num_quad_pts; q++) {
       int offset = q * spatial_dim;
-      int offset_n = q * nodes_per_element;
-      int offset_nxi = q * nodes_per_element * spatial_dim;
+      int offset_n = q * max_nnodes_per_element;
+      int offset_nxi = q * max_nnodes_per_element * spatial_dim;
 
       N[offset_n] = 0.25 * (1.0 - pts[offset]) * (1.0 - pts[offset + 1]);
       N[offset_n + 1] = 0.25 * (1.0 + pts[offset]) * (1.0 - pts[offset + 1]);

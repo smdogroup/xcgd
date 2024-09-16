@@ -22,7 +22,7 @@ TEST(mesh, GDMeshStructured) {
                              11, 12, 13, 14, 16, 17, 18, 19};
 
   for (int elem = 0; elem < 12; elem++) {
-    int nodes[mesh.nodes_per_element];
+    int nodes[mesh.max_nnodes_per_element];
     mesh.get_elem_dof_nodes(elem, nodes);
     int eij[2];
     grid.get_cell_coords(elem, eij);
@@ -82,9 +82,9 @@ void generate_lsf_mesh(bool flip = false) {
 
   for (int elem = 0; elem < mesh.get_num_elements(); elem++) {
     std::vector<T> dof(mesh.get_num_nodes(), 0.0);
-    int nodes[Mesh::nodes_per_element];
+    int nodes[Mesh::max_nnodes_per_element];
     mesh.get_elem_dof_nodes(elem, nodes);
-    for (int i = 0; i < Mesh::nodes_per_element; i++) {
+    for (int i = 0; i < Mesh::max_nnodes_per_element; i++) {
       dof[nodes[i]] = 1.0;
     }
     char name[256];

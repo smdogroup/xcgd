@@ -167,7 +167,7 @@ class GridMesh final : public GDMeshBase<T, Np_1d> {
 
  public:
   using MeshBase::corner_nodes_per_element;
-  using MeshBase::nodes_per_element;
+  using MeshBase::max_nnodes_per_element;
   using MeshBase::spatial_dim;
   using typename MeshBase::Grid;
 
@@ -190,11 +190,11 @@ class GridMesh final : public GDMeshBase<T, Np_1d> {
    * @brief For a GD element, get all dof nodes
    *
    * @param elem element index
-   * @param nodes dof node indices, length: nodes_per_element
+   * @param nodes dof node indices, length: max_nnodes_per_element
    */
   int get_elem_dof_nodes(int elem, int* nodes) const {
     this->get_cell_ground_stencil(elem, nodes);
-    return nodes_per_element;
+    return max_nnodes_per_element;
   }
 
   inline void get_elem_corner_nodes(int elem, int* nodes) const {
@@ -244,7 +244,7 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
 
  public:
   using MeshBase::corner_nodes_per_element;
-  using MeshBase::nodes_per_element;
+  using MeshBase::max_nnodes_per_element;
   using MeshBase::spatial_dim;
   using typename MeshBase::Grid;
   static constexpr bool is_cut_mesh = true;
@@ -288,7 +288,7 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
    * @brief For a GD element, get all dof nodes
    *
    * @param elem element index
-   * @param nodes dof node indices, length: nodes_per_element
+   * @param nodes dof node indices, length: max_nnodes_per_element
    *
    * @return number of nodes associated to this element
    */
@@ -297,7 +297,7 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
     int cell = elem_cells.at(elem);
     this->get_cell_ground_stencil(cell, nodes);
     adjust_stencil(cell, nodes);
-    for (int i = 0; i < nodes_per_element; i++) {
+    for (int i = 0; i < max_nnodes_per_element; i++) {
       try {
         nodes[i] = vert_nodes.at(nodes[i]);
       } catch (const std::out_of_range& e) {
@@ -469,9 +469,9 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
   // Helper function
   bool is_irregular_stencil(int elem) {
     int cell = elem_cells.at(elem);
-    int verts[nodes_per_element];
+    int verts[max_nnodes_per_element];
     this->get_cell_ground_stencil(cell, verts);
-    for (int index = 0; index < nodes_per_element; index++) {
+    for (int index = 0; index < max_nnodes_per_element; index++) {
       if (vert_nodes.count(verts[index]) == 0) {
         return true;
       }
@@ -513,7 +513,7 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
     int sign = dir % spatial_dim == 0 ? 1 : -1;
 
     // Adjust nodes
-    for (int index = 0; index < nodes_per_element; index++) {
+    for (int index = 0; index < max_nnodes_per_element; index++) {
       int vert = verts[index];
       if (vert_nodes.count(vert) == 0) {
         int vert_coords[spatial_dim] = {-1, -1};
@@ -525,7 +525,7 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
 
 // check  if the stencil is a valid stencil
 #ifdef XCGD_DEBUG_MODE
-    for (int index = 0; index < nodes_per_element; index++) {
+    for (int index = 0; index < max_nnodes_per_element; index++) {
       int vert = verts[index];
       if (vert_nodes.count(vert) == 0) {
         int coords[spatial_dim];

@@ -27,7 +27,7 @@ class Line {
 template <typename T, class Basis>
 T eval_det(Basis& basis, int elem, const T* element_xloc, std::vector<T> pt) {
   constexpr int spatial_dim = Basis::spatial_dim;
-  constexpr int nodes_per_element = Basis::nodes_per_element;
+  constexpr int max_nnodes_per_element = Basis::max_nnodes_per_element;
 
   std::vector<T> N, Nxi, Nxixi;
 
@@ -42,7 +42,7 @@ T eval_det(Basis& basis, int elem, const T* element_xloc, std::vector<T> pt) {
   A2D::MatDet(J, detJ);
 
   T tmp = 0.0;
-  for (int i = 0; i < nodes_per_element; i++) {
+  for (int i = 0; i < max_nnodes_per_element; i++) {
     tmp += Nxixi[spatial_dim * spatial_dim * i] * element_xloc[spatial_dim * i];
   }
 
@@ -84,9 +84,9 @@ TEST(adjoint, determinantGrad) {
 
   for (int elem = 0; elem < mesh.get_num_elements(); elem++) {
     std::vector<T> dof(mesh.get_num_nodes(), 0.0);
-    int nodes[Mesh::nodes_per_element];
+    int nodes[Mesh::max_nnodes_per_element];
     mesh.get_elem_dof_nodes(elem, nodes);
-    for (int i = 0; i < Mesh::nodes_per_element; i++) {
+    for (int i = 0; i < Mesh::max_nnodes_per_element; i++) {
       dof[nodes[i]] = 1.0;
     }
     char name[256];
@@ -100,9 +100,9 @@ TEST(adjoint, determinantGrad) {
   int i = 16;
 
   constexpr int spatial_dim = Basis::spatial_dim;
-  constexpr int nodes_per_element = Basis::nodes_per_element;
+  constexpr int max_nnodes_per_element = Basis::max_nnodes_per_element;
 
-  T element_xloc[spatial_dim * nodes_per_element];
+  T element_xloc[spatial_dim * max_nnodes_per_element];
   get_element_xloc<T, Mesh, Basis>(mesh, i, element_xloc);
 
   std::vector<T> pts, wts, pts_grad, wts_grad;
@@ -113,7 +113,7 @@ TEST(adjoint, determinantGrad) {
   basis.eval_basis_grad(i, pts, N, Nxi, Nxixi);
 
   for (int j = 0; j < num_quad_pts; j++) {
-    int offset_nxi = j * nodes_per_element * spatial_dim;
+    int offset_nxi = j * max_nnodes_per_element * spatial_dim;
     A2D::Mat<T, spatial_dim, spatial_dim> J;
     interp_val_grad<T, Basis, spatial_dim>(element_xloc, nullptr,
                                            &Nxi[offset_nxi], nullptr, &J);

@@ -44,7 +44,7 @@ class HelmholtzFilter final {
     // Set up Jacobian matrix's sparsity pattern
     int *rowp = nullptr, *cols = nullptr;
     SparseUtils::CSRFromConnectivityFunctor(
-        num_nodes, mesh.get_num_elements(), mesh.nodes_per_element,
+        num_nodes, mesh.get_num_elements(), mesh.max_nnodes_per_element,
         [&mesh](int elem, int* nodes) { mesh.get_elem_dof_nodes(elem, nodes); },
         &rowp, &cols);
 

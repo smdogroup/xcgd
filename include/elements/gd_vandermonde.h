@@ -26,8 +26,8 @@ class VandermondeEvaluatorDeprecated {
   static_assert(Mesh::is_gd_mesh, "VandermondeEvaluator requires a GD Mesh");
   static constexpr int spatial_dim = Mesh::spatial_dim;
   static constexpr int Np_1d = Mesh::Np_1d;
-  static constexpr int Np = Mesh::nodes_per_element;
-  static constexpr int Nk = Mesh::nodes_per_element;
+  static constexpr int Np = Mesh::max_nnodes_per_element;
+  static constexpr int Nk = Mesh::max_nnodes_per_element;
 
  public:
   VandermondeEvaluatorDeprecated(const Mesh& mesh, int elem) : Ck(Nk * Np) {
@@ -314,7 +314,7 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
   using Basis = GDBasis2D<T, CutMesh_>;
 
   constexpr static int spatial_dim = Basis::spatial_dim;
-  constexpr static int nodes_per_element = Basis::nodes_per_element;
+  constexpr static int max_nnodes_per_element = Basis::max_nnodes_per_element;
 
  public:
   GDLSFQuadrature2D(const CutMesh_& mesh)
@@ -349,7 +349,7 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
 
     // Get element LSF dofs
     const std::vector<T>& lsf_dof = mesh.get_lsf_dof();
-    T element_lsf[nodes_per_element];
+    T element_lsf[max_nnodes_per_element];
     get_element_vars<T, 1, GridMesh_, Basis>(lsf_mesh, cell, lsf_dof.data(),
                                              element_lsf);
 
@@ -369,9 +369,10 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
    * num_quad * spatial_dim
    * @param wts quadrature weights, size: num_quad
    * @param pts_grad concatenation of [∂ξ/∂φ0, ∂η/∂φ0, ∂ξ/∂φ1, ∂η/∂φ1, ...] for
-   * each quadrature point, size: num_quad * spatial_dim * nodes_per_element
+   * each quadrature point, size: num_quad * spatial_dim *
+   * max_nnodes_per_element
    * @param wts_grad concatenation of [∂w/∂φ0, ∂w/∂φ1, ...] for each quadrature
-   * point, size: num_quad * nodes_per_element
+   * point, size: num_quad * max_nnodes_per_element
    */
   int get_quadrature_pts_grad(int elem, std::vector<T>& pts,
                               std::vector<T>& wts, std::vector<T>& pts_grad,
@@ -394,7 +395,7 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
 
     // Get element LSF dofs
     const std::vector<T>& lsf_dof = mesh.get_lsf_dof();
-    T element_lsf[nodes_per_element];
+    T element_lsf[max_nnodes_per_element];
     get_element_vars<T, 1, GridMesh_, Basis>(lsf_mesh, cell, lsf_dof.data(),
                                              element_lsf);
 
@@ -405,18 +406,18 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
     int num_quad_pts = wts.size();
 
     // Get quadrature gradients
-    duals::dual<T> element_lsf_d[nodes_per_element];
-    for (int i = 0; i < nodes_per_element; i++) {
+    duals::dual<T> element_lsf_d[max_nnodes_per_element];
+    for (int i = 0; i < max_nnodes_per_element; i++) {
       element_lsf_d[i].rpart(element_lsf[i]);
       element_lsf_d[i].dpart(0.0);
     }
 
     pts_grad.clear();
     wts_grad.clear();
-    pts_grad.resize(num_quad_pts * spatial_dim * nodes_per_element);
-    wts_grad.resize(num_quad_pts * nodes_per_element);
+    pts_grad.resize(num_quad_pts * spatial_dim * max_nnodes_per_element);
+    wts_grad.resize(num_quad_pts * max_nnodes_per_element);
 
-    for (int i = 0; i < nodes_per_element; i++) {
+    for (int i = 0; i < max_nnodes_per_element; i++) {
       element_lsf_d[i].dpart(1.0);
       std::vector<T> dpts, dwts;
       getQuadrature(xi_min, xi_max, xi_min_lsf, xi_max_lsf, element_lsf_d, eval,
@@ -433,7 +434,7 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
       }
 
       for (int q = 0; q < num_quad_pts; q++) {
-        int index = q * nodes_per_element + i;
+        int index = q * max_nnodes_per_element + i;
         wts_grad[index] = dwts[q];
         for (int d = 0; d < spatial_dim; d++) {
           pts_grad[index * spatial_dim + d] = dpts[q * spatial_dim + d];
@@ -453,7 +454,7 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
                     algoim::xarray<T2, spatial_dim>& phi) const {
     algoim::bernstein::bernsteinInterpolate<spatial_dim>(
         [&](const algoim::uvector<T2, spatial_dim>& x) {  // x in [0, 1]
-          T2 N[nodes_per_element];
+          T2 N[max_nnodes_per_element];
           // xi in [xi_min, xi_max]
           algoim::uvector<T2, spatial_dim> xi = xi_min + x * (xi_max - xi_min);
           eval(xi.data(), N, (T2*)nullptr);
@@ -529,7 +530,7 @@ class GDBasis2D final : public BasisBase<T, Mesh_> {
 
  public:
   static constexpr bool is_gd_basis = true;
-  using BasisBase_::nodes_per_element;
+  using BasisBase_::max_nnodes_per_element;
   using BasisBase_::spatial_dim;
   using Mesh = Mesh_;
 
@@ -550,30 +551,31 @@ class GDBasis2D final : public BasisBase<T, Mesh_> {
   void eval_basis_grad(int elem, const std::vector<T>& pts, std::vector<T>& N,
                        std::vector<T>& Nxi) const {
     int num_quad_pts = pts.size() / spatial_dim;
-    N.resize(nodes_per_element * num_quad_pts);
-    Nxi.resize(nodes_per_element * num_quad_pts * spatial_dim);
+    N.resize(max_nnodes_per_element * num_quad_pts);
+    Nxi.resize(max_nnodes_per_element * num_quad_pts * spatial_dim);
 
     VandermondeEvaluator<T, Mesh> eval(mesh, elem);
 
     for (int q = 0; q < num_quad_pts; q++) {
-      int offset_n = q * nodes_per_element;
-      int offset_nxi = q * nodes_per_element * spatial_dim;
+      int offset_n = q * max_nnodes_per_element;
+      int offset_nxi = q * max_nnodes_per_element * spatial_dim;
       eval(&pts[spatial_dim * q], N.data() + offset_n, Nxi.data() + offset_nxi);
     }
   }
   void eval_basis_grad(int elem, const std::vector<T>& pts, std::vector<T>& N,
                        std::vector<T>& Nxi, std::vector<T>& Nxixi) const {
     int num_quad_pts = pts.size() / spatial_dim;
-    N.resize(nodes_per_element * num_quad_pts);
-    Nxi.resize(nodes_per_element * num_quad_pts * spatial_dim);
-    Nxixi.resize(nodes_per_element * num_quad_pts * spatial_dim * spatial_dim);
+    N.resize(max_nnodes_per_element * num_quad_pts);
+    Nxi.resize(max_nnodes_per_element * num_quad_pts * spatial_dim);
+    Nxixi.resize(max_nnodes_per_element * num_quad_pts * spatial_dim *
+                 spatial_dim);
 
     VandermondeEvaluator<T, Mesh> eval(mesh, elem);
 
     for (int q = 0; q < num_quad_pts; q++) {
-      int offset_n = q * nodes_per_element;
-      int offset_nxi = q * nodes_per_element * spatial_dim;
-      int offset_nxixi = q * nodes_per_element * spatial_dim * spatial_dim;
+      int offset_n = q * max_nnodes_per_element;
+      int offset_nxi = q * max_nnodes_per_element * spatial_dim;
+      int offset_nxixi = q * max_nnodes_per_element * spatial_dim * spatial_dim;
       eval(&pts[spatial_dim * q], N.data() + offset_n, Nxi.data() + offset_nxi,
            Nxixi.data() + offset_nxixi);
     }

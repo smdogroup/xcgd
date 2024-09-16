@@ -39,7 +39,7 @@ int main(int argc, char *argv[]) {
 
   int *rowp = nullptr, *cols = nullptr;
   SparseUtils::CSRFromConnectivity(num_nodes, num_elements,
-                                   Basis::nodes_per_element, element_nodes,
+                                   Basis::max_nnodes_per_element, element_nodes,
                                    &rowp, &cols);
 
   int nnz = rowp[num_nodes];

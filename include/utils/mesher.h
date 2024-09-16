@@ -433,16 +433,4 @@ void create_3d_box_tet_mesh(int nxyz[3], T lxyz[3], int *num_elements,
   *xloc = _xloc;
 }
 
-template <int nodes_per_element>
-struct GetElementNodes {
-  GetElementNodes(const int *element_nodes) : element_nodes(element_nodes) {}
-
-  int operator()(int e, int i) const {
-    return element_nodes[e * nodes_per_element + i];
-  }
-
- private:
-  const int *element_nodes;
-};
-
 #endif  // XCGD_MESHER_H

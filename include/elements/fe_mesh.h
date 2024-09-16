@@ -3,16 +3,16 @@
 
 #include "element_commons.h"
 
-template <typename T, int spatial_dim_, int nodes_per_element_>
-class FEMesh final
-    : public MeshBase<T, spatial_dim_, nodes_per_element_, nodes_per_element_> {
+template <typename T, int spatial_dim_, int max_nnodes_per_element_>
+class FEMesh final : public MeshBase<T, spatial_dim_, max_nnodes_per_element_,
+                                     max_nnodes_per_element_> {
  private:
-  using MeshBase_ =
-      MeshBase<T, spatial_dim_, nodes_per_element_, nodes_per_element_>;
+  using MeshBase_ = MeshBase<T, spatial_dim_, max_nnodes_per_element_,
+                             max_nnodes_per_element_>;
 
  public:
   using MeshBase_::corner_nodes_per_element;
-  using MeshBase_::nodes_per_element;
+  using MeshBase_::max_nnodes_per_element;
   using MeshBase_::spatial_dim;
 
   FEMesh(int num_elements, int num_nodes, int* element_nodes, T* xloc)
@@ -30,10 +30,10 @@ class FEMesh final
   }
 
   inline int get_elem_dof_nodes(int elem, int* nodes) const {
-    for (int i = 0; i < nodes_per_element; i++) {
-      nodes[i] = element_nodes[elem * nodes_per_element + i];
+    for (int i = 0; i < max_nnodes_per_element; i++) {
+      nodes[i] = element_nodes[elem * max_nnodes_per_element + i];
     }
-    return nodes_per_element;
+    return max_nnodes_per_element;
   }
 
   inline void get_elem_corner_nodes(int elem, int* nodes) const {
