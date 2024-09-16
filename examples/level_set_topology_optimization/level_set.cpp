@@ -10,6 +10,7 @@
 #include "elements/gd_vandermonde.h"
 #include "physics/grad_penalization.h"
 #include "physics/volume.h"
+#include "utils/exceptions.h"
 #include "utils/parser.h"
 #include "utils/vtk.h"
 
@@ -36,7 +37,7 @@ class TopoAnalysis {
  public:
   TopoAnalysis(T r0, T E, T nu, T penalty, bool use_robust_projection,
                double proj_beta, double proj_eta, Grid& grid, Mesh& mesh,
-               Quadrature& quadrature, Basis& basis)
+               Quadrature& quadrature, Basis& basis, std::string prefix)
       : filter(r0, grid, use_robust_projection, proj_beta, proj_eta),
         elastic(E, nu, mesh, quadrature, basis),
         vol_analysis(mesh, quadrature, basis, vol),
@@ -46,7 +47,8 @@ class TopoAnalysis {
         mesh(mesh),
         quadrature(quadrature),
         basis(basis),
-        phi(mesh.get_lsf_dof()) {
+        phi(mesh.get_lsf_dof()),
+        prefix(prefix) {
     const T* xy0 = grid.get_xy0();
     const T* lxy = grid.get_lxy();
 
@@ -143,14 +145,31 @@ class TopoAnalysis {
   std::vector<T> update_mesh_and_solve(const std::vector<T>& x) {
     // Solve the static problem
     // Note: bc_dof might change from iteration to iteration, but load_dof
-    // should constant if optimizer bounds are applied properly
+    // should be constant if optimizer bounds are applied properly
     update_mesh(x);
 
     T force = 1.0;
     std::vector<T> load_vals(active_load_verts.size(),
                              -force / active_load_verts.size());
-    std::vector<T> sol = elastic.solve(bc_dof, load_dof, load_vals);
-    return sol;
+    try {
+      std::vector<T> sol = elastic.solve(bc_dof, load_dof, load_vals);
+      return sol;
+    } catch (const StencilConstructionFailed& e) {
+      std::printf(
+          "StencilConstructionFailed error has been caught when calling "
+          "update_mesh_and_solve(), dumping debug info in a vtk and "
+          "throwing...\n");
+      auto cut_mesh = elastic.get_mesh();
+      ToVTK<T, Mesh> err_vtk(
+          cut_mesh, fspath(prefix) / "stencil_construction_failed.vtk");
+      err_vtk.write_mesh();
+
+      std::vector<double> failed_elem(cut_mesh.get_num_elements(), 0.0);
+      failed_elem[e.get_elem_index()] = 1.0;
+      err_vtk.write_cell_sol("failed_element", failed_elem.data());
+
+      throw e;
+    }
   }
 
   std::vector<T> eval_compliance_area(const std::vector<T>& x, T& comp,
@@ -258,6 +277,8 @@ class TopoAnalysis {
   Quadrature& quadrature;
   Basis& basis;
   std::vector<T>& phi;  // LSF values (filtered design variables)
+
+  std::string prefix;
 
   std::vector<int> bc_verts;
   std::vector<int> load_verts;
@@ -488,7 +509,7 @@ void execute(int argc, char* argv[]) {
   double robust_proj_eta = parser.get_double_option("robust_proj_eta");
   T penalty = parser.get_double_option("grad_penalty_coeff");
   TopoAnalysis topo(r0, E, nu, penalty, use_robust_projection, robust_proj_beta,
-                    robust_proj_eta, grid, mesh, quadrature, basis);
+                    robust_proj_eta, grid, mesh, quadrature, basis, prefix);
 
   double domain_area = lxy[0] * lxy[1];
   double area_frac = parser.get_double_option("area_frac");

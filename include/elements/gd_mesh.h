@@ -11,6 +11,7 @@
 
 #include "elements/element_commons.h"
 #include "quadrature_general.hpp"
+#include "utils/exceptions.h"
 #include "utils/misc.h"
 
 // The structured ground grid
@@ -289,12 +290,22 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
    * @param nodes dof node indices, length: nodes_per_element
    */
   void get_elem_dof_nodes(int elem, int* nodes) const {
+    int nnodes = 0;
     int cell = elem_cells.at(elem);
     this->get_cell_ground_stencil(cell, nodes);
     adjust_stencil(cell, nodes);
     for (int i = 0; i < nodes_per_element; i++) {
-      nodes[i] = vert_nodes.at(nodes[i]);
+      try {
+        nodes[i] = vert_nodes.at(nodes[i]);
+      } catch (const std::out_of_range& e) {
+        throw StencilConstructionFailed(elem);
+        continue;
+      }
+
+      nnodes++;
     }
+    // return nnodes; // TODO: eventually we would like to support returning
+    // this
   }
 
   inline void get_elem_corner_nodes(int elem, int* nodes) const {
@@ -375,6 +386,8 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
     int nverts = this->grid.get_num_verts();
 
     // Given lsf dof values, obtain active lsf vertices
+    // A vert is an active lsf vert if it's within (or at) the domain defined
+    // by the lsf, i.e. the lsf value is <= 0
     std::vector<bool> active_lsf_verts(nverts, false);
     for (int i = 0; i < nverts; i++) {
       if (freal(lsf_dof[i]) <= freal(T(0.0))) {

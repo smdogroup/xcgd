@@ -183,11 +183,12 @@ class ToVTK {
     }
   }
 
+  // Write nodal scalars
   void write_sol(const std::string sol_name, const T* sol_vec) {
     // Write header
-    if (!vtk_has_sol_header) {
+    if (!vtk_has_nodal_sol_header) {
       std::fprintf(fp, "POINT_DATA %d\n", mesh.get_num_nodes());
-      vtk_has_sol_header = true;
+      vtk_has_nodal_sol_header = true;
     }
     std::fprintf(fp, "SCALARS %s double 1\n", sol_name.c_str());
     std::fprintf(fp, "LOOKUP_TABLE default\n");
@@ -199,12 +200,29 @@ class ToVTK {
     }
   }
 
+  // Write nodal scalars
+  void write_cell_sol(const std::string sol_name, const T* sol_vec) {
+    // Write header
+    if (!vtk_has_cell_sol_header) {
+      std::fprintf(fp, "CELL_DATA %d\n", mesh.get_num_elements());
+      vtk_has_cell_sol_header = true;
+    }
+    std::fprintf(fp, "SCALARS %s double 1\n", sol_name.c_str());
+    std::fprintf(fp, "LOOKUP_TABLE default\n");
+
+    // Write data
+    for (int e = 0; e < mesh.get_num_elements(); e++) {
+      write_real_val(fp, sol_vec[e]);
+      std::fprintf(fp, "\n");
+    }
+  }
+
   // Write nodal vectors
   void write_vec(const std::string sol_name, const T* vec) {
     // Write header
-    if (!vtk_has_sol_header) {
+    if (!vtk_has_nodal_sol_header) {
       std::fprintf(fp, "POINT_DATA %d\n", mesh.get_num_nodes());
-      vtk_has_sol_header = true;
+      vtk_has_nodal_sol_header = true;
     }
     std::fprintf(fp, "VECTORS %s double\n", sol_name.c_str());
 
@@ -227,7 +245,8 @@ class ToVTK {
   const Mesh& mesh;
   int vtk_elem_type;
   std::FILE* fp = nullptr;
-  bool vtk_has_sol_header = false;
+  bool vtk_has_nodal_sol_header = false;
+  bool vtk_has_cell_sol_header = false;
 };
 
 /**
