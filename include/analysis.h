@@ -271,8 +271,8 @@ class GalerkinAnalysis final {
       get_element_vars<T, dof_per_node, Mesh, Basis>(mesh, i, psi, element_psi);
 
       // Create the element residual
-      T element_dfdx[max_dof_per_element];
-      for (int j = 0; j < max_dof_per_element; j++) {
+      T element_dfdx[max_nnodes_per_element];
+      for (int j = 0; j < max_nnodes_per_element; j++) {
         element_dfdx[j] = 0.0;
       }
 
