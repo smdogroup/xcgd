@@ -11,6 +11,7 @@
 #include "physics/grad_penalization.h"
 #include "physics/volume.h"
 #include "utils/exceptions.h"
+#include "utils/json.h"
 #include "utils/parser.h"
 #include "utils/vtk.h"
 
@@ -140,6 +141,12 @@ class TopoAnalysis {
                            1);  // y dir
       }
     }
+
+    // Update load values
+    T force = 1.0;
+    load_vals.clear();
+    load_vals = std::vector<T>(active_load_verts.size(),
+                               -force / active_load_verts.size());
   }
 
   std::vector<T> update_mesh_and_solve(const std::vector<T>& x) {
@@ -148,9 +155,6 @@ class TopoAnalysis {
     // should be constant if optimizer bounds are applied properly
     update_mesh(x);
 
-    T force = 1.0;
-    std::vector<T> load_vals(active_load_verts.size(),
-                             -force / active_load_verts.size());
     try {
       std::vector<T> sol = elastic.solve(bc_dof, load_dof, load_vals);
       return sol;
@@ -262,6 +266,24 @@ class TopoAnalysis {
     vtk.write_vec("load-dof", dof_load.data());
   }
 
+  void write_prob_json(const std::string json_path, const ConfigParser& parser,
+                       const std::vector<T>& u) {
+    json j;
+    j["Np_1d"] = parser.get_int_option("Np_1d");
+    j["E"] = parser.get_double_option("E");
+    j["nu"] = parser.get_double_option("nu");
+    j["nx"] = parser.get_int_option("nx");
+    j["ny"] = parser.get_int_option("ny");
+    j["lx"] = parser.get_double_option("lx");
+    j["ly"] = parser.get_double_option("ly");
+    j["lsf_dof"] = mesh.get_lsf_dof();
+    j["bc_dof"] = bc_dof;
+    j["load_dof"] = load_dof;
+    j["load_vals"] = load_vals;
+    j["u"] = u;
+    write_json(json_path, j);
+  }
+
   std::vector<T>& get_phi() { return phi; }
   std::vector<int>& get_active_load_verts() { return active_load_verts; }
 
@@ -286,6 +308,7 @@ class TopoAnalysis {
 
   std::vector<int> bc_dof;
   std::vector<int> load_dof;
+  std::vector<T> load_vals;
 };
 
 template <typename T, class TopoAnalysis>
@@ -382,6 +405,14 @@ class TopoProb : public ParOptProblem {
       vtk_name = "cut_" + std::to_string(counter) + ".vtk";
       topo.write_cut_design_to_vtk(fspath(prefix) / fspath(vtk_name), x,
                                    topo.get_phi(), u);
+    }
+
+    // Save the elastic problem instance to json
+    if (counter % parser.get_int_option("save_prob_json_every") == 0) {
+      std::string json_path = fspath(prefix) / fspath("json") /
+                              ((is_gradient_check ? "fdcheck_" : "opt_") +
+                               std::to_string(counter) + ".json");
+      topo.write_prob_json(json_path, parser, u);
     }
 
     // write quadrature to vtk for gradient check
@@ -482,6 +513,11 @@ void execute(int argc, char* argv[]) {
     std::filesystem::create_directory(prefix);
   }
 
+  std::string json_dir = fspath(prefix) / fspath("json");
+  if (!std::filesystem::is_directory(json_dir)) {
+    std::filesystem::create_directory(json_dir);
+  }
+
   std::string cfg_path(argv[1]);
   ConfigParser parser(cfg_path);
   std::filesystem::copy(
@@ -503,7 +539,9 @@ void execute(int argc, char* argv[]) {
   Quadrature quadrature(mesh);
 
   // Set up analysis
-  T r0 = parser.get_double_option("helmholtz_r0"), E = 1e2, nu = 0.3;
+  T r0 = parser.get_double_option("helmholtz_r0");
+  T E = parser.get_double_option("E");
+  T nu = parser.get_double_option("nu");
   bool use_robust_projection = parser.get_bool_option("use_robust_projection");
   double robust_proj_beta = parser.get_double_option("robust_proj_beta");
   double robust_proj_eta = parser.get_double_option("robust_proj_eta");
