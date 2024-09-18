@@ -297,15 +297,18 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
     int cell = elem_cells.at(elem);
     this->get_cell_ground_stencil(cell, nodes);
     adjust_stencil(cell, nodes);
+
     for (int i = 0; i < max_nnodes_per_element; i++) {
       try {
-        nodes[i] = vert_nodes.at(nodes[i]);
+        nodes[nnodes] = vert_nodes.at(nodes[i]);
       } catch (const std::out_of_range& e) {
-        throw StencilConstructionFailed(elem);
+        // throw StencilConstructionFailed(elem);
         continue;
       }
-
       nnodes++;
+    }
+    if (nnodes != max_nnodes_per_element) {
+      // TODO: log this info somehow
     }
     return nnodes;
   }

@@ -1,6 +1,7 @@
 #ifndef XCGD_ELEMENT_UTILS_H
 #define XCGD_ELEMENT_UTILS_H
 
+#include <algorithm>
 #include <array>
 #include <vector>
 
@@ -108,9 +109,11 @@ template <typename T, class Mesh, class Basis>
 void get_element_xloc(const Mesh &mesh, int e, T element_xloc[]) {
   int constexpr max_nnodes_per_element = Basis::max_nnodes_per_element;
   int constexpr spatial_dim = Basis::spatial_dim;
+  std::fill(element_xloc, element_xloc + spatial_dim * max_nnodes_per_element,
+            T(0.0));
   int nodes[max_nnodes_per_element];
-  mesh.get_elem_dof_nodes(e, nodes);
-  for (int j = 0; j < max_nnodes_per_element; j++) {
+  int nnodes = mesh.get_elem_dof_nodes(e, nodes);
+  for (int j = 0; j < nnodes; j++) {
     mesh.get_node_xloc(nodes[j], element_xloc);
     element_xloc += spatial_dim;
   }
@@ -120,9 +123,10 @@ template <typename T, int dim, class Mesh, class Basis>
 void get_element_vars(const Mesh &mesh, int e, const T dof[], T element_dof[]) {
   int constexpr max_nnodes_per_element = Basis::max_nnodes_per_element;
   int constexpr spatial_dim = Basis::spatial_dim;
+  std::fill(element_dof, element_dof + max_nnodes_per_element * dim, T(0.0));
   int nodes[max_nnodes_per_element];
-  mesh.get_elem_dof_nodes(e, nodes);
-  for (int j = 0; j < max_nnodes_per_element; j++) {
+  int nnodes = mesh.get_elem_dof_nodes(e, nodes);
+  for (int j = 0; j < nnodes; j++) {
     for (int k = 0; k < dim; k++, element_dof++) {
       element_dof[0] = dof[dim * nodes[j] + k];
     }
@@ -134,8 +138,8 @@ void add_element_res(const Mesh &mesh, int e, const T element_res[], T res[]) {
   int constexpr max_nnodes_per_element = Basis::max_nnodes_per_element;
   int constexpr spatial_dim = Basis::spatial_dim;
   int nodes[max_nnodes_per_element];
-  mesh.get_elem_dof_nodes(e, nodes);
-  for (int j = 0; j < max_nnodes_per_element; j++) {
+  int nnodes = mesh.get_elem_dof_nodes(e, nodes);
+  for (int j = 0; j < nnodes; j++) {
     for (int k = 0; k < dim; k++, element_res++) {
       res[dim * nodes[j] + k] += element_res[0];
     }
@@ -147,9 +151,9 @@ void add_element_dfdx(const Mesh &mesh, int e, const T element_dfdx[],
                       T dfdx[]) {
   int constexpr max_nnodes_per_element = Basis::max_nnodes_per_element;
   int nodes[max_nnodes_per_element];
-  mesh.get_elem_dof_nodes(e, nodes);
+  int nnodes = mesh.get_elem_dof_nodes(e, nodes);
 
-  for (int j = 0; j < max_nnodes_per_element; j++) {
+  for (int j = 0; j < nnodes; j++) {
     dfdx[nodes[j]] += element_dfdx[j];
   }
 }
@@ -159,9 +163,9 @@ void add_element_dfdphi(const Mesh &lsf_mesh, int c, const T element_dfdphi[],
                         T dfdphi[]) {
   int constexpr max_nnodes_per_element = Basis::max_nnodes_per_element;
   int nodes[max_nnodes_per_element];
-  lsf_mesh.get_elem_dof_nodes(c, nodes);
+  int nnodes = lsf_mesh.get_elem_dof_nodes(c, nodes);
 
-  for (int j = 0; j < max_nnodes_per_element; j++) {
+  for (int j = 0; j < nnodes; j++) {
     dfdphi[nodes[j]] += element_dfdphi[j];
   }
 }

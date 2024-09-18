@@ -58,30 +58,28 @@ class GDMeshBase : public MeshBase<T, 2, Np_1d_ * Np_1d_, 4> {
    * @brief Get the bounding box of dof nodes
    */
   void get_elem_node_ranges(int elem, T* xloc_min, T* xloc_max) const {
-    // [x0, ..., xN, y0, ..., yN, ...]
-    std::vector<T> coords(spatial_dim * max_nnodes_per_element);
-
     int nodes[max_nnodes_per_element];
-    this->get_elem_dof_nodes(elem, nodes);
+    int nnodes = this->get_elem_dof_nodes(elem, nodes);
 
-    for (int i = 0; i < max_nnodes_per_element; i++) {
+    // [x0, ..., xN, y0, ..., yN, ...]
+    std::vector<T> coords(spatial_dim * nnodes);
+
+    for (int i = 0; i < nnodes; i++) {
       T xloc[spatial_dim];
       this->get_node_xloc(nodes[i], xloc);
       for (int d = 0; d < spatial_dim; d++) {
-        coords[i + d * max_nnodes_per_element] = xloc[d];
+        coords[i + d * nnodes] = xloc[d];
       }
     }
 
     for (int d = 0; d < spatial_dim; d++) {
-      xloc_min[d] = *std::min_element(
-          &coords[d * max_nnodes_per_element],
-          &coords[d * max_nnodes_per_element] + max_nnodes_per_element,
-          [](T& a, T& b) { return freal(a) < freal(b); });
+      xloc_min[d] =
+          *std::min_element(&coords[d * nnodes], &coords[d * nnodes] + nnodes,
+                            [](T& a, T& b) { return freal(a) < freal(b); });
 
-      xloc_max[d] = *std::max_element(
-          &coords[d * max_nnodes_per_element],
-          &coords[d * max_nnodes_per_element] + max_nnodes_per_element,
-          [](T& a, T& b) { return freal(a) < freal(b); });
+      xloc_max[d] =
+          *std::max_element(&coords[d * nnodes], &coords[d * nnodes] + nnodes,
+                            [](T& a, T& b) { return freal(a) < freal(b); });
     }
   }
 

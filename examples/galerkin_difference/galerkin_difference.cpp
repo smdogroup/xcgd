@@ -27,7 +27,9 @@ void solve_poisson(T *lxy, Mesh &mesh, Quadrature &quadrature, Basis &basis,
   SparseUtils::CSRFromConnectivityFunctor(
       mesh.get_num_nodes(), mesh.get_num_elements(),
       mesh.max_nnodes_per_element,
-      [&mesh](int elem, int *nodes) { mesh.get_elem_dof_nodes(elem, nodes); },
+      [&mesh](int elem, int *nodes) -> int {
+        return mesh.get_elem_dof_nodes(elem, nodes);
+      },
       &rowp, &cols);
 
   int nnz = rowp[mesh.get_num_nodes()];

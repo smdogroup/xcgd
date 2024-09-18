@@ -1,4 +1,3 @@
-
 #include "physics/helmholtz.h"
 
 #include <string>
@@ -29,7 +28,9 @@ void solve_helmholtz(T r0, const Func &xfunc, Mesh &mesh,
   SparseUtils::CSRFromConnectivityFunctor(
       mesh.get_num_nodes(), mesh.get_num_elements(),
       mesh.max_nnodes_per_element,
-      [&mesh](int elem, int *nodes) { mesh.get_elem_dof_nodes(elem, nodes); },
+      [&mesh](int elem, int *nodes) -> int {
+        return mesh.get_elem_dof_nodes(elem, nodes);
+      },
       &rowp, &cols);
 
   int nnz = rowp[mesh.get_num_nodes()];

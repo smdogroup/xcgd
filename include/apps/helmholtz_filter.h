@@ -45,7 +45,9 @@ class HelmholtzFilter final {
     int *rowp = nullptr, *cols = nullptr;
     SparseUtils::CSRFromConnectivityFunctor(
         num_nodes, mesh.get_num_elements(), mesh.max_nnodes_per_element,
-        [&mesh](int elem, int* nodes) { mesh.get_elem_dof_nodes(elem, nodes); },
+        [&mesh](int elem, int* nodes) -> int {
+          return mesh.get_elem_dof_nodes(elem, nodes);
+        },
         &rowp, &cols);
 
     int nnz = rowp[num_nodes];

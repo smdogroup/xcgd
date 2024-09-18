@@ -83,8 +83,8 @@ void generate_lsf_mesh(bool flip = false) {
   for (int elem = 0; elem < mesh.get_num_elements(); elem++) {
     std::vector<T> dof(mesh.get_num_nodes(), 0.0);
     int nodes[Mesh::max_nnodes_per_element];
-    mesh.get_elem_dof_nodes(elem, nodes);
-    for (int i = 0; i < Mesh::max_nnodes_per_element; i++) {
+    int nnodes = mesh.get_elem_dof_nodes(elem, nodes);
+    for (int i = 0; i < nnodes; i++) {
       dof[nodes[i]] = 1.0;
     }
     char name[256];

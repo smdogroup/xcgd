@@ -94,7 +94,9 @@ void test_physics(std::tuple<Mesh *, Quadrature *, Basis *> tuple,
   int *rowp = nullptr, *cols = nullptr;
   SparseUtils::CSRFromConnectivityFunctor(
       num_nodes, num_elements, Basis::max_nnodes_per_element,
-      [mesh](int elem, int *nodes) { mesh->get_elem_dof_nodes(elem, nodes); },
+      [mesh](int elem, int *nodes) -> int {
+        return mesh->get_elem_dof_nodes(elem, nodes);
+      },
       &rowp, &cols);
   int nnz = rowp[num_nodes];
   using BSRMat = GalerkinBSRMat<T, Physics::dof_per_node>;
