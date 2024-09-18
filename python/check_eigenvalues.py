@@ -20,5 +20,9 @@ else:
 
 print("min eig: %20.10e" % e[0])
 
+for i, eig in enumerate(e):
+    print(f"eig[{i}]: {eig:20.10e}")
+
+
 plt.plot(e, "-o")
 plt.show()
