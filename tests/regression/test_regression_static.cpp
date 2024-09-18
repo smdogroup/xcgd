@@ -6,8 +6,9 @@
 #include "utils/json.h"
 
 template <typename T, typename Mesh>
-void write_vtk(const Mesh& mesh, const char* vtkname,
-               const std::vector<T>& sol) {
+void write_vtk(const Mesh& mesh, const char* vtkname, const std::vector<T>& sol,
+               const std::vector<int>& bc_dof, const std::vector<int>& load_dof,
+               const std::vector<T>& load_vals) {
   assert(sol.size() == mesh.get_num_nodes() * Mesh::spatial_dim);
 
   ToVTK<T, Mesh> vtk(mesh, vtkname);
@@ -18,8 +19,18 @@ void write_vtk(const Mesh& mesh, const char* vtkname,
     elem_indices[i] = T(i);
   }
   vtk.write_cell_sol("elem_indices", elem_indices.data());
-  vtk.write_vec("displacement", sol.data());
   vtk.write_sol("lsf", mesh.get_lsf_nodes().data());
+
+  std::vector<T> bcs(sol.size(), 0.0);
+  std::vector<T> loads(sol.size(), 0.0);
+
+  for (int b : bc_dof) bcs[b] = 1.0;
+  for (int i = 0; i < load_dof.size(); i++) {
+    loads[load_dof[i]] = load_vals[i];
+  }
+  vtk.write_vec("displacement", sol.data());
+  vtk.write_vec("bcs", bcs.data());
+  vtk.write_vec("loads", loads.data());
 
   // for (int elem = 0; elem < mesh.get_num_elements(); elem++) {
   //   std::vector<T> dof(mesh.get_num_nodes(), 0.0);
@@ -55,12 +66,16 @@ void test_regression_static(json j) {
   mesh.get_lsf_dof() = lsf_dof;
   mesh.update_mesh();
 
-  std::vector<T> sol =
-      elastic.solve(j["bc_dof"], j["load_dof"], j["load_vals"]);
+  std::vector<int> bc_dof(j["bc_dof"]);
+  std::vector<int> load_dof(j["load_dof"]);
+  std::vector<T> load_vals(j["load_vals"]);
+  EXPECT_EQ(load_dof.size(), load_vals.size());
+
+  std::vector<T> sol = elastic.solve(bc_dof, load_dof, load_vals);
 
   char vtkname[256];
   std::snprintf(vtkname, 256, "regression_Np_1d_%d.vtk", Np_1d);
-  write_vtk<T>(mesh, vtkname, sol);
+  write_vtk<T>(mesh, vtkname, sol, bc_dof, load_dof, load_vals);
 
   EXPECT_EQ(sol.size(), 2 * mesh.get_num_nodes());
   EXPECT_VEC_EQ(sol.size(), sol, j["u"]);
