@@ -198,6 +198,8 @@ class VandermondeEvaluator {
   template <typename T2>
   void operator()(const T2* pt, T2* N, T2* Nxi,
                   T2* Nxixi = (T2*)nullptr) const {
+    static constexpr int max_nnodes_per_element = Mesh::max_nnodes_per_element;
+
     std::vector<T2> xpows(Np_1d), ypows(Np_1d), dxpows(Np_1d), dypows(Np_1d),
         dx2pows(Np_1d), dy2pows(Np_1d);
 
@@ -210,21 +212,19 @@ class VandermondeEvaluator {
       dy2pows[ii] = ii > 1 ? T(ii) * T(ii - 1) * pow(pt[1], ii - 2) : T(0.0);
     }
 
-    for (int i = 0; i < nnodes; i++) {
-      if (N) {
-        N[i] = 0.0;
-      }
-      if (Nxi) {
-        Nxi[spatial_dim * i] = 0.0;
-        Nxi[spatial_dim * i + 1] = 0.0;
-      }
-      if (Nxixi) {
-        Nxixi[spatial_dim * spatial_dim * i] = 0.0;
-        Nxixi[spatial_dim * spatial_dim * i + 1] = 0.0;
-        Nxixi[spatial_dim * spatial_dim * i + 2] = 0.0;
-        Nxixi[spatial_dim * spatial_dim * i + 3] = 0.0;
-      }
+    if (N) {
+      std::fill(N, N + max_nnodes_per_element, T2(0.0));
+    }
+    if (Nxi) {
+      std::fill(Nxi, Nxi + spatial_dim * max_nnodes_per_element, T2(0.0));
+    }
+    if (Nxixi) {
+      std::fill(Nxixi,
+                Nxixi + spatial_dim * spatial_dim * max_nnodes_per_element,
+                T2(0.0));
+    }
 
+    for (int i = 0; i < nnodes; i++) {
       for (int row = 0; row < nnodes; row++) {
         auto indices = pterm_indices[row];
         int j = indices.first;
