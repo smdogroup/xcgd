@@ -1,24 +1,17 @@
+#include <string>
 #include <vector>
 
+#include "apps/static_elastic.h"
 #include "elements/gd_mesh.h"
+#include "elements/gd_vandermonde.h"
 #include "test_commons.h"
 #include "utils/vtk.h"
 
-template <int Np_1d>
-void create_wedge_mesh() {
-  using T = double;
-  using Grid = StructuredGrid2D<T>;
-  using Mesh = CutMesh<T, Np_1d>;
+template <typename T, typename Mesh>
+void write_vtk(const Mesh& mesh, const char* vtkname,
+               const std::vector<T>& sol) {
+  assert(sol.size() == mesh.get_num_nodes() * Mesh::spatial_dim);
 
-  int nxy[2] = {5, 5};
-  T lxy[2] = {1.0, 1.0};
-
-  Grid grid(nxy, lxy);
-  auto lsf = [](const T* x) { return 0.9 * x[0] + x[1] - 0.9; };
-  Mesh mesh(grid, lsf);
-
-  char vtkname[256];
-  std::snprintf(vtkname, 256, "wedge_mesh_Np_1d_%d.vtk", Np_1d);
   ToVTK<T, Mesh> vtk(mesh, vtkname);
   vtk.write_mesh();
 
@@ -27,7 +20,7 @@ void create_wedge_mesh() {
     elem_indices[i] = T(i);
   }
   vtk.write_cell_sol("elem_indices", elem_indices.data());
-
+  vtk.write_vec("displacement", sol.data());
   vtk.write_sol("lsf", mesh.get_lsf_nodes().data());
 
   for (int elem = 0; elem < mesh.get_num_elements(); elem++) {
@@ -43,5 +36,45 @@ void create_wedge_mesh() {
   }
 }
 
-TEST(stencil, wedge_Np2) { create_wedge_mesh<2>(); }
-TEST(stencil, wedge_Np4) { create_wedge_mesh<4>(); }
+template <int Np_1d>
+void solve_wedge_problem() {
+  using T = double;
+  using Grid = StructuredGrid2D<T>;
+  using Mesh = CutMesh<T, Np_1d>;
+  using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
+  using Basis = GDBasis2D<T, Mesh>;
+  using StaticElastic = StaticElastic<T, Mesh, Quadrature, Basis>;
+
+  constexpr int nx = 5, ny = 5;
+  int nxy[2] = {nx, ny};
+  T lxy[2] = {1.0, 1.0};
+
+  Grid grid(nxy, lxy);
+  auto lsf = [](const T* x) { return 0.9 * x[0] + x[1] - 0.9; };
+  Mesh mesh(grid, lsf);
+  Quadrature quadrature(mesh);
+  Basis basis(mesh);
+  StaticElastic elastic(70, 0.3, mesh, quadrature, basis);
+
+  std::vector<int> bc_dof;
+  std::vector<int> load_dof;
+  auto vert_nodes = mesh.get_vert_nodes();
+  for (int j = 0; j < ny; j++) {
+    for (int d = 0; d < Mesh::spatial_dim; d++) {
+      bc_dof.push_back(
+          Mesh::spatial_dim * vert_nodes.at(grid.get_coords_vert(0, j)) + d);
+    }
+  }
+  load_dof.push_back(2 * vert_nodes.at(grid.get_coords_vert(nx - 1, 0)));
+  load_dof.push_back(2 * vert_nodes.at(grid.get_coords_vert(nx - 1, 0)) + 1);
+  std::vector<T> load_vals = {0.0, -1.0};
+
+  std::vector<T> sol = elastic.solve(bc_dof, load_dof, load_vals);
+
+  char vtkname[256];
+  std::snprintf(vtkname, 256, "wedge_mesh_Np_1d_%d.vtk", Np_1d);
+  write_vtk<T>(mesh, vtkname, sol);
+}
+
+TEST(stencil, wedge_Np2) { solve_wedge_problem<2>(); }
+TEST(stencil, wedge_Np4) { solve_wedge_problem<4>(); }
