@@ -1,11 +1,54 @@
-#include "utils/linalg.h"
-
 #include <complex>
 #include <vector>
 
 #include "test_commons.h"
+#include "utils/linalg.h"
 
-TEST(linalg, direct_solve) {
+TEST(linalg, matrix_norm_real) {
+  int m = 3;
+  int n = 5;
+  const double A[] = {
+      0.287384904701171,  0.5983721355722037, 0.9501781872479819,
+      0.1881202531450925, 0.7522651012143386, 0.984570229272429,
+      0.9410268009136625, 0.350102591959394,  0.755633073439118,
+      0.1729823281917903, 0.5742515784711493, 0.6945572627474812,
+      0.2746693030237217, 0.847368582713038,  0.4612467292953336};
+
+  double Anrm_1 = 2.0467624663121744;
+  double Anrm_inf = 3.8461854820023436;
+
+  EXPECT_NEAR(matrix_norm('1', m, n, A), Anrm_1, 1e-30);
+  EXPECT_NEAR(matrix_norm('I', m, n, A), Anrm_inf, 1e-30);
+}
+
+TEST(linalg, matrix_norm_complex) {
+  int m = 3;
+  int n = 5;
+  std::complex<double> Ac[] = {
+      std::complex<double>(0.4826960534960948, 0.0786590395418026),
+      std::complex<double>(0.5620751233300275, 0.1048379112273036),
+      std::complex<double>(0.8410052756317851, 0.415215344420928),
+      std::complex<double>(0.4558864898368892, 0.6120566798262332),
+      std::complex<double>(0.0705877512758791, 0.6843857683949574),
+      std::complex<double>(0.5534554035764306, 0.8995077373445354),
+      std::complex<double>(0.3105219886065855, 0.9727323125492001),
+      std::complex<double>(0.9945437038355271, 0.6623007917322938),
+      std::complex<double>(0.7865409022003198, 0.4917297416672572),
+      std::complex<double>(0.2537214951259106, 0.2023608651100692),
+      std::complex<double>(0.0782553250763756, 0.027354655893937),
+      std::complex<double>(0.7552538783768123, 0.5462445167845218),
+      std::complex<double>(0.9464209055467443, 0.7499974494865728),
+      std::complex<double>(0.089889848639522, 0.4413784177817882),
+      std::complex<double>(0.0149424614429899, 0.3484714327056916)};
+
+  double Acnrm_1 = 3.1435840745661823;
+  double Acnrm_inf = 4.202540761322937;
+
+  EXPECT_NEAR(matrix_norm('1', m, n, Ac), Acnrm_1, 1e-30);
+  EXPECT_NEAR(matrix_norm('I', m, n, Ac), Acnrm_inf, 1e-30);
+}
+
+TEST(linalg, direct_solve_real) {
   constexpr static int N = 5;
   std::vector<double> A_real = {
       0.706731212977905, 0.68769964262544,  0.0403897726979,
@@ -27,7 +70,10 @@ TEST(linalg, direct_solve) {
 
   direct_solve(N, A_real.data(), b_real.data());
   EXPECT_VEC_NEAR(N, b_real, sol_real, 1e-14);
+}
 
+TEST(linalg, direct_solve_complex) {
+  constexpr static int N = 5;
   std::vector<std::complex<double>> A_complex = {
       std::complex<double>(0.706731212977905, 0.690134001174138),
       std::complex<double>(0.68769964262544, 0.614833834640402),
@@ -73,7 +119,7 @@ TEST(linalg, direct_solve) {
   EXPECT_CPLX_VEC_NEAR(N, b_complex, sol_complex, 1e-14);
 }
 
-TEST(linalg, direct_inverse) {
+TEST(linalg, direct_inverse_real) {
   constexpr static int N = 3;
   std::vector<double> A_real = {
       0.6128483560169078, 0.3411550443931325, 0.595417123046553,
@@ -84,8 +130,25 @@ TEST(linalg, direct_inverse) {
       -9.277857105765234,  11.893356698881258,  6.037924322763912,
       10.061440025683329,  -7.5642404032057895, -9.356724852012928};
 
+  std::vector<double> A_real_2 = A_real;
+  std::vector<double> A_real_3 = A_real;
+  double Arcond_1 = 0.023720066942940154;
+  double Arcond_inf = 0.03398338835755088;
+
   direct_inverse(N, A_real.data());
   EXPECT_VEC_NEAR(N * N, A_real, invA_real, 1e-14);
+
+  double rcond_1, rcond_inf;
+  direct_inverse(N, A_real_2.data(), &rcond_1, '1');
+  direct_inverse(N, A_real_3.data(), &rcond_inf, 'I');
+
+  EXPECT_VEC_NEAR(N * N, A_real_2, invA_real, 1e-14);
+  EXPECT_NEAR(rcond_1, Arcond_1, 1e-16);
+  EXPECT_NEAR(rcond_inf, Arcond_inf, 1e-16);
+}
+
+TEST(linalg, direct_inverse_complex) {
+  constexpr static int N = 3;
 
   std::vector<std::complex<double>> A_complex = {
       std::complex<double>(0.2862329040974567, 0.4965586803311326),

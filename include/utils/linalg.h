@@ -1,11 +1,24 @@
 #ifndef XCGD_LINALG_H
 #define XCGD_LINALG_H
 
+#include <stdexcept>
 #include <vector>
 
 #include "sparse_utils/lapack_helpers.h"
 #include "sparse_utils/sparse_matrix.h"
 #include "utils/misc.h"
+
+template <typename T>
+double matrix_norm(char norm, int m, int n, T A[]) {
+  if (!(norm == 'M' or norm == 'm' or norm == '1' or norm == 'O' or
+        norm == 'o' or norm == 'I' or norm == 'i' or norm == 'F' or
+        norm == 'f' or norm == 'E' or norm == 'e')) {
+    char msg[256];
+    std::snprintf(msg, 256, "not supported norm: %c", norm);
+    throw std::runtime_error(msg);
+  }
+  return SparseUtils::LAPACKlange(norm, m, n, A, m);
+}
 
 /**
  * @brief Solve Ax = b for x
@@ -36,10 +49,34 @@ void direct_solve(int n, T A[], T b[]) {
  * @return info = 0 successful exit, otherwise fail
  */
 template <typename T>
-void direct_inverse(int n, T A[]) {
+void direct_inverse(int n, T A[], double *rcond = nullptr, char norm = '1') {
+  double Anorm = -1.0;
+  if (rcond) {
+    if (!(norm == '1' or norm == 'O' or norm == 'I')) {
+      char msg[256];
+      std::snprintf(msg, 256, "not supported norm: %c", norm);
+      throw std::runtime_error(msg);
+    }
+    Anorm = matrix_norm(norm, n, n, A);
+  }
+
   std::vector<int> ipiv(n);
   int info = -1;
   SparseUtils::LAPACKgetrf(n, n, A, n, ipiv.data(), &info);
+
+  // Optionally compute the reciprocal of the condition number
+  if (rcond) {
+    assert(Anorm > 0.0);
+    SparseUtils::LAPACKgecon(norm, n, A, n, Anorm, rcond, &info);
+    if (info != 0) {
+      char msg[256];
+      std::snprintf(
+          msg, 256,
+          "direct_inverse() failed to evaluate the rcond with exit code %d",
+          info);
+      throw std::runtime_error(msg);
+    }
+  }
 
   // First we let LAPACK determine the optimal lwork value
   std::vector<T> work(1);
@@ -48,7 +85,7 @@ void direct_inverse(int n, T A[]) {
   if (info != 0) {
     char msg[256];
     std::snprintf(msg, 256,
-                  "direct inverse failed to determine the optimal lwork with "
+                  "direct_inverse() failed to determine the optimal lwork with "
                   "exit code %d",
                   info);
     throw std::runtime_error(msg);
@@ -63,7 +100,7 @@ void direct_inverse(int n, T A[]) {
   SparseUtils::LAPACKgetri(n, A, n, ipiv.data(), work.data(), lwork, &info);
   if (info != 0) {
     char msg[256];
-    std::snprintf(msg, 256, "direct inverse failed with exit code %d", info);
+    std::snprintf(msg, 256, "direct_inverse() failed with exit code %d", info);
     throw std::runtime_error(msg);
   }
 }
