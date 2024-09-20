@@ -29,7 +29,8 @@ class FEMesh final : public MeshBase<T, spatial_dim_, max_nnodes_per_element_,
     }
   }
 
-  inline int get_elem_dof_nodes(int elem, int* nodes) const {
+  inline int get_elem_dof_nodes(
+      int elem, int* nodes, std::vector<std::vector<bool>>* = nullptr) const {
     for (int i = 0; i < max_nnodes_per_element; i++) {
       nodes[i] = element_nodes[elem * max_nnodes_per_element + i];
     }

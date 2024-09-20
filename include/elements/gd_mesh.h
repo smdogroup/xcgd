@@ -12,9 +12,32 @@
 #include "elements/element_commons.h"
 #include "quadrature_general.hpp"
 #include "utils/exceptions.h"
+#include "utils/loggers.h"
 #include "utils/misc.h"
 
-// The structured ground grid
+/**
+ * @brief The structured ground grid
+ *
+ * The numbering of the grid vertices and cells is as follows
+ *
+ *      12--- 13--- 14--- 15--- 16--- 17
+ *      |     |     |     |     |     |
+ *      |  5  |  6  |  7  |  8  |  9  |
+ *      6 --- 7 --- 8 --- 9 --- 10--- 11
+ *      |     |     |     |     |     |
+ *      |  0  |  1  |  2  |  3  |  4  |
+ *      0 --- 1 --- 2 --- 3 --- 4 --- 5
+ *
+ * For convenience, we can also use index coordinates to locate cell and vertex,
+ * for example:
+ *
+ *  vertex 8 has index coordinates (2, 1)
+ *  cell 5 has index coordinates (0, 1)
+ *
+ *  Note that index coordiantes are NOT (row, col), instead, they are like
+ *  Cartisian coordiantes but are integers
+ *
+ */
 template <typename T>
 class StructuredGrid2D final {
  public:
@@ -192,7 +215,19 @@ class GridMesh final : public GDMeshBase<T, Np_1d> {
    * @param elem element index
    * @param nodes dof node indices, length: max_nnodes_per_element
    */
-  int get_elem_dof_nodes(int elem, int* nodes) const {
+  int get_elem_dof_nodes(
+      int elem, int* nodes,
+      std::vector<std::vector<bool>>* pstencil = nullptr) const {
+    if (pstencil) {
+      pstencil->clear();
+      pstencil->resize(Np_1d);
+      for (int I = 0; I < Np_1d; I++) {
+        (*pstencil)[I] = std::vector<bool>(Np_1d, false);
+        for (int J = 0; J < Np_1d; J++) {
+          (*pstencil)[I][J] = true;
+        }
+      }
+    }
     this->get_cell_ground_stencil(elem, nodes);
     return max_nnodes_per_element;
   }
@@ -292,7 +327,17 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
    *
    * @return number of nodes associated to this element
    */
-  int get_elem_dof_nodes(int elem, int* nodes) const {
+  int get_elem_dof_nodes(
+      int elem, int* nodes,
+      std::vector<std::vector<bool>>* pstencil = nullptr) const {
+    if (pstencil) {
+      pstencil->clear();
+      pstencil->resize(Np_1d);
+    }
+    for (int i = 0; i < Np_1d; i++) {
+      (*pstencil)[i] = std::vector<bool>(Np_1d, false);
+    }
+
     int nnodes = 0;
     int cell = elem_cells.at(elem);
     this->get_cell_ground_stencil(cell, nodes);
@@ -301,6 +346,11 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
     for (int i = 0; i < max_nnodes_per_element; i++) {
       try {
         nodes[nnodes] = vert_nodes.at(nodes[i]);
+        if (pstencil) {
+          int I = i % Np_1d;
+          int J = i / Np_1d;
+          (*pstencil)[I][J] = true;
+        }
       } catch (const std::out_of_range& e) {
         // throw StencilConstructionFailed(elem);
         continue;
@@ -308,7 +358,7 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
       nnodes++;
     }
     if (nnodes != max_nnodes_per_element) {
-      // TODO: log this info somehow
+      DegenerateStencilLogger::add(elem, nnodes, nodes);
     }
     return nnodes;
   }
@@ -607,6 +657,81 @@ T get_computational_coordinates_limits(const Mesh& mesh, int elem, T* xi_min,
   xi_max[1] = cy + dy;
 
   return wcoef;
+}
+
+/**
+ * @brief convert pstencil to polynomial term indices
+ *
+ * pstencil is a Np_1d-by-Np_1d boolean matrix, given a stencil vertex
+ * represented by the index coordinates (i, j), boolearn pstencil[i][j]
+ * indicates whether the vertex is active or not. e.g. for a regular internal
+ * stencil, entries of pstencil is all true.
+ *
+ * Given a pstencil, this function determines which polynomial terms (1, x, y,
+ * xy, x^2, y^2, x^2y, xy^2, etc.) to use to construct the basis function by
+ * the following process:
+ *   1. count number of active stencils for each column
+ *   2. sort the counts in descending order
+ *
+ * For example, for the pstencil below,
+ *
+ *      0    0    1    1
+ *
+ *      0    1    0    1
+ *
+ *      1    1    1    0
+ *
+ *      0    1    1    0
+ *
+ * Number of active stencils per each column in descending order is
+ *
+ *      3    3    2    1
+ *
+ * As a result, the polynomial terms used could be represented by the
+ * following table
+ *
+ *      1    x   x^2  x^3
+ *      -----------------
+ *   1 |✓    ✓    ✓    ✓
+ *     |
+ *   y |✓    ✓    ✓
+ *     |
+ *  y^2|✓    ✓
+ *     |
+ *  y^3|
+ *
+ * which are the following terms, to explicitly enumerate:
+ *
+ *      1    x    x^2   x^3
+ *      y    xy   x^2y
+ *      y^2  xy^2
+ *
+ */
+template <int Np_1d>
+std::vector<std::pair<int, int>> pstencil_to_pterms(
+    const std::vector<std::vector<bool>>& pstencil) {
+  // Populate count for each column
+  std::vector<int> counts(Np_1d, 0);
+  for (int i = 0; i < Np_1d; i++) {
+    for (int j = 0; j < Np_1d; j++) {
+      if (pstencil[i][j]) {
+        counts[i]++;
+      }
+    }
+  }
+
+  // Sort count in descending order
+  std::sort(counts.begin(), counts.end(), std::greater<>());
+
+  // Populate polynomial terms, note that x^m y^n is represented by tuple (m, n)
+  std::vector<std::pair<int, int>> pterms;
+  for (int m = 0; m < counts.size(); m++) {
+    for (int n = 0; n < counts[m]; n++) {
+      pterms.push_back({m, n});
+    }
+  }
+
+  return pterms;
 }
 
 #endif  // XCGD_GD_MESH_H
