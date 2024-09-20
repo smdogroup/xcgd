@@ -5,6 +5,7 @@
 #include <array>
 #include <cmath>
 #include <complex>
+#include <functional>
 #include <iostream>
 #include <limits>
 #include <vector>
@@ -16,7 +17,9 @@
 #include "gd_mesh.h"
 #include "quadrature_multipoly.hpp"
 #include "utils/linalg.h"
+#include "utils/loggers.h"
 #include "utils/misc.h"
+#include "utils/testing.h"
 
 // This class implements a functor that evaluate basis values and basis
 // gradients given a set of computational coordinates
@@ -136,7 +139,8 @@ class VandermondeEvaluator {
  public:
   VandermondeEvaluator(const Mesh& mesh, int elem) {
     int nodes[Np_1d * Np_1d];
-    nnodes = mesh.get_elem_dof_nodes(elem, nodes);
+    std::vector<std::vector<bool>> pstencil;
+    nnodes = mesh.get_elem_dof_nodes(elem, nodes, &pstencil);
     Ck.resize(nnodes * nnodes);
 
     // Create the index sequence for polynomial terms, for example, for p=3,
@@ -153,20 +157,21 @@ class VandermondeEvaluator {
     // (0, 0)
     // (1, 0)  (0, 1)
     // (2, 0)  (1, 1)  (0, 2)
-    // (3, 0)  (2, 1)  (1, 2), (0, 3)
+    // (3, 0)  (2, 1)  (1, 2)   (0, 3)
     // (3, 1)  (2, 2)  (1, 3)
     // (3, 2)  (2, 3)
     // (3, 3)
     //
     // So that when we drop terms when available nodes are less than needed,
     // we drop terms in the reverse order of this sequence
-    for (int sum = 0; sum <= 2 * p; sum++) {
-      for (int j = 0; j <= sum; j++) {
-        int i = sum - j;
-        if (i > p or j > p) continue;
-        pterm_indices.push_back({i, j});
-      }
-    }
+    // for (int sum = 0; sum <= 2 * p; sum++) {
+    //   for (int j = 0; j <= sum; j++) {
+    //     int i = sum - j;
+    //     if (i > p or j > p) continue;
+    //     pterms.push_back({i, j});
+    //   }
+    // }
+    pterms = pstencil_to_pterms<Np_1d>(pstencil);
 
     std::vector<T> xpows(Np_1d), ypows(Np_1d);
 
@@ -187,11 +192,16 @@ class VandermondeEvaluator {
       }
 
       for (int col = 0; col < nnodes; col++) {
-        auto indices = pterm_indices[col];
+        auto indices = pterms[col];
         Ck[i + nnodes * col] = xpows[indices.first] * ypows[indices.second];
       }
     }
-    direct_inverse(nnodes, Ck.data());
+
+    double cond;
+    direct_inverse(nnodes, Ck.data(), &cond, '1');
+    cond = 1.0 / cond;
+
+    VandermondeCondLogger::add(elem, cond);
   }
 
   // Evaluate the shape function and derivatives given a quadrature point
@@ -226,7 +236,7 @@ class VandermondeEvaluator {
 
     for (int i = 0; i < nnodes; i++) {
       for (int row = 0; row < nnodes; row++) {
-        auto indices = pterm_indices[row];
+        auto indices = pterms[row];
         int j = indices.first;
         int k = indices.second;
         if (N) {
@@ -254,7 +264,7 @@ class VandermondeEvaluator {
  private:
   int nnodes;
   std::vector<T> Ck;
-  std::vector<std::pair<int, int>> pterm_indices;
+  std::vector<std::pair<int, int>> pterms;
 };
 
 template <typename T, int Np_1d>

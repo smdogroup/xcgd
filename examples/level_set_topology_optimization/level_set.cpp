@@ -12,6 +12,7 @@
 #include "physics/volume.h"
 #include "utils/exceptions.h"
 #include "utils/json.h"
+#include "utils/loggers.h"
 #include "utils/parser.h"
 #include "utils/vtk.h"
 
@@ -266,8 +267,8 @@ class TopoAnalysis {
     vtk.write_vec("load-dof", dof_load.data());
   }
 
-  void write_prob_json(const std::string json_path, const ConfigParser& parser,
-                       const std::vector<T>& u) {
+  void write_prob_json(const std::string json_path,
+                       const ConfigParser& parser) {
     json j;
     j["Np_1d"] = parser.get_int_option("Np_1d");
     j["E"] = parser.get_double_option("E");
@@ -280,7 +281,6 @@ class TopoAnalysis {
     j["bc_dof"] = bc_dof;
     j["load_dof"] = load_dof;
     j["load_vals"] = load_vals;
-    j["u"] = u;
     write_json(json_path, j);
   }
 
@@ -385,6 +385,14 @@ class TopoProb : public ParOptProblem {
   int evalObjCon(ParOptVec* xvec, ParOptScalar* fobj, ParOptScalar* cons) {
     counter++;
 
+    // Save the elastic problem instance to json
+    if (counter % parser.get_int_option("save_prob_json_every") == 0) {
+      std::string json_path = fspath(prefix) / fspath("json") /
+                              ((is_gradient_check ? "fdcheck_" : "opt_") +
+                               std::to_string(counter) + ".json");
+      topo.write_prob_json(json_path, parser);
+    }
+
     ParOptScalar* xptr;
     xvec->getArray(&xptr);
     std::vector<ParOptScalar> x(xptr, xptr + nvars);
@@ -405,14 +413,6 @@ class TopoProb : public ParOptProblem {
       vtk_name = "cut_" + std::to_string(counter) + ".vtk";
       topo.write_cut_design_to_vtk(fspath(prefix) / fspath(vtk_name), x,
                                    topo.get_phi(), u);
-    }
-
-    // Save the elastic problem instance to json
-    if (counter % parser.get_int_option("save_prob_json_every") == 0) {
-      std::string json_path = fspath(prefix) / fspath("json") /
-                              ((is_gradient_check ? "fdcheck_" : "opt_") +
-                               std::to_string(counter) + ".json");
-      topo.write_prob_json(json_path, parser, u);
     }
 
     // write quadrature to vtk for gradient check

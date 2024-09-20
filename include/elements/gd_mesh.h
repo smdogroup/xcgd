@@ -333,9 +333,9 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
     if (pstencil) {
       pstencil->clear();
       pstencil->resize(Np_1d);
-    }
-    for (int i = 0; i < Np_1d; i++) {
-      (*pstencil)[i] = std::vector<bool>(Np_1d, false);
+      for (int i = 0; i < Np_1d; i++) {
+        (*pstencil)[i] = std::vector<bool>(Np_1d, false);
+      }
     }
 
     int nnodes = 0;
