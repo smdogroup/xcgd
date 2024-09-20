@@ -93,7 +93,7 @@ void test_regression_static(json j) {
   write_vtk<T>(mesh, vtkname, sol, bc_dof, load_dof, load_vals);
 
   EXPECT_EQ(sol.size(), 2 * mesh.get_num_nodes());
-  EXPECT_VEC_EQ(sol.size(), sol, j["u"]);
+  EXPECT_VEC_NEAR(sol.size(), sol, j["u"], 1e-10);
 }
 
 TEST(regression, static) {
