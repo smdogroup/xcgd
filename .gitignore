@@ -10,3 +10,6 @@ build*/*
 # Executables
 derivatives_verification
 test
+
+# Profiler trace
+*.trace
