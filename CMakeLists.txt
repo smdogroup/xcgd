@@ -10,8 +10,8 @@ project("XCGD"
 # Export the compile commands that clangd LS uses
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# C++ 17 is required for XCGD
-set(CMAKE_CXX_STANDARD 17)
+# C++ 20 is required for XCGD
+set(CMAKE_CXX_STANDARD 20)
 
 set(XCGD_SPARSE_UTILS_DIR $ENV{HOME}/installs/sparse-utils)
 set(XCGD_A2D_DIR $ENV{HOME}/installs/a2d)
