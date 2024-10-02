@@ -10,10 +10,10 @@
 #include "elements/gd_vandermonde.h"
 #include "physics/grad_penalization.h"
 #include "physics/volume.h"
+#include "utils/argparser.h"
 #include "utils/exceptions.h"
 #include "utils/json.h"
 #include "utils/loggers.h"
-#include "utils/parser.h"
 #include "utils/vtk.h"
 
 #define PI 3.141592653589793

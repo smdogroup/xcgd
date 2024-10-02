@@ -1,5 +1,5 @@
 #include "test_commons.h"
-#include "utils/parser.h"
+#include "utils/argparser.h"
 
 TEST(utils, CfgParser) {
   ConfigParser parser("test_parser.cfg");
@@ -13,6 +13,7 @@ TEST(utils, CfgParser) {
   EXPECT_EQ(parser.get_bool_option("is_true_too"), true);
   EXPECT_EQ(parser.get_bool_option("is_false"), false);
   EXPECT_EQ(parser.get_bool_option("is_false_too"), false);
-  EXPECT_DEATH({ parser.get_bool_option("wrong_bool"); },
-               "invalid value .* for a boolean option .*");
+  EXPECT_DEATH(
+      { parser.get_bool_option("wrong_bool"); },
+      "invalid value .* for a boolean option .*");
 }

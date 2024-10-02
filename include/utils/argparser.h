@@ -1,5 +1,4 @@
-#ifndef XCGD_PARSER_H
-#define XCGD_PARSER_H
+#pragma once
 
 #include <any>
 #include <cctype>
@@ -222,5 +221,3 @@ class ConfigParser {
   std::map<std::string, std::string> cfg;
   char abs_path[PATH_MAX];
 };
-
-#endif  // XCGD_PARSER_H
