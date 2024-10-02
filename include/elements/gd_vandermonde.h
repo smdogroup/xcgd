@@ -141,6 +141,22 @@ class VandermondeEvaluator {
     int nodes[Np_1d * Np_1d];
     std::vector<std::vector<bool>> pstencil;
     nnodes = mesh.get_elem_dof_nodes(elem, nodes, &pstencil);
+
+#ifdef POISSON_ORDER_DROP_EXPERIMENT
+    if (Np_1d > 2) {
+      int eij[2] = {-1, -1};
+      int cell = elem;  // Careful! Might not be true for cutmesh.
+      mesh.get_grid().get_cell_coords(cell, eij);
+      if (eij[1] == 0) {
+        for (int i = 0; i < Np_1d; i++) {
+          pstencil[i][Np_1d - 1] = false;
+        }
+        nnodes -= Np_1d;
+        DegenerateStencilLogger::add(elem, nnodes, nodes);
+      }
+    }
+#endif
+
     Ck.resize(nnodes * nnodes);
 
     // Create the index sequence for polynomial terms, for example, for p=3,
