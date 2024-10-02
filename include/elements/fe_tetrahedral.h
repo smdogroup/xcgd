@@ -12,8 +12,8 @@ class TetrahedralQuadrature final : public QuadratureBase<T> {
   using Mesh = FEMesh<T, 3, 10>;
 
  public:
-  int get_quadrature_pts(int _, std::vector<T>& pts,
-                         std::vector<T>& wts) const {
+  int get_quadrature_pts(int _, std::vector<T>& pts, std::vector<T>& wts,
+                         std::vector<T>& __) const {
     pts.resize(Mesh::spatial_dim * num_quad_pts);
     wts.resize(num_quad_pts);
 

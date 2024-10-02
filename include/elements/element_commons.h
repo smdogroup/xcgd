@@ -134,7 +134,8 @@ template <typename T>
 class QuadratureBase {
  public:
   virtual int get_quadrature_pts(int elem, std::vector<T>& pts,
-                                 std::vector<T>& wts) const = 0;
+                                 std::vector<T>& wts,
+                                 std::vector<T>& optional_wns) const = 0;
 };
 
 /**

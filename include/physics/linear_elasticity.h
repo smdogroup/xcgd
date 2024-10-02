@@ -19,8 +19,9 @@ class LinearElasticity final
     lambda = E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu));
   }
 
-  T energy(T weight, T _, const A2D::Mat<T, spatial_dim, spatial_dim>& J,
-           A2D::Vec<T, dof_per_node>& __,
+  T energy(T weight, T _, const A2D::Vec<T, spatial_dim>& __,
+           const A2D::Mat<T, spatial_dim, spatial_dim>& J,
+           A2D::Vec<T, dof_per_node>& ___,
            A2D::Mat<T, dof_per_node, spatial_dim>& grad) const {
     T detJ, energy;
     A2D::SymMat<T, spatial_dim> E, S;

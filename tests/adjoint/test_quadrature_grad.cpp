@@ -45,9 +45,9 @@ TEST(adjoint, GDLSFQuadratureGradient) {
   std::vector<T>& lsf_dof = mesh.get_lsf_dof();
 
   for (int elem = 0; elem < mesh.get_num_elements(); elem++) {
-    std::vector<T> pts, wts, pts_grad, wts_grad;
-    int num_quad_pts =
-        quadrature.get_quadrature_pts_grad(elem, pts, wts, pts_grad, wts_grad);
+    std::vector<T> pts, wts, wns, pts_grad, wts_grad;
+    int num_quad_pts = quadrature.get_quadrature_pts_grad(elem, pts, wts, wns,
+                                                          pts_grad, wts_grad);
 
     FieldToVTK<T, spatial_dim> vtk("quadratures.vtk");
     vtk.add_scalar_field(pts, wts);
@@ -70,8 +70,8 @@ TEST(adjoint, GDLSFQuadratureGradient) {
       lsf_dof[i] -= h * p[i];
     }
 
-    std::vector<T> pts1, wts1;
-    int num_quad_pts1 = quadrature.get_quadrature_pts(elem, pts1, wts1);
+    std::vector<T> pts1, wts1, wns1;
+    int num_quad_pts1 = quadrature.get_quadrature_pts(elem, pts1, wts1, wns1);
 
     FieldToVTK<T, spatial_dim> vtk1("quadratures1.vtk");
     vtk1.add_scalar_field(pts1, wts1);
@@ -81,8 +81,8 @@ TEST(adjoint, GDLSFQuadratureGradient) {
       lsf_dof[i] += 2.0 * h * p[i];
     }
 
-    std::vector<T> pts2, wts2;
-    int num_quad_pts2 = quadrature.get_quadrature_pts(elem, pts2, wts2);
+    std::vector<T> pts2, wts2, wns2;
+    int num_quad_pts2 = quadrature.get_quadrature_pts(elem, pts2, wts2, wns2);
 
     for (int i = 0; i < p.size(); i++) {
       lsf_dof[i] -= 2.0 * h * p[i];

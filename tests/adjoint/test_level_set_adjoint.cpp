@@ -105,9 +105,9 @@ TEST(adjoint, determinantGrad) {
   T element_xloc[spatial_dim * max_nnodes_per_element];
   get_element_xloc<T, Mesh, Basis>(mesh, i, element_xloc);
 
-  std::vector<T> pts, wts, pts_grad, wts_grad;
+  std::vector<T> pts, wts, wns, pts_grad, wts_grad;
   int num_quad_pts =
-      quadrature.get_quadrature_pts_grad(i, pts, wts, pts_grad, wts_grad);
+      quadrature.get_quadrature_pts_grad(i, pts, wts, wns, pts_grad, wts_grad);
 
   std::vector<T> N, Nxi, Nxixi;
   basis.eval_basis_grad(i, pts, N, Nxi, Nxixi);

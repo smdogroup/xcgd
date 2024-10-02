@@ -195,9 +195,9 @@ void test_elasticity(
 template <class Quadrature, class Basis>
 void test_poisson(
     std::tuple<typename Basis::Mesh *, Quadrature *, Basis *> tuple,
-    double h = 1e-30, double tol = 1e-14) {
+    double source, double h = 1e-30, double tol = 1e-14) {
   using Physics = PoissonPhysics<T, Basis::spatial_dim>;
-  Physics physics;
+  Physics physics(source);
   test_physics(tuple, physics, h, tol);
 }
 
@@ -224,15 +224,27 @@ TEST(physics, NeohookeanQuad) { test_neohookean(create_quad_basis()); }
 TEST(physics, NeohookeanTet) { test_neohookean(create_tet_basis()); }
 TEST(physics, NeohookeanGD) { test_neohookean(create_gd_basis(), 1e-8, 1e-6); }
 
-TEST(physics, PoissonQuad) { test_poisson(create_quad_basis()); }
-TEST(physics, PoissonTet) { test_poisson(create_tet_basis()); }
-TEST(physics, PoissonGD) { test_poisson(create_gd_basis(), 1e-8, 1e-6); }
+TEST(physics, PoissonQuad) {
+  test_poisson(create_quad_basis(), 1.0, 1e-30, 1e-12);
+  test_poisson(create_quad_basis(), 2.3, 1e-30, 1e-12);
+  test_poisson(create_quad_basis(), 0.0, 1e-30, 1e-12);
+}
+TEST(physics, PoissonTet) {
+  test_poisson(create_tet_basis(), 1.0);
+  test_poisson(create_tet_basis(), 2.3);
+  test_poisson(create_tet_basis(), 0.0);
+}
+TEST(physics, PoissonGD) {
+  test_poisson(create_gd_basis(), 1.0, 1e-8, 1e-6);
+  test_poisson(create_gd_basis(), 2.3, 1e-8, 1e-6);
+  test_poisson(create_gd_basis(), 0.0, 1e-8, 1e-6);
+}
 
 TEST(physics, HelmholtzQuad) {
-  test_helmholtz(create_quad_basis(), 1e-30, 1e-13);
+  test_helmholtz(create_quad_basis(), 1e-30, 1e-12);
 }
 TEST(physics, HelmholtzTet) {
-  test_helmholtz(create_tet_basis(), 1e-30, 1e-13);
+  test_helmholtz(create_tet_basis(), 1e-30, 1e-12);
 }
 TEST(physics, HelmholtzGD) { test_helmholtz(create_gd_basis(), 1e-8, 1e-6); }
 

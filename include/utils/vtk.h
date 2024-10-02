@@ -321,4 +321,123 @@ class FieldToVTK {
   std::vector<T> scalars;
 };
 
+/**
+ * @brief Scattered data to vtk
+ *
+ * Example usage:
+ *   FieldToVEK<T, spatial_dim> vtk("field.vtk");
+ *   vtk.add_scalar_field(xloc, vals);
+ *   vtk.write_vtk();
+ */
+template <typename T, int spatial_dim>
+class FieldToVTKNew {
+ public:
+  FieldToVTKNew(const std::string vtk_name = "field.vtk") {
+    fp = std::fopen(vtk_name.c_str(), "w+");
+
+    // Write header
+    std::fprintf(fp, "# vtk DataFile Version 3.0\n");
+    std::fprintf(fp, "my example\n");
+    std::fprintf(fp, "ASCII\n");
+    std::fprintf(fp, "DATASET UNSTRUCTURED_GRID\n");
+  }
+
+  void add_mesh(const std::vector<T>& xloc) {
+    xloc_scalars.insert(xloc_scalars.end(), xloc.begin(), xloc.end());
+  }
+
+  void add_sol(const std::vector<T>& vals) {
+    scalars.insert(scalars.end(), vals.begin(), vals.end());
+  }
+
+  void reset_sol() { scalars.clear(); }
+
+  void add_vec(const std::vector<T>& vec) {
+    vectors.insert(vectors.end(), vec.begin(), vec.end());
+  }
+
+  void reset_vec() { vectors.clear(); }
+
+  void write_mesh() {
+    int nverts = xloc_scalars.size() / spatial_dim;
+    std::fprintf(fp, "POINTS %d double\n", nverts);
+    for (int i = 0; i < xloc_scalars.size(); i += spatial_dim) {
+      write_real_val(fp, xloc_scalars[i]);
+      write_real_val(fp, xloc_scalars[i + 1]);
+      if (spatial_dim == 2) {
+        write_real_val(fp, 0.0);
+      } else {
+        write_real_val(fp, xloc_scalars[i + 2]);
+      }
+      std::fprintf(fp, "\n");
+    }
+  }
+
+  void write_sol(const std::string sol_name) {
+    int nverts = scalars.size();
+    if (nverts * spatial_dim != xloc_scalars.size()) {
+      char msg[256];
+      std::snprintf(msg, 256,
+                    "incompatible scalars (size %d) and xloc_scalars (size "
+                    "%d) for the %d dimentional problem",
+                    (int)scalars.size(), (int)xloc_scalars.size(), spatial_dim);
+      throw std::runtime_error(msg);
+    }
+
+    if (!vtk_has_nodal_sol_header) {
+      vtk_has_nodal_sol_header = true;
+      std::fprintf(fp, "POINT_DATA %d \n", nverts);
+    }
+
+    std::fprintf(fp, "SCALARS %s double 1\n", sol_name.c_str());
+    std::fprintf(fp, "LOOKUP_TABLE default\n");
+    for (T s : scalars) {
+      write_real_val(fp, s);
+      std::fprintf(fp, "\n");
+    }
+  }
+
+  void write_vec(const std::string sol_name) {
+    if (vectors.size() != xloc_scalars.size()) {
+      char msg[256];
+      std::snprintf(msg, 256,
+                    "incompatible vectors (size %d) and xloc_scalars (size "
+                    "%d) for the %d dimentional problem",
+                    (int)vectors.size(), (int)xloc_scalars.size(), spatial_dim);
+      throw std::runtime_error(msg);
+    }
+
+    int nverts = xloc_scalars.size() / spatial_dim;
+    if (!vtk_has_nodal_sol_header) {
+      vtk_has_nodal_sol_header = true;
+      std::fprintf(fp, "POINT_DATA %d \n", nverts);
+    }
+
+    std::fprintf(fp, "VECTORS %s double\n", sol_name.c_str());
+
+    for (int i = 0; i < nverts; i++) {
+      if constexpr (spatial_dim == 2) {
+        write_real_val(fp, vectors[spatial_dim * i]);
+        write_real_val(fp, vectors[spatial_dim * i + 1]);
+        write_real_val(fp, 0.0);
+      } else {
+        write_real_val(fp, vectors[spatial_dim * i]);
+        write_real_val(fp, vectors[spatial_dim * i + 1]);
+        write_real_val(fp, vectors[spatial_dim * i + 2]);
+      }
+      std::fprintf(fp, "\n");
+    }
+  }
+
+  ~FieldToVTKNew() { std::fclose(fp); }
+
+ private:
+  std::FILE* fp;
+  std::vector<T> xloc_scalars;
+  std::vector<T> scalars;
+  std::vector<T> vectors;
+
+  bool vtk_has_nodal_sol_header = false;
+};
+
 #endif  // XCGD_VTK_H

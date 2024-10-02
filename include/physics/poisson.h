@@ -13,12 +13,16 @@ class PoissonPhysics final : public PhysicsBase<T, spatial_dim, 0, 1> {
   using PhysicsBase::dof_per_node;
   using PhysicsBase::spatial_dim;
 
-  T energy(T weight, T _, const A2D::Mat<T, spatial_dim, spatial_dim>& J,
-           T& val, A2D::Vec<T, spatial_dim>& grad) const {
+  PoissonPhysics() : source(1.0) {}
+  PoissonPhysics(T source) : source(source) {}
+
+  T energy(T weight, T _, const A2D::Vec<T, spatial_dim>& __,
+           const A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
+           A2D::Vec<T, spatial_dim>& grad) const {
     T detJ, output, dot, u = val;
     A2D::MatDet(J, detJ);
     A2D::VecDot(grad, grad, dot);
-    return weight * detJ * (0.5 * dot - u);
+    return weight * detJ * (0.5 * dot - source * u);
   }
 
   void residual(T weight, T _, A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
@@ -31,7 +35,8 @@ class PoissonPhysics final : public PhysicsBase<T, spatial_dim, 0, 1> {
 
     auto stack = A2D::MakeStack(
         A2D::MatDet(J_obj, detJ_obj), A2D::VecDot(grad_obj, grad_obj, dot_obj),
-        A2D::Eval(weight * detJ_obj * (0.5 * dot_obj - u_obj), output_obj));
+        A2D::Eval(weight * detJ_obj * (0.5 * dot_obj - source * u_obj),
+                  output_obj));
 
     output_obj.bvalue() = 1.0;
     stack.reverse();
@@ -52,7 +57,8 @@ class PoissonPhysics final : public PhysicsBase<T, spatial_dim, 0, 1> {
 
     auto stack = A2D::MakeStack(
         A2D::MatDet(J_obj, detJ_obj), A2D::VecDot(grad_obj, grad_obj, dot_obj),
-        A2D::Eval(weight * detJ_obj * (0.5 * dot_obj - u_obj), output_obj));
+        A2D::Eval(weight * detJ_obj * (0.5 * dot_obj - source * u_obj),
+                  output_obj));
 
     output_obj.bvalue() = 1.0;
     stack.hproduct();
@@ -73,11 +79,15 @@ class PoissonPhysics final : public PhysicsBase<T, spatial_dim, 0, 1> {
 
     auto stack = A2D::MakeStack(
         A2D::MatDet(J_obj, detJ_obj), A2D::VecDot(grad_obj, grad_obj, dot_obj),
-        A2D::Eval(weight * detJ_obj * (0.5 * dot_obj - u_obj), output_obj));
+        A2D::Eval(weight * detJ_obj * (0.5 * dot_obj - source * u_obj),
+                  output_obj));
 
     output_obj.bvalue() = 1.0;
     stack.hextract(pgrad, hgrad, jac_grad);
   }
+
+ private:
+  T source;
 };
 
 #endif  // XCGD_POISSON_H

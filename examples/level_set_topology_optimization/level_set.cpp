@@ -156,6 +156,11 @@ class TopoAnalysis {
     // should be constant if optimizer bounds are applied properly
     update_mesh(x);
 
+    DegenerateStencilLogger::clear();
+    VandermondeCondLogger::clear();
+
+    VandermondeCondLogger::enable();
+
     try {
       std::vector<T> sol = elastic.solve(bc_dof, load_dof, load_vals);
       return sol;
@@ -175,6 +180,8 @@ class TopoAnalysis {
 
       throw e;
     }
+
+    VandermondeCondLogger::disable();
   }
 
   std::vector<T> eval_compliance_area(const std::vector<T>& x, T& comp,
@@ -265,6 +272,21 @@ class TopoAnalysis {
     for (int i : load_dof) dof_load[i] = 1.0;
     vtk.write_vec("bc-dof", dof_bcs.data());
     vtk.write_vec("load-dof", dof_load.data());
+
+    std::vector<double> conds(mesh.get_num_elements());
+    for (int elem = 0; elem < mesh.get_num_elements(); elem++) {
+      conds[elem] = VandermondeCondLogger::get_conds().at(elem);
+    }
+    vtk.write_cell_sol("cond", conds.data());
+
+    std::vector<double> nstencils(mesh.get_num_elements(),
+                                  Mesh::Np_1d * Mesh::Np_1d);
+    auto degenerate_stencils = DegenerateStencilLogger::get_stencils();
+    for (auto e : degenerate_stencils) {
+      int elem = e.first;
+      nstencils[elem] = e.second.size();
+    }
+    vtk.write_cell_sol("nstencils", nstencils.data());
   }
 
   void write_prob_json(const std::string json_path,
@@ -351,6 +373,8 @@ class TopoProb : public ParOptProblem {
     checkGradients(dh);
     is_gradient_check = false;
     reset_counter();
+    DegenerateStencilLogger::clear();
+    VandermondeCondLogger::clear();
   }
 
   void reset_counter() { counter = 0; }
@@ -588,6 +612,9 @@ void execute(int argc, char* argv[]) {
 }
 
 int main(int argc, char* argv[]) {
+  DegenerateStencilLogger::enable();
+  VandermondeCondLogger::enable();
+
   if (argc == 1) {
     std::printf("Usage: ./level_set level_set.cfg [--smoke]\n");
     exit(0);

@@ -15,8 +15,9 @@ class HelmholtzPhysics final : public PhysicsBase<T, spatial_dim, 1, 1> {
 
   HelmholtzPhysics(T r0) : r0square(r0 * r0) {}
 
-  T energy(T weight, T x, const A2D::Mat<T, spatial_dim, spatial_dim>& J,
-           T& val, A2D::Vec<T, spatial_dim>& grad) const {
+  T energy(T weight, T x, const A2D::Vec<T, spatial_dim>& __,
+           const A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
+           A2D::Vec<T, spatial_dim>& grad) const {
     T detJ, dot;
     A2D::MatDet(J, detJ);
     A2D::VecDot(grad, grad, dot);

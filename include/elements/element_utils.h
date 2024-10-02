@@ -706,8 +706,8 @@ class GDSampler2D final : public QuadratureBase<T> {
   GDSampler2D(const Mesh &mesh, double t1 = 0.05, double t2 = 0.05)
       : t1(t1), t2(t2), mesh(mesh) {}
 
-  int get_quadrature_pts(int elem, std::vector<T> &pts,
-                         std::vector<T> &_) const {
+  int get_quadrature_pts(int elem, std::vector<T> &pts, std::vector<T> &_,
+                         std::vector<T> &__) const {
     pts.resize(spatial_dim * samples);
 
     T xymin[2], xymax[2];
@@ -770,8 +770,8 @@ class Interpolator final {
                                   Basis::spatial_dim);
       get_element_xloc<T, Mesh, Basis>(mesh, elem, element_xloc.data());
 
-      std::vector<T> pts, wts;
-      int nsamples = sampler.get_quadrature_pts(elem, pts, wts);
+      std::vector<T> pts, _, __;
+      int nsamples = sampler.get_quadrature_pts(elem, pts, _, __);
 
       std::vector<T> N, Nxi;
       basis.eval_basis_grad(elem, pts, N, Nxi);

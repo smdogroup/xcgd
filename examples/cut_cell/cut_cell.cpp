@@ -41,19 +41,23 @@ void quadratures_general() {
   vtk.write_vtk();
 }
 
+template <int Np_1d>
 void quadratures_multipoly() {
   using T = double;
   constexpr int spatial_dim = 2;
-  constexpr int Np_1d = 5;
 
   // Define the LSF functor
-  auto phi_functor = [](const algoim::uvector<T, spatial_dim>& x) {
-    return -Ellipsoid()(x);
+  auto phi_functor = [](const algoim::uvector<T, spatial_dim>& x) -> T {
+    return -(4.0 * (x(0) - 1.0) * (x(0) - 1.0) + (x(1) - 2.0) * (x(1) - 2.0) -
+             1.0);
   };
+  // auto phi_functor = [](const algoim::uvector<T, spatial_dim>& x) -> T {
+  //   return -1.0;
+  // };
 
   // Set bounds of the hyperrectangle
-  algoim::uvector<T, spatial_dim> xmin{-0.7, -0.3};
-  algoim::uvector<T, spatial_dim> xmax{1.2, 0.5};
+  algoim::uvector<T, spatial_dim> xmin{0.0, 0.0};
+  algoim::uvector<T, spatial_dim> xmax{2.0, 4.0};
 
   // Evaluate the bernstein
   T data[Np_1d * Np_1d];
@@ -69,34 +73,84 @@ void quadratures_multipoly() {
   algoim::ImplicitPolyQuadrature<spatial_dim> ipquad(phi);
 
   // Compute quadrature nodes
-  std::vector<algoim::uvector<T, spatial_dim>> phase0,
-      phase1;  // stores quadrature nodes for the 'inside' and 'outside'
-  std::vector<T> w0, w1;
+  std::vector<algoim::uvector<T, spatial_dim>> quad_nodes_inner,
+      quad_nodes_outer, quad_nodes_surf, wn_surf;
+  std::vector<T> w_inner, w_outer, w_surf;
   ipquad.integrate(algoim::AutoMixed, Np_1d,
                    [&](const algoim::uvector<T, spatial_dim>& x, T w) {
                      if (algoim::bernstein::evalBernsteinPoly(phi, x) < 0) {
-                       phase0.push_back(x);
-                       w0.push_back(w);
-                     } else
-                       phase1.push_back(x);
-                     w1.push_back(w);
+                       quad_nodes_inner.push_back(x);
+                       w_inner.push_back(w);
+                     } else {
+                       quad_nodes_outer.push_back(x);
+                       w_outer.push_back(w);
+                     }
                    });
 
-  // flatten
-  std::vector<T> pts;
-  for (auto node : phase0) {
+  ipquad.integrate_surf(algoim::AutoMixed, Np_1d,
+                        [&](const algoim::uvector<T, spatial_dim>& x, T w,
+                            const algoim::uvector<T, spatial_dim>& wn) {
+                          quad_nodes_surf.push_back(x);
+                          w_surf.push_back(w);
+                          wn_surf.push_back(wn);
+                          printf("wn: (%10.5f, %10.5f)\n", wn(0), wn(1));
+                        });
+
+  std::vector<T> pts_inner;
+  for (auto node : quad_nodes_inner) {
     for (int d = 0; d < spatial_dim; d++) {
-      pts.push_back(node(d));
+      pts_inner.push_back(node(d));
     }
   }
-  std::vector<T> vals = w0;
 
-  FieldToVTK<T, spatial_dim> vtk("quadratures_multipoly.vtk");
-  vtk.add_scalar_field(pts, vals);
-  vtk.write_vtk();
+  std::vector<T> pts_surf;
+  for (auto node : quad_nodes_surf) {
+    for (int d = 0; d < spatial_dim; d++) {
+      pts_surf.push_back(node(d));
+    }
+  }
+
+  std::vector<T> wn_vec;
+  for (auto node : wn_surf) {
+    for (int d = 0; d < spatial_dim; d++) {
+      wn_vec.push_back(node(d));
+    }
+  }
+
+  T sum_inner = 0.0, sum_surf = 0.0;
+  for (auto w : w_inner) sum_inner += w;
+  for (auto w : w_surf) sum_surf += w;
+
+  std::cout << "number of interior quadrature points: " << w_inner.size()
+            << "\n";
+  std::cout << "sum of interior weights: " << sum_inner << "\n";
+
+  std::cout << "number of surface quadrature points: " << w_surf.size() << "\n";
+  std::cout << "sum of surface weights: " << sum_surf << "\n";
+
+  FieldToVTKNew<T, spatial_dim> vtk_inner("quadratures_multipoly_inner.vtk");
+
+  vtk_inner.add_mesh(pts_inner);
+  vtk_inner.write_mesh();
+  vtk_inner.add_sol(w_inner);
+  vtk_inner.write_sol("w_inner");
+
+  FieldToVTKNew<T, spatial_dim> vtk_surf("quadratures_multipoly_surf.vtk");
+  vtk_surf.add_mesh(pts_surf);
+  vtk_surf.write_mesh();
+  vtk_surf.add_sol(w_surf);
+  vtk_surf.write_sol("w_surf");
+  vtk_surf.add_vec(wn_vec);
+  vtk_surf.write_vec("wn");
+
+  std::printf("wn_vec.size(): %lu\n", wn_vec.size());
+  for (int i = 0; i < wn_vec.size() / spatial_dim; i++) {
+    std::printf("wn[%2d]: (%10.5f, %10.5f)\n", i, wn_vec[spatial_dim * i],
+                wn_vec[spatial_dim * i + 1]);
+  }
 }
 
 int main() {
   quadratures_general();
-  quadratures_multipoly();
+  quadratures_multipoly<10>();
 }

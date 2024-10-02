@@ -15,8 +15,9 @@
 template <typename T, int spatial_dim>
 class Integration final : public PhysicsBase<T, spatial_dim, 0, 1> {
  public:
-  T energy(T weight, T _, const A2D::Mat<T, spatial_dim, spatial_dim>& J,
-           T& val, A2D::Vec<T, spatial_dim>& __) const {
+  T energy(T weight, T _, const A2D::Vec<T, spatial_dim>& __,
+           const A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
+           A2D::Vec<T, spatial_dim>& ___) const {
     T detJ;
     A2D::MatDet(J, detJ);
     return weight * detJ * val;
@@ -57,7 +58,7 @@ T hypercircle_area(typename Basis::Mesh& mesh, Quadrature& quadrature,
   return analysis.energy(nullptr, dof.data());
 }
 
-TEST(elements, IntegrationQuad) {
+TEST(elements, integration_quad2d) {
   using T = double;
   using Quadrature = QuadrilateralQuadrature<T>;
   using Basis = QuadrilateralBasis<T>;
@@ -82,7 +83,7 @@ TEST(elements, IntegrationQuad) {
   EXPECT_NEAR(relerr, 0.0, 1e-2);
 }
 
-TEST(elements, IntegrationTet) {
+TEST(elements, integration_tet3d) {
   using T = double;
   using Quadrature = TetrahedralQuadrature<T>;
   using Basis = TetrahedralBasis<T>;
@@ -107,7 +108,7 @@ TEST(elements, IntegrationTet) {
   EXPECT_NEAR(relerr, 0.0, 1e-2);
 }
 
-TEST(elements, IntergrationGD2D_Np2) {
+TEST(elements, integration_gd_Np2) {
   using T = double;
   constexpr int Np_1d = 2;
 
@@ -130,7 +131,7 @@ TEST(elements, IntergrationGD2D_Np2) {
   EXPECT_NEAR(relerr, 0.0, 1e-2);
 }
 
-TEST(elements, IntergrationGD2D_Np4) {
+TEST(elements, integration_gd_Np4) {
   using T = double;
   constexpr int Np_1d = 4;
 
@@ -153,7 +154,7 @@ TEST(elements, IntergrationGD2D_Np4) {
   EXPECT_NEAR(relerr, 0.0, 1e-2);
 }
 
-TEST(elements, IntergrationGDLSF2D_Np2) {
+TEST(elements, integration_lsf_Np2) {
   using T = double;
   constexpr int Np_1d = 2;
 
@@ -186,7 +187,7 @@ TEST(elements, IntergrationGDLSF2D_Np2) {
   EXPECT_NEAR(pi, PI, 1e-2);
 }
 
-TEST(elements, IntergrationGDLSF2D_Np4) {
+TEST(elements, integration_lsf_Np4) {
   using T = double;
   constexpr int Np_1d = 4;
 
@@ -217,4 +218,70 @@ TEST(elements, IntergrationGDLSF2D_Np4) {
   double pi = analysis.energy(nullptr, dof.data());
 
   EXPECT_NEAR(pi, PI, 1e-10);
+}
+
+TEST(elements, integration_surf_Np2) {
+  using T = double;
+  constexpr int Np_1d = 2;
+
+  using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
+  using Mesh = CutMesh<T, Np_1d>;
+  using Basis = GDBasis2D<T, Mesh>;
+  using Grid = StructuredGrid2D<T>;
+  using Physics = Integration<T, Basis::spatial_dim>;
+  using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
+
+  int nxy[2] = {64, 64};
+  double lxy[2] = {3.0, 3.0};
+  double pt0[2] = {1.5, 1.5};
+  double r0 = 1.0;
+  Grid grid(nxy, lxy);
+  Mesh mesh(grid, [pt0, r0](double x[]) {
+    return (x[0] - pt0[0]) * (x[0] - pt0[0]) +
+           (x[1] - pt0[1]) * (x[1] - pt0[1]) - r0 * r0;
+  });
+  Quadrature quadrature(mesh, LSFQuadType::SURFACE);
+  Basis basis(mesh);
+
+  std::vector<T> dof(mesh.get_num_nodes(), 1.0);
+
+  Physics physics;
+  Analysis analysis(mesh, quadrature, basis, physics);
+
+  double perimeter = analysis.energy(nullptr, dof.data());
+
+  EXPECT_NEAR(perimeter, 2.0 * PI * r0, 1e-20);
+}
+
+TEST(elements, integration_surf_Np4) {
+  using T = double;
+  constexpr int Np_1d = 4;
+
+  using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
+  using Mesh = CutMesh<T, Np_1d>;
+  using Basis = GDBasis2D<T, Mesh>;
+  using Grid = StructuredGrid2D<T>;
+  using Physics = Integration<T, Basis::spatial_dim>;
+  using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
+
+  int nxy[2] = {64, 64};
+  double lxy[2] = {3.0, 3.0};
+  double pt0[2] = {1.5, 1.5};
+  double r0 = 1.0;
+  Grid grid(nxy, lxy);
+  Mesh mesh(grid, [pt0, r0](double x[]) {
+    return (x[0] - pt0[0]) * (x[0] - pt0[0]) +
+           (x[1] - pt0[1]) * (x[1] - pt0[1]) - r0 * r0;
+  });
+  Quadrature quadrature(mesh, LSFQuadType::SURFACE);
+  Basis basis(mesh);
+
+  std::vector<T> dof(mesh.get_num_nodes(), 1.0);
+
+  Physics physics;
+  Analysis analysis(mesh, quadrature, basis, physics);
+
+  double perimeter = analysis.energy(nullptr, dof.data());
+
+  EXPECT_NEAR(perimeter, 2.0 * PI * r0, 1e-20);
 }

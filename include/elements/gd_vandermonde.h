@@ -283,8 +283,8 @@ class GDGaussQuadrature2D final : public QuadratureBase<T> {
     }
   }
 
-  int get_quadrature_pts(int elem, std::vector<T>& pts,
-                         std::vector<T>& wts) const {
+  int get_quadrature_pts(int elem, std::vector<T>& pts, std::vector<T>& wts,
+                         std::vector<T>& _) const {
     int constexpr spatial_dim = Mesh::spatial_dim;
     pts.resize(spatial_dim * num_quad_pts);
     wts.resize(num_quad_pts);
@@ -314,6 +314,8 @@ class GDGaussQuadrature2D final : public QuadratureBase<T> {
 template <typename T, class Mesh>
 class GDBasis2D;
 
+enum class LSFQuadType { INNER, SURFACE };
+
 template <typename T, int Np_1d>
 class GDLSFQuadrature2D final : public QuadratureBase<T> {
  private:
@@ -327,8 +329,9 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
   constexpr static int max_nnodes_per_element = Basis::max_nnodes_per_element;
 
  public:
-  GDLSFQuadrature2D(const CutMesh_& mesh)
-      : mesh(mesh), lsf_mesh(mesh.get_lsf_mesh()) {}
+  GDLSFQuadrature2D(const CutMesh_& mesh,
+                    LSFQuadType quad_type = LSFQuadType::INNER)
+      : mesh(mesh), lsf_mesh(mesh.get_lsf_mesh()), quad_type(quad_type) {}
 
   /**
    * @brief Get the quadrature points and weights
@@ -339,8 +342,8 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
    * @param wts quadrature weights, size: num_quad
    * @return int num_quad
    */
-  int get_quadrature_pts(int elem, std::vector<T>& pts,
-                         std::vector<T>& wts) const {
+  int get_quadrature_pts(int elem, std::vector<T>& pts, std::vector<T>& wts,
+                         std::vector<T>& wns) const {
     // this is the element index in lsf mesh
     int cell = mesh.get_elem_cell(elem);
 
@@ -365,7 +368,7 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
 
     // Get quadrature points and weights
     getQuadrature(xi_min, xi_max, xi_min_lsf, xi_max_lsf, element_lsf, eval,
-                  wcoef, pts, wts);
+                  wcoef, pts, wts, wns);
 
     return wts.size();
   }
@@ -385,7 +388,8 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
    * point, size: num_quad * max_nnodes_per_element
    */
   int get_quadrature_pts_grad(int elem, std::vector<T>& pts,
-                              std::vector<T>& wts, std::vector<T>& pts_grad,
+                              std::vector<T>& wts, std::vector<T>& wns,
+                              std::vector<T>& pts_grad,
                               std::vector<T>& wts_grad) const {
     // this is the element index in lsf mesh
     int cell = mesh.get_elem_cell(elem);
@@ -411,7 +415,7 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
 
     // Get quadrature points and weights
     getQuadrature(xi_min, xi_max, xi_min_lsf, xi_max_lsf, element_lsf, eval,
-                  wcoef, pts, wts);
+                  wcoef, pts, wts, wns);
 
     int num_quad_pts = wts.size();
 
@@ -424,14 +428,16 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
 
     pts_grad.clear();
     wts_grad.clear();
+    // wns_grad.clear();
     pts_grad.resize(num_quad_pts * spatial_dim * max_nnodes_per_element);
     wts_grad.resize(num_quad_pts * max_nnodes_per_element);
+    // wns_grad.resize(num_quad_pts * spatial_dim * max_nnodes_per_element);
 
     for (int i = 0; i < max_nnodes_per_element; i++) {
       element_lsf_d[i].dpart(1.0);
-      std::vector<T> dpts, dwts;
+      std::vector<T> dpts, dwts, dwns;
       getQuadrature(xi_min, xi_max, xi_min_lsf, xi_max_lsf, element_lsf_d, eval,
-                    wcoef, dpts, dwts);
+                    wcoef, dpts, dwts, dwns);
       element_lsf_d[i].dpart(0.0);
 
       if (dwts.size() != num_quad_pts) {
@@ -448,6 +454,7 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
         wts_grad[index] = dwts[q];
         for (int d = 0; d < spatial_dim; d++) {
           pts_grad[index * spatial_dim + d] = dpts[q * spatial_dim + d];
+          // wns_grad[index * spatial_dim + d] = dwns[q * spatial_dim + d];
         }
       }
     }
@@ -482,8 +489,8 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
                      const algoim::uvector<T, spatial_dim>& xi_max_lsf,
                      const T2 element_lsf[],
                      const VandermondeEvaluator<T, GridMesh_>& eval,
-                     const T wcoef, std::vector<T>& pts,
-                     std::vector<T>& wts) const {
+                     const T wcoef, std::vector<T>& pts, std::vector<T>& wts,
+                     std::vector<T>& wns) const {
     constexpr bool is_dual = is_specialization<T2, duals::dual>::value;
 
     // Obtain the Bernstein polynomial representation of the level-set
@@ -495,18 +502,42 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
 
     pts.clear();
     wts.clear();
+    wns.clear();
 
     algoim::ImplicitPolyQuadrature<spatial_dim, T2> ipquad(phi);
-    ipquad.integrate(
-        algoim::AutoMixed, Np_1d,
-        [&](const algoim::uvector<T2, spatial_dim>& x, T2 w) {
-          if (algoim::bernstein::evalBernsteinPoly(phi, x) <= 0.0) {
+    if (quad_type == LSFQuadType::INNER) {
+      ipquad.integrate(
+          algoim::AutoMixed, Np_1d,
+          [&](const algoim::uvector<T2, spatial_dim>& x, T2 w) {
+            if (algoim::bernstein::evalBernsteinPoly(phi, x) <= 0.0) {
+              for (int d = 0; d < spatial_dim; d++) {
+                if constexpr (is_dual) {
+                  pts.push_back(
+                      (xi_min(d) + x(d) * (xi_max(d) - xi_min(d))).dpart());
+                } else {
+                  pts.push_back(xi_min(d) + x(d) * (xi_max(d) - xi_min(d)));
+                }
+              }
+              if constexpr (is_dual) {
+                wts.push_back(wcoef * w.dpart());
+              } else {
+                wts.push_back(wcoef * w);
+              }
+            }
+          });
+    } else {  // quad_type == LSFQuadType::SURFACE
+      ipquad.integrate_surf(
+          algoim::AutoMixed, Np_1d,
+          [&](const algoim::uvector<T2, spatial_dim>& x, T2 w,
+              const algoim::uvector<T2, spatial_dim>& wn) {
             for (int d = 0; d < spatial_dim; d++) {
               if constexpr (is_dual) {
                 pts.push_back(
                     (xi_min(d) + x(d) * (xi_max(d) - xi_min(d))).dpart());
+                wns.push_back((wn(d) * (xi_max(d) - xi_min(d))).dpart());
               } else {
                 pts.push_back(xi_min(d) + x(d) * (xi_max(d) - xi_min(d)));
+                wns.push_back(wn(d) * (xi_max(d) - xi_min(d)));
               }
             }
             if constexpr (is_dual) {
@@ -514,8 +545,8 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
             } else {
               wts.push_back(wcoef * w);
             }
-          }
-        });
+          });
+    }
   }
 
   // Mesh for physical dof. Dof nodes is a subset of grid verts due to
@@ -524,6 +555,8 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
 
   // Mesh for the LSF dof. All grid verts are dof nodes.
   const GridMesh_& lsf_mesh;
+
+  LSFQuadType quad_type;
 };
 
 /**
