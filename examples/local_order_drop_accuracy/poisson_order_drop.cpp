@@ -1,5 +1,4 @@
-#define POISSON_ORDER_DROP_EXPERIMENT
-
+#include <cassert>
 #include <exception>
 #include <string>
 
@@ -11,6 +10,100 @@
 #include "utils/loggers.h"
 #include "utils/misc.h"
 #include "utils/vtk.h"
+
+template <typename T, int Np_1d>
+class GridMeshDropOrder : public GridMesh<T, Np_1d> {
+ private:
+  using MeshBase = GDMeshBase<T, Np_1d>;
+
+ public:
+  using MeshBase::corner_nodes_per_element;
+  using MeshBase::max_nnodes_per_element;
+  using MeshBase::spatial_dim;
+  using typename MeshBase::Grid;
+  GridMeshDropOrder(const Grid& grid, int Np_bc)
+      : GridMesh<T, Np_1d>(grid), Np_bc(Np_bc) {
+    assert(Np_bc <= Np_1d);
+    assert(Np_bc >= 2);
+  }
+
+  int get_elem_dof_nodes(
+      int elem, int* nodes,
+      std::vector<std::vector<bool>>* pstencil = nullptr) const {
+    if (pstencil) {
+      pstencil->clear();
+      pstencil->resize(Np_1d);
+      for (int I = 0; I < Np_1d; I++) {
+        (*pstencil)[I] = std::vector<bool>(Np_1d, false);
+        for (int J = 0; J < Np_1d; J++) {
+          (*pstencil)[I][J] = false;
+        }
+      }
+    }
+
+    int tnodes[Np_1d * Np_1d];
+    this->get_cell_ground_stencil(elem, tnodes);
+
+    int eij[2] = {-1, -1};
+    this->grid.get_cell_coords(elem, eij);
+    const int* nxy = this->grid.get_nxy();
+
+    int nnodes = 0;
+    for (int iy = 0; iy < Np_1d; iy++) {
+      for (int ix = 0; ix < Np_1d; ix++) {
+        int idx = ix + Np_1d * iy;
+
+        // lower-left corner element
+        if (eij[0] == 0 and eij[1] == 0) {
+          if (ix >= Np_bc or iy >= Np_bc) continue;
+        }
+        // upper-left corner element
+        else if (eij[0] == 0 and eij[1] == nxy[1] - 1) {
+          if (ix >= Np_bc or iy < Np_1d - Np_bc) continue;
+        }
+        // lower-right corner element
+        else if (eij[0] == nxy[0] - 1 and eij[1] == 0) {
+          if (ix < Np_1d - Np_bc or iy >= Np_bc) continue;
+        }
+        // upper-right corner element
+        else if (eij[0] == nxy[0] - 1 and eij[1] == nxy[1] - 1) {
+          if (ix < Np_1d - Np_bc or iy < Np_1d - Np_bc) continue;
+        }
+        // left boundary elements
+        else if (eij[0] == 0) {
+          if (ix >= Np_bc) continue;
+        }
+        // right bonudary elements
+        else if (eij[0] == nxy[0] - 1) {
+          if (ix < Np_1d - Np_bc) continue;
+        }
+        // lower boundary elements
+        else if (eij[1] == 0) {
+          if (iy >= Np_bc) continue;
+        }
+        // upper boundary elements
+        else if (eij[1] == nxy[0] - 1) {
+          if (iy < Np_1d - Np_bc) continue;
+        }
+
+        nodes[nnodes] = tnodes[idx];
+        if (pstencil) {
+          (*pstencil)[ix][iy] = true;
+        }
+        nnodes++;
+      }
+    }
+
+    if (nnodes != max_nnodes_per_element) {
+      DegenerateStencilLogger::add(elem, nnodes, nodes);
+    }
+
+    return nnodes;
+  }
+
+ private:
+  int Np_bc;
+};
 
 template <typename T, class Mesh>
 void write_vtk(std::string vtkpath, const Mesh& mesh,
@@ -43,11 +136,11 @@ void write_vtk(std::string vtkpath, const Mesh& mesh,
 
 // Get the l2 error of the numerical Poisson solution
 template <int Np_1d>
-void solve_poisson_problem(int nxy, std::string prefix) {
+void solve_poisson_problem(std::string prefix, int nxy, int Np_bc) {
   using T = double;
   using Grid = StructuredGrid2D<T>;
   using Quadrature = GDGaussQuadrature2D<T, Np_1d>;
-  using Mesh = GridMesh<T, Np_1d>;
+  using Mesh = GridMeshDropOrder<T, Np_1d>;
   using Basis = GDBasis2D<T, Mesh>;
   using Poisson = PoissonApp<T, Mesh, Quadrature, Basis>;
 
@@ -57,7 +150,7 @@ void solve_poisson_problem(int nxy, std::string prefix) {
   T lxy[2] = {2.0, 2.0};
   T xy0[2] = {-1.0, -1.0};
   Grid grid(nx_ny, lxy, xy0);
-  Mesh mesh(grid);
+  Mesh mesh(grid, Np_bc);
   Quadrature quadrature(mesh);
   Basis basis(mesh);
 
@@ -99,6 +192,7 @@ void solve_poisson_problem(int nxy, std::string prefix) {
 int main(int argc, char* argv[]) {
   ArgParser p;
   p.add_argument<int>("--Np_1d", 4);
+  p.add_argument<int>("--Np_bc", 4);
   p.add_argument<int>("--nxy", 6);
   p.add_argument<std::string>("--prefix", {});
   p.parse_args(argc, argv);
@@ -112,23 +206,24 @@ int main(int argc, char* argv[]) {
                        std::filesystem::path("args.txt"));
 
   int Np_1d = p.get<int>("Np_1d");
+  int Np_bc = p.get<int>("Np_bc");
   int nxy = p.get<int>("nxy");
 
   switch (Np_1d) {
     case 2:
-      solve_poisson_problem<2>(nxy, prefix);
+      solve_poisson_problem<2>(prefix, nxy, Np_bc);
       break;
     case 4:
-      solve_poisson_problem<4>(nxy, prefix);
+      solve_poisson_problem<4>(prefix, nxy, Np_bc);
       break;
     case 6:
-      solve_poisson_problem<6>(nxy, prefix);
+      solve_poisson_problem<6>(prefix, nxy, Np_bc);
       break;
     case 8:
-      solve_poisson_problem<8>(nxy, prefix);
+      solve_poisson_problem<8>(prefix, nxy, Np_bc);
       break;
     case 10:
-      solve_poisson_problem<10>(nxy, prefix);
+      solve_poisson_problem<10>(prefix, nxy, Np_bc);
       break;
     default:
       printf("Unsupported Np_1d (%d), exiting...\n", Np_1d);

@@ -184,7 +184,7 @@ class StructuredGrid2D final {
  * Note: This class is light-weight, as the mesh data is computed on-the-fly.
  */
 template <typename T, int Np_1d>
-class GridMesh final : public GDMeshBase<T, Np_1d> {
+class GridMesh : public GDMeshBase<T, Np_1d> {
  private:
   using MeshBase = GDMeshBase<T, Np_1d>;
 

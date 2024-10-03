@@ -200,23 +200,6 @@ class ToVTK {
     }
   }
 
-  // Write nodal scalars
-  void write_cell_sol(const std::string sol_name, const T* sol_vec) {
-    // Write header
-    if (!vtk_has_cell_sol_header) {
-      std::fprintf(fp, "CELL_DATA %d\n", mesh.get_num_elements());
-      vtk_has_cell_sol_header = true;
-    }
-    std::fprintf(fp, "SCALARS %s double 1\n", sol_name.c_str());
-    std::fprintf(fp, "LOOKUP_TABLE default\n");
-
-    // Write data
-    for (int e = 0; e < mesh.get_num_elements(); e++) {
-      write_real_val(fp, sol_vec[e]);
-      std::fprintf(fp, "\n");
-    }
-  }
-
   // Write nodal vectors
   void write_vec(const std::string sol_name, const T* vec) {
     // Write header
@@ -236,6 +219,47 @@ class ToVTK {
         write_real_val(fp, vec[spatial_dim * i]);
         write_real_val(fp, vec[spatial_dim * i + 1]);
         write_real_val(fp, vec[spatial_dim * i + 2]);
+      }
+      std::fprintf(fp, "\n");
+    }
+  }
+
+  // Write cell scalars
+  void write_cell_sol(const std::string sol_name, const T* sol_vec) {
+    // Write header
+    if (!vtk_has_cell_sol_header) {
+      std::fprintf(fp, "CELL_DATA %d\n", mesh.get_num_elements());
+      vtk_has_cell_sol_header = true;
+    }
+    std::fprintf(fp, "SCALARS %s double 1\n", sol_name.c_str());
+    std::fprintf(fp, "LOOKUP_TABLE default\n");
+
+    // Write data
+    for (int e = 0; e < mesh.get_num_elements(); e++) {
+      write_real_val(fp, sol_vec[e]);
+      std::fprintf(fp, "\n");
+    }
+  }
+
+  // Write cell vectors
+  void write_cell_vec(const std::string sol_name, const T* sol_vec) {
+    // Write header
+    if (!vtk_has_cell_sol_header) {
+      std::fprintf(fp, "CELL_DATA %d\n", mesh.get_num_elements());
+      vtk_has_cell_sol_header = true;
+    }
+    std::fprintf(fp, "VECTORS %s double\n", sol_name.c_str());
+
+    // Write data
+    for (int e = 0; e < mesh.get_num_elements(); e++) {
+      if constexpr (spatial_dim == 2) {
+        write_real_val(fp, sol_vec[spatial_dim * e]);
+        write_real_val(fp, sol_vec[spatial_dim * e + 1]);
+        write_real_val(fp, 0.0);
+      } else {
+        write_real_val(fp, sol_vec[spatial_dim * e]);
+        write_real_val(fp, sol_vec[spatial_dim * e + 1]);
+        write_real_val(fp, sol_vec[spatial_dim * e + 2]);
       }
       std::fprintf(fp, "\n");
     }

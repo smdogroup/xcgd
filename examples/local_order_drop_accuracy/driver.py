@@ -3,46 +3,72 @@ import numpy as np
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import json
-import pandas
+import pandas as pd
 from os.path import join
 
 
-if __name__ == "__main__":
+def get_poisson_error(prefix, cmd):
+    subprocess.run(cmd, capture_output=True)
+
+    with open(join(prefix, "sol.json")) as f:
+        j = json.load(f)
+    return np.abs(
+        np.linalg.norm(np.array(j["sol"])) / np.linalg.norm(np.array(j["sol_exact"]))
+        - 1.0
+    )
+
+
+def run_experiments():
     fig, ax = plt.subplots()
 
-    p_list = [1, 3, 5]
+    ax.set_ylabel("Normalized relative solution error")
+    ax.set_xlabel("$h$")
+    ax.invert_xaxis()
+    ax.grid(which="both")
 
-    for nxy in [8, 16, 32]:
-        err_l2_list = []
-        for p in tqdm(p_list):
-            Np_1d = p + 1
-            prefix = f"outputs_Np_{Np_1d}_nxy_{nxy}"
+    order = [
+        (Np_1d, Np_bc)
+        for Np_1d in [2, 4, 6, 8]
+        for Np_bc in reversed(range(max(2, Np_1d - 2), Np_1d + 1))
+    ]
 
+    for Np_1d, Np_bc in order:
+        nxy_list = [8, 16, 32, 64, 128]
+        h_list = [2.0 / nxy for nxy in nxy_list]
+
+        # polulate error for a single sweep
+        normalized_err_list = []
+        bl_err = None
+        for nxy in nxy_list:
+            print(f"Np_1d: {Np_1d:2d}, Np_bc: {Np_bc:2d}, nxy: {nxy:4d}")
+
+            prefix = f"outputs_Np1d_{Np_1d}_Npbc_{Np_bc}_nxy_{nxy}"
             cmd = [
                 "./poisson_order_drop",
                 f"--Np_1d={Np_1d}",
+                f"--Np_bc={Np_bc}",
                 f"--nxy={nxy}",
                 f"--prefix={prefix}",
             ]
 
-            subprocess.run(cmd, capture_output=True)
+            err = get_poisson_error(prefix, cmd)
 
-            with open(join(prefix, "sol.json")) as f:
-                j = json.load(f)
+            if bl_err is None:
+                bl_err = err
+            normalized_err_list.append(err / bl_err)
 
-            err_l2_list.append(
-                np.abs(
-                    np.linalg.norm(np.array(j["sol"]))
-                    / np.linalg.norm(np.array(j["sol_exact"]))
-                    - 1.0
-                )
-            )
+        ax.loglog(
+            h_list,
+            normalized_err_list,
+            "-o",
+            clip_on=False,
+            label=f"p={Np_1d - 1}, drop={Np_1d - Np_bc}",
+        )
+        ax.legend()
+        plt.savefig("accuracy_study.pdf")
 
-        ax.semilogy(p_list, err_l2_list, "-o", clip_on=False, label=f"nxy={nxy}")
+    return
 
-    ax.set_ylabel("Relative solution error")
-    ax.set_xlabel("$p$")
 
-    ax.grid()
-    ax.legend()
-    plt.savefig("accuracy_study.pdf")
+if __name__ == "__main__":
+    run_experiments()
