@@ -1,6 +1,7 @@
 import subprocess
 import numpy as np
 from matplotlib import cm
+import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 import json
 import pandas as pd
@@ -18,6 +19,68 @@ def get_poisson_error(prefix, cmd):
         np.linalg.norm(np.array(j["sol"])) / np.linalg.norm(np.array(j["sol_exact"]))
         - 1.0
     )
+
+
+def annotate_slope(
+    ax, pt0, pt1, slide=0.25, scale=0.5, hoffset=0.0, voffset=-0.1, voffset_text=-0.35
+):
+    """
+    Annotate the slope on a log-log plot
+
+    Args:
+        ax: Axes
+        pt0, pt1: tuple of (x, y) where x and y are original data (not exponent)
+    """
+
+    x0, y0 = pt0
+    x1, y1 = pt1
+
+    # Make sure pt0 is always the lower one
+    if y0 > y1:
+        (x0, y0), (x1, y1) = (x1, y1), (x0, y0)
+
+    dy = np.log10(y1) - np.log10(y0)
+    dx = np.log10(x1) - np.log10(x0)
+    slope = dy / dx
+
+    x0 *= 10.0**hoffset
+    y0 *= 10.0**voffset
+
+    x0 = 10.0 ** (np.log10(x0) + dx * slide)
+    y0 = 10.0 ** (np.log10(y0) + dy * slide)
+
+    x1 = 10.0 ** (np.log10(x0) + dx * scale)
+    y1 = 10.0 ** (np.log10(y0) + dy * scale)
+
+    print(f"({x0:10.2e}, {y0:10.2e}), ({x1:10.2e}, {y1:10.2e}), slope: {slope:5.2f}")
+
+    # Create a right triangle using Polygon patch
+    triangle = patches.Polygon(
+        [
+            [x0, y0],
+            [x1, y0],
+            [x1, y1],
+        ],
+        closed=True,
+        # fill=False,
+        edgecolor="black",
+        facecolor="gray",
+        zorder=100,
+        lw=1,
+    )
+
+    # Add the triangle patch to the plot
+    ax.add_patch(triangle)
+
+    # Annotate the slope
+    ax.annotate(
+        f"{slope:.2f}",
+        xy=(np.sqrt(x0 * x1), y0 * 10.0**voffset_text),
+        verticalalignment="baseline",
+        horizontalalignment="center",
+    )
+
+    return
 
 
 def run_experiments(
@@ -88,21 +151,27 @@ def plot(cases_df):
         Np_bc_list = sorted(list(set(df["Np_bc"])), reverse=True)
 
         for j, Np_bc in enumerate(Np_bc_list):
+            x = df[df["Np_bc"] == Np_bc]["h"]
+            y = df[df["Np_bc"] == Np_bc]["relerr"]
             ax.loglog(
-                df[df["Np_bc"] == Np_bc]["h"],
-                df[df["Np_bc"] == Np_bc]["relerr"],
+                x,
+                y,
                 linestyles[j],
                 color=colors[i],
                 clip_on=False,
                 label=f"p={Np_1d - 1}, drop={Np_1d - Np_bc}",
             )
 
+            if j == 0:
+                x0, x1 = x.iloc[-2:]
+                y0, y1 = y.iloc[-2:]
+                annotate_slope(ax, (x0, y0), (x1, y1))
+
     ax.legend(frameon=False)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
 
-    plt.show()
-    plt.savefig("accuracy_study.pdf")
+    plt.savefig("poisson_accuracy_study.pdf")
 
     return
 
