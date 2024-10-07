@@ -33,13 +33,12 @@ class PhysicsBase {
    *
    * @param weight quadrature weight
    * @param x design variable, optional
-   * @param wn, outer normal vector of the quadrature pt, optional
    * @param J coordinate transformation matrix ∂x/∂ξ
    * @param vals uq, state variable at the quadrature point
    * @param grad (∇_x)uq, gradients of state w.r.t. x at the quadrature point
    * @return T energy functional scalar
    */
-  virtual T energy(T weight, x_t x, const A2D::Vec<T, spatial_dim>& wn,
+  virtual T energy(T weight, x_t x,
                    const A2D::Mat<T, spatial_dim, spatial_dim>& J, dof_t& vals,
                    grad_t& grad) const {
     return 0.0;

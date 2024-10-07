@@ -20,8 +20,7 @@ class NeohookeanPhysics final
 
   NeohookeanPhysics(T C1, T D1) : C1(C1), D1(D1) {}
 
-  T energy(T weight, T _, const A2D::Vec<T, spatial_dim>& __,
-           const A2D::Mat<T, spatial_dim, spatial_dim>& J,
+  T energy(T weight, T _, const A2D::Mat<T, spatial_dim, spatial_dim>& J,
            A2D::Vec<T, dof_per_node>& vals,
            A2D::Mat<T, dof_per_node, spatial_dim>& grad) const {
     A2D::Mat<T, spatial_dim, spatial_dim> Jinv, F, FTF, I;

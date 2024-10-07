@@ -47,8 +47,8 @@ class GalerkinAnalysis final {
       T element_dof[max_dof_per_element];
       get_element_vars<T, dof_per_node, Mesh, Basis>(mesh, i, dof, element_dof);
 
-      std::vector<T> pts, wts, wns;
-      int num_quad_pts = quadrature.get_quadrature_pts(i, pts, wts, wns);
+      std::vector<T> pts, wts, ns;
+      int num_quad_pts = quadrature.get_quadrature_pts(i, pts, wts, ns);
 
       std::vector<T> N, Nxi;
       basis.eval_basis_grad(i, pts, N, Nxi);
@@ -77,8 +77,7 @@ class GalerkinAnalysis final {
           interp_val_grad<T, Basis>(element_x.data(), &N[offset_n], nullptr,
                                     &xq, nullptr);
         }
-        A2D::Vec<T, spatial_dim> wn;
-        total_energy += physics.energy(wts[j], xq, wn, J, vals, grad);
+        total_energy += physics.energy(wts[j], xq, J, vals, grad);
       }
     }
 
@@ -109,8 +108,8 @@ class GalerkinAnalysis final {
         element_res[j] = 0.0;
       }
 
-      std::vector<T> pts, wts, wns;
-      int num_quad_pts = quadrature.get_quadrature_pts(i, pts, wts, wns);
+      std::vector<T> pts, wts, ns;
+      int num_quad_pts = quadrature.get_quadrature_pts(i, pts, wts, ns);
 
       std::vector<T> N, Nxi;
       basis.eval_basis_grad(i, pts, N, Nxi);
@@ -185,8 +184,8 @@ class GalerkinAnalysis final {
         element_res[j] = 0.0;
       }
 
-      std::vector<T> pts, wts, wns;
-      int num_quad_pts = quadrature.get_quadrature_pts(i, pts, wts, wns);
+      std::vector<T> pts, wts, ns;
+      int num_quad_pts = quadrature.get_quadrature_pts(i, pts, wts, ns);
 
       std::vector<T> N, Nxi;
       basis.eval_basis_grad(i, pts, N, Nxi);
@@ -277,8 +276,8 @@ class GalerkinAnalysis final {
         element_dfdx[j] = 0.0;
       }
 
-      std::vector<T> pts, wts, wns;
-      int num_quad_pts = quadrature.get_quadrature_pts(i, pts, wts, wns);
+      std::vector<T> pts, wts, ns;
+      int num_quad_pts = quadrature.get_quadrature_pts(i, pts, wts, ns);
 
       std::vector<T> N, Nxi;
       basis.eval_basis_grad(i, pts, N, Nxi);
@@ -356,8 +355,8 @@ class GalerkinAnalysis final {
         element_jac[j] = 0.0;
       }
 
-      std::vector<T> pts, wts, wns;
-      int num_quad_pts = quadrature.get_quadrature_pts(i, pts, wts, wns);
+      std::vector<T> pts, wts, ns;
+      int num_quad_pts = quadrature.get_quadrature_pts(i, pts, wts, ns);
 
       std::vector<T> N, Nxi;
       basis.eval_basis_grad(i, pts, N, Nxi);
@@ -431,8 +430,8 @@ class GalerkinAnalysis final {
       // Create the element dfdphi
       std::vector<T> element_dfdphi(max_nnodes_per_element, 0.0);
 
-      std::vector<T> pts, wts, wns, pts_grad, wts_grad;
-      int num_quad_pts = quadrature.get_quadrature_pts_grad(i, pts, wts, wns,
+      std::vector<T> pts, wts, ns, pts_grad, wts_grad;
+      int num_quad_pts = quadrature.get_quadrature_pts_grad(i, pts, wts, ns,
                                                             pts_grad, wts_grad);
 
       std::vector<T> N, Nxi, Nxixi;
@@ -522,8 +521,8 @@ class GalerkinAnalysis final {
       // Create the element dfdphi
       std::vector<T> element_dfdphi(max_nnodes_per_element, 0.0);
 
-      std::vector<T> pts, wts, wns, pts_grad, wts_grad;
-      int num_quad_pts = quadrature.get_quadrature_pts_grad(i, pts, wts, wns,
+      std::vector<T> pts, wts, ns, pts_grad, wts_grad;
+      int num_quad_pts = quadrature.get_quadrature_pts_grad(i, pts, wts, ns,
                                                             pts_grad, wts_grad);
 
       std::vector<T> N, Nxi;

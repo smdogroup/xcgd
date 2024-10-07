@@ -16,9 +16,8 @@ class PoissonPhysics final : public PhysicsBase<T, spatial_dim, 0, 1> {
   PoissonPhysics() : source(1.0) {}
   PoissonPhysics(T source) : source(source) {}
 
-  T energy(T weight, T _, const A2D::Vec<T, spatial_dim>& __,
-           const A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
-           A2D::Vec<T, spatial_dim>& grad) const {
+  T energy(T weight, T _, const A2D::Mat<T, spatial_dim, spatial_dim>& J,
+           T& val, A2D::Vec<T, spatial_dim>& grad) const {
     T detJ, output, dot, u = val;
     A2D::MatDet(J, detJ);
     A2D::VecDot(grad, grad, dot);

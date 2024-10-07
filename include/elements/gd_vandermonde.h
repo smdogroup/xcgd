@@ -343,7 +343,7 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
    * @return int num_quad
    */
   int get_quadrature_pts(int elem, std::vector<T>& pts, std::vector<T>& wts,
-                         std::vector<T>& wns) const {
+                         std::vector<T>& ns) const {
     // this is the element index in lsf mesh
     int cell = mesh.get_elem_cell(elem);
 
@@ -368,7 +368,7 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
 
     // Get quadrature points and weights
     getQuadrature(xi_min, xi_max, xi_min_lsf, xi_max_lsf, element_lsf, eval,
-                  wcoef, pts, wts, wns);
+                  wcoef, pts, wts, ns);
 
     return wts.size();
   }
@@ -388,7 +388,7 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
    * point, size: num_quad * max_nnodes_per_element
    */
   int get_quadrature_pts_grad(int elem, std::vector<T>& pts,
-                              std::vector<T>& wts, std::vector<T>& wns,
+                              std::vector<T>& wts, std::vector<T>& ns,
                               std::vector<T>& pts_grad,
                               std::vector<T>& wts_grad) const {
     // this is the element index in lsf mesh
@@ -415,7 +415,7 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
 
     // Get quadrature points and weights
     getQuadrature(xi_min, xi_max, xi_min_lsf, xi_max_lsf, element_lsf, eval,
-                  wcoef, pts, wts, wns);
+                  wcoef, pts, wts, ns);
 
     int num_quad_pts = wts.size();
 
@@ -490,7 +490,7 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
                      const T2 element_lsf[],
                      const VandermondeEvaluator<T, GridMesh_>& eval,
                      const T wcoef, std::vector<T>& pts, std::vector<T>& wts,
-                     std::vector<T>& wns) const {
+                     std::vector<T>& ns) const {
     constexpr bool is_dual = is_specialization<T2, duals::dual>::value;
 
     // Obtain the Bernstein polynomial representation of the level-set
@@ -502,7 +502,7 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
 
     pts.clear();
     wts.clear();
-    wns.clear();
+    ns.clear();
 
     algoim::ImplicitPolyQuadrature<spatial_dim, T2> ipquad(phi);
     if (quad_type == LSFQuadType::INNER) {
@@ -529,15 +529,20 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
       ipquad.integrate_surf(
           algoim::AutoMixed, Np_1d,
           [&](const algoim::uvector<T2, spatial_dim>& x, T2 w,
-              const algoim::uvector<T2, spatial_dim>& wn) {
+              const algoim::uvector<T2, spatial_dim>& _) {
+            // Evaluate the gradient on the quadrature point
+            // We assume that ipquad.phi.count() == 1 here
+            algoim::uvector<T2, spatial_dim> g =
+                algoim::bernstein::evalBernsteinPolyGradient(ipquad.phi.poly(0),
+                                                             x);
             for (int d = 0; d < spatial_dim; d++) {
               if constexpr (is_dual) {
                 pts.push_back(
                     (xi_min(d) + x(d) * (xi_max(d) - xi_min(d))).dpart());
-                wns.push_back((wn(d) * (xi_max(d) - xi_min(d))).dpart());
+                ns.push_back((g(d) * (xi_max(d) - xi_min(d))).dpart());
               } else {
                 pts.push_back(xi_min(d) + x(d) * (xi_max(d) - xi_min(d)));
-                wns.push_back(wn(d) * (xi_max(d) - xi_min(d)));
+                ns.push_back(g(d) * (xi_max(d) - xi_min(d)));
               }
             }
             if constexpr (is_dual) {
