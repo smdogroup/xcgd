@@ -196,7 +196,7 @@ if __name__ == "__main__":
     p.add_argument(
         "--nxy",
         nargs="+",
-        default=[8, 16, 32, 64, 128, 256],
+        default=[8, 16, 32, 64, 128],
         type=int,
         help="list of number of mesh elements per dimension",
     )

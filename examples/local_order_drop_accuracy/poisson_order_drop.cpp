@@ -106,8 +106,8 @@ class GridMeshDropOrder : public GridMesh<T, Np_1d> {
 };
 
 template <typename T, class Mesh>
-void write_vtk(std::string vtkpath, const Mesh& mesh,
-               const std::vector<T>& sol) {
+void write_vtk(std::string vtkpath, const Mesh& mesh, const std::vector<T>& sol,
+               bool save_stencils) {
   ToVTK<T, Mesh> vtk(mesh, vtkpath);
   vtk.write_mesh();
 
@@ -121,28 +121,33 @@ void write_vtk(std::string vtkpath, const Mesh& mesh,
   vtk.write_cell_sol("nstencils", nstencils.data());
   vtk.write_sol("u", sol.data());
 
-  for (auto e : degenerate_stencils) {
-    int elem = e.first;
-    std::vector<int> nodes = e.second;
-    std::vector<T> dof(mesh.get_num_nodes(), 0.0);
-    for (int n : nodes) {
-      dof[n] = 1.0;
+  if (save_stencils) {
+    for (auto e : degenerate_stencils) {
+      int elem = e.first;
+      std::vector<int> nodes = e.second;
+      std::vector<T> dof(mesh.get_num_nodes(), 0.0);
+      for (int n : nodes) {
+        dof[n] = 1.0;
+      }
+      char name[256];
+      std::snprintf(name, 256, "degenerate_stencil_elem_%05d", elem);
+      vtk.write_sol(name, dof.data());
     }
-    char name[256];
-    std::snprintf(name, 256, "degenerate_stencil_elem_%05d", elem);
-    vtk.write_sol(name, dof.data());
   }
 }
 
 // Get the l2 error of the numerical Poisson solution
 template <int Np_1d>
-void solve_poisson_problem(std::string prefix, int nxy, int Np_bc) {
+void solve_poisson_problem(std::string prefix, int nxy, int Np_bc,
+                           bool save_stencils) {
   using T = double;
   using Grid = StructuredGrid2D<T>;
   using Quadrature = GDGaussQuadrature2D<T, Np_1d>;
   using Mesh = GridMeshDropOrder<T, Np_1d>;
   using Basis = GDBasis2D<T, Mesh>;
   using Poisson = PoissonApp<T, Mesh, Quadrature, Basis>;
+
+  DegenerateStencilLogger::enable();
 
   int nx_ny[2] = {nxy, nxy};
   T lxy[2] = {2.0, 2.0};
@@ -184,7 +189,7 @@ void solve_poisson_problem(std::string prefix, int nxy, int Np_bc) {
              j);
   write_vtk<T>(
       std::filesystem::path(prefix) / std::filesystem::path("poisson.vtk"),
-      mesh, sol);
+      mesh, sol, save_stencils);
 }
 
 int main(int argc, char* argv[]) {
@@ -196,9 +201,7 @@ int main(int argc, char* argv[]) {
   p.add_argument<std::string>("--prefix", {});
   p.parse_args(argc, argv);
 
-  if (p.get<int>("save-degenerate-stencils")) {
-    DegenerateStencilLogger::enable();
-  }
+  bool save_stencils = p.get<int>("save-degenerate-stencils");
 
   std::string prefix = p.get<std::string>("prefix");
   if (prefix.empty()) {
@@ -214,19 +217,19 @@ int main(int argc, char* argv[]) {
 
   switch (Np_1d) {
     case 2:
-      solve_poisson_problem<2>(prefix, nxy, Np_bc);
+      solve_poisson_problem<2>(prefix, nxy, Np_bc, save_stencils);
       break;
     case 4:
-      solve_poisson_problem<4>(prefix, nxy, Np_bc);
+      solve_poisson_problem<4>(prefix, nxy, Np_bc, save_stencils);
       break;
     case 6:
-      solve_poisson_problem<6>(prefix, nxy, Np_bc);
+      solve_poisson_problem<6>(prefix, nxy, Np_bc, save_stencils);
       break;
     case 8:
-      solve_poisson_problem<8>(prefix, nxy, Np_bc);
+      solve_poisson_problem<8>(prefix, nxy, Np_bc, save_stencils);
       break;
     case 10:
-      solve_poisson_problem<10>(prefix, nxy, Np_bc);
+      solve_poisson_problem<10>(prefix, nxy, Np_bc, save_stencils);
       break;
     default:
       printf("Unsupported Np_1d (%d), exiting...\n", Np_1d);
