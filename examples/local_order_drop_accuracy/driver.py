@@ -1,4 +1,5 @@
 import subprocess
+from niceplots.utils import adjust_spines
 import numpy as np
 from matplotlib import cm
 import matplotlib.patches as patches
@@ -126,6 +127,24 @@ def run_experiments(
     return pd.DataFrame(df_data)
 
 
+def adjust_plot_lim(ax, xscale=1.2, yscale=1.1):
+    xmin, xmax = ax.get_xlim()
+    ymin, ymax = ax.get_ylim()
+
+    dx = np.log10(xmax) - np.log10(xmin)
+    dy = np.log10(ymax) - np.log10(ymin)
+
+    xmin /= 10.0 ** (dx * (xscale - 1.0) * 0.5)
+    xmax *= 10.0 ** (dx * (xscale - 1.0) * 0.5)
+
+    ymin /= 10.0 ** (dy * (yscale - 1.0) * 0.5)
+    ymax *= 10.0 ** (dy * (yscale - 1.0) * 0.5)
+
+    ax.set_xlim([xmin, xmax])
+    ax.set_ylim([ymin, ymax])
+    return
+
+
 def plot(cases_df):
     fig, ax = plt.subplots(
         ncols=1,
@@ -169,6 +188,8 @@ def plot(cases_df):
     ax.legend(frameon=False)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
+
+    adjust_plot_lim(ax)
 
     plt.savefig("poisson_accuracy_study.pdf")
 
