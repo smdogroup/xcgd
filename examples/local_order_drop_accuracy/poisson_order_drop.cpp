@@ -144,8 +144,6 @@ void solve_poisson_problem(std::string prefix, int nxy, int Np_bc) {
   using Basis = GDBasis2D<T, Mesh>;
   using Poisson = PoissonApp<T, Mesh, Quadrature, Basis>;
 
-  DegenerateStencilLogger::enable();
-
   int nx_ny[2] = {nxy, nxy};
   T lxy[2] = {2.0, 2.0};
   T xy0[2] = {-1.0, -1.0};
@@ -191,11 +189,16 @@ void solve_poisson_problem(std::string prefix, int nxy, int Np_bc) {
 
 int main(int argc, char* argv[]) {
   ArgParser p;
+  p.add_argument<int>("--save-degenerate-stencils", 1);
   p.add_argument<int>("--Np_1d", 4);
   p.add_argument<int>("--Np_bc", 4);
   p.add_argument<int>("--nxy", 6);
   p.add_argument<std::string>("--prefix", {});
   p.parse_args(argc, argv);
+
+  if (p.get<int>("save-degenerate-stencils")) {
+    DegenerateStencilLogger::enable();
+  }
 
   std::string prefix = p.get<std::string>("prefix");
   if (prefix.empty()) {

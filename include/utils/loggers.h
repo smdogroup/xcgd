@@ -29,6 +29,9 @@ class DegenerateStencilLogger {
 
   // elem -> stencil node indices
   inline static std::map<int, std::vector<int>> stencils = {};
+
+  // stencil polynomial order along xyz dimension
+  inline static std::map<int, std::tuple<int, int, int>> stencil_orders = {};
 };
 
 class VandermondeCondLogger {
