@@ -9,14 +9,15 @@ from os.path import join
 import argparse
 
 
-def get_poisson_error(prefix, cmd):
+def get_poisson_l2_error(prefix, cmd):
     subprocess.run(cmd, capture_output=True)
 
     with open(join(prefix, "sol.json")) as f:
         j = json.load(f)
 
     return np.abs(
-        np.linalg.norm(np.array(j["sol"])) / np.linalg.norm(np.array(j["sol_exact"]))
+        np.linalg.norm(np.array(j["sol"]), ord=2)
+        / np.linalg.norm(np.array(j["sol_exact"]), ord=2)
         - 1.0
     )
 
@@ -86,13 +87,6 @@ def annotate_slope(
 def run_experiments(
     Np_1d_list=[2, 4, 6, 8], max_order_drop=2, nxy_list=[8, 16, 32, 64, 128]
 ):
-    fig, ax = plt.subplots()
-
-    ax.set_ylabel("Normalized relative solution error")
-    ax.set_xlabel("$h$")
-    ax.invert_xaxis()
-    ax.grid(which="both")
-
     order = [
         (Np_1d, Np_bc)
         for Np_1d in Np_1d_list
@@ -121,7 +115,7 @@ def run_experiments(
                 f"--prefix={prefix}",
             ]
 
-            err = get_poisson_error(prefix, cmd)
+            err = get_poisson_l2_error(prefix, cmd)
 
             df_data["Np_1d"].append(Np_1d)
             df_data["Np_bc"].append(Np_bc)
@@ -167,6 +161,11 @@ def plot(cases_df):
                 y0, y1 = y.iloc[-2:]
                 annotate_slope(ax, (x0, y0), (x1, y1))
 
+    ax.set_xlabel("Mesh size $h$")
+    ax.set_ylabel(
+        "Normalized relative solution error\n"
+        + r"$|\dfrac{||u||_2^\text{CGD}}{||u||_2^\text{exact}} - 1|$"
+    )
     ax.legend(frameon=False)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
