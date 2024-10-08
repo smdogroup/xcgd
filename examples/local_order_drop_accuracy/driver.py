@@ -8,6 +8,7 @@ import json
 import pandas as pd
 from os.path import join
 import argparse
+from time import time
 
 
 def get_poisson_l2_error(prefix, cmd):
@@ -53,8 +54,6 @@ def annotate_slope(
 
     x1 = 10.0 ** (np.log10(x0) + dx * scale)
     y1 = 10.0 ** (np.log10(y0) + dy * scale)
-
-    print(f"({x0:10.2e}, {y0:10.2e}), ({x1:10.2e}, {y1:10.2e}), slope: {slope:5.2f}")
 
     # Create a right triangle using Polygon patch
     triangle = patches.Polygon(
@@ -104,8 +103,6 @@ def run_experiments(
 
     for Np_1d, Np_bc in order:
         for nxy in nxy_list:
-            print(f"Np_1d: {Np_1d:2d}, Np_bc: {Np_bc:2d}, nxy: {nxy:4d}")
-
             prefix = f"outputs_Np1d_{Np_1d}_Npbc_{Np_bc}_nxy_{nxy}"
             cmd = [
                 "./poisson_order_drop",
@@ -116,7 +113,13 @@ def run_experiments(
                 f"--prefix={prefix}",
             ]
 
+            t1 = time()
             err = get_poisson_l2_error(prefix, cmd)
+            t2 = time()
+
+            print(
+                f"Np_1d: {Np_1d:2d}, Np_bc: {Np_bc:2d}, nxy: {nxy:4d}, execution time: {t2 - t1:.2f} s"
+            )
 
             df_data["Np_1d"].append(Np_1d)
             df_data["Np_bc"].append(Np_bc)
@@ -127,18 +130,18 @@ def run_experiments(
     return pd.DataFrame(df_data)
 
 
-def adjust_plot_lim(ax, xscale=1.2, yscale=1.1):
+def adjust_plot_lim(ax, left=0.0, right=0.2, bottom=0.3, up=0.0):
     xmin, xmax = ax.get_xlim()
     ymin, ymax = ax.get_ylim()
 
     dx = np.log10(xmax) - np.log10(xmin)
     dy = np.log10(ymax) - np.log10(ymin)
 
-    xmin /= 10.0 ** (dx * (xscale - 1.0) * 0.5)
-    xmax *= 10.0 ** (dx * (xscale - 1.0) * 0.5)
+    xmin /= 10.0 ** (dx * left)
+    xmax *= 10.0 ** (dx * right)
 
-    ymin /= 10.0 ** (dy * (yscale - 1.0) * 0.5)
-    ymax *= 10.0 ** (dy * (yscale - 1.0) * 0.5)
+    ymin /= 10.0 ** (dy * bottom)
+    ymax *= 10.0 ** (dy * up)
 
     ax.set_xlim([xmin, xmax])
     ax.set_ylim([ymin, ymax])
@@ -165,15 +168,16 @@ def plot(cases_df):
 
         for j, Np_bc in enumerate(Np_bc_list):
             x = df[df["Np_bc"] == Np_bc]["h"]
+            # x = df[df["Np_bc"] == Np_bc]["nxy"]
             y = df[df["Np_bc"] == Np_bc]["relerr"]
-            ax.loglog(
-                x,
-                y,
-                linestyles[j],
-                color=colors[i],
-                clip_on=False,
-                label=f"p={Np_1d - 1}, drop={Np_1d - Np_bc}",
-            )
+
+            # Get averaged slope
+            slope, _ = np.polyfit(np.log10(x), np.log10(y), deg=1)
+
+            label = f"$p={Np_1d - 1}, p_{{bc}}={Np_bc-1}, \Delta:{slope:.2f}$"
+            ax.loglog(x, y, linestyles[j], color=colors[i], clip_on=False, label=label)
+
+            print(label)
 
             if j == 0:
                 x0, x1 = x.iloc[-2:]
@@ -181,19 +185,19 @@ def plot(cases_df):
                 annotate_slope(ax, (x0, y0), (x1, y1))
 
     ax.set_xlabel("Mesh size $h$")
+    # ax.set_xlabel("number of elements in each dimension")
+
     ax.set_ylabel(
         "Normalized relative solution error\n"
         + r"$|\dfrac{||u||_2^\text{CGD}}{||u||_2^\text{exact}} - 1|$"
     )
-    ax.legend(frameon=False)
+    ax.legend(frameon=False, loc="lower right")
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
 
     adjust_plot_lim(ax)
 
-    plt.savefig("poisson_accuracy_study.pdf")
-
-    return
+    return fig, ax
 
 
 if __name__ == "__main__":
@@ -232,5 +236,17 @@ if __name__ == "__main__":
         df.to_csv("cases_data.csv")
     else:
         df = pd.read_csv(args.csv)
+        drop_column = "Unnamed: 0"
+        if drop_column in df.columns:
+            df = df.drop(columns=[drop_column])
+        df = df.sort_values(
+            ["Np_1d", "Np_bc", "nxy"], ascending=[True, False, True]
+        ).reset_index(drop=True)
 
-    plot(df)
+        # with pd.option_context("display.max_rows", None, "display.max_columns", None):
+        #     print(df)
+        #     exit()
+
+    fig, ax = plot(df)
+    fig.savefig("poisson_accuracy_study.pdf")
+    df.to_csv("poisson_accuracy_study.csv", index=False)
