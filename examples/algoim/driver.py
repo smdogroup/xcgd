@@ -31,3 +31,4 @@ ax.set_aspect("equal", "box")
 ax.legend(frameon=False)
 
 plt.show()
+fig.savefig("quadrature_surface_normals.pdf")
