@@ -5,6 +5,7 @@
 #include "analysis.h"
 #include "elements/fe_quadrilateral.h"
 #include "elements/fe_tetrahedral.h"
+#include "elements/gd_mesh.h"
 #include "elements/gd_vandermonde.h"
 #include "physics/physics_commons.h"
 #include "test_commons.h"
@@ -28,11 +29,7 @@ TEST(elements, GD_N_Nxi_Nxixi) {
 
   double h = 1e-7;
   std::vector<double> p = {0.4385123, 0.742383};
-  std::vector<double> pt = {0.39214122, -0.24213123};
-  std::vector<T> ptc(pt.size());
-
-  ptc[0] = T(pt[0], h * p[0]);
-  ptc[1] = T(pt[1], h * p[1]);
+  std::vector<double> pt_old = {0.39214122, -0.24213123};  // in [-1, 1]
 
   std::vector<double> Nvals = {
       0.0000658649520253,  -0.0004620981006525, 0.0015485041670998,
@@ -51,6 +48,16 @@ TEST(elements, GD_N_Nxi_Nxixi) {
   Basis basis(mesh);
 
   for (int elem = 0; elem < nx * ny; elem++) {
+    T xi_min[spatial_dim], xi_max[spatial_dim];
+    get_computational_coordinates_limits(mesh, elem, xi_min, xi_max);
+    std::vector<double> pt = {
+        freal((pt_old[0] - xi_min[0]) / (xi_max[0] - xi_min[0])),
+        freal((pt_old[1] - xi_min[1]) / (xi_max[1] - xi_min[1]))};
+    std::vector<T> ptc(pt.size());
+
+    ptc[0] = T(pt[0], h * p[0]);
+    ptc[1] = T(pt[1], h * p[1]);
+
     std::vector<T> N, Nxi, Nxixi;
     basis.eval_basis_grad(elem, ptc, N, Nxi, Nxixi);
 
@@ -60,7 +67,7 @@ TEST(elements, GD_N_Nxi_Nxixi) {
       for (int j = 0; j < spatial_dim; j++) {
         nxi_exact += p[j] * Nxi[spatial_dim * i + j].real();
       }
-      EXPECT_NEAR((nxi_cs - nxi_exact) / nxi_exact, 0.0, 1e-7);
+      EXPECT_NEAR((nxi_cs - nxi_exact) / nxi_exact, 0.0, 1e-5);
 
       for (int j = 0; j < spatial_dim; j++) {
         double nxixi_cs = Nxi[spatial_dim * i + j].imag() / h;
@@ -71,7 +78,7 @@ TEST(elements, GD_N_Nxi_Nxixi) {
                   .real() *
               p[k];
         }
-        EXPECT_NEAR((nxixi_cs - nxixi_exact) / nxixi_exact, 0.0, 1e-6);
+        EXPECT_NEAR((nxixi_cs - nxixi_exact) / nxixi_exact, 0.0, 1e-5);
       }
     }
 

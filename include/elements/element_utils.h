@@ -710,13 +710,10 @@ class GDSampler2D final : public QuadratureBase<T> {
                          std::vector<T> &__) const {
     pts.resize(spatial_dim * samples);
 
-    T xymin[2], xymax[2];
-    get_computational_coordinates_limits(mesh, elem, xymin, xymax);
-
     T lxy[2], xy0[2];
     for (int d = 0; d < spatial_dim; d++) {
-      xy0[d] = xymin[d] + t1 * (xymax[d] - xymin[d]);
-      lxy[d] = (1.0 - t1 - t2) * (xymax[d] - xymin[d]);
+      xy0[d] = t1;
+      lxy[d] = (1.0 - t1 - t2);
     }
     int nxy[2] = {samples_1d - 1, samples_1d - 1};
     StructuredGrid2D<T> grid(nxy, lxy, xy0);

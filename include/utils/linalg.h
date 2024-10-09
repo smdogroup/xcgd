@@ -44,8 +44,10 @@ void direct_solve(int n, T A[], T b[]) {
 /**
  * @brief compute inv(A)
  *
- * @param n number of rows/columns
- * @param A matrix stored column by column, stores inv(A) on exit
+ * @param n [in] number of rows/columns
+ * @param A [in, out] matrix stored column by column, stores inv(A) on exit
+ * @param rcond [out] reciprocal condition number
+ * @param norm [in] specifies which norm to use for computing condition number
  * @return info = 0 successful exit, otherwise fail
  */
 template <typename T>

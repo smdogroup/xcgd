@@ -175,14 +175,19 @@ class VandermondeEvaluator {
 
     std::vector<T> xpows(Np_1d), ypows(Np_1d);
 
-    T xloc_min[spatial_dim], xloc_max[spatial_dim];
+    T xloc_min[spatial_dim], xloc_max[spatial_dim], xi_max[spatial_dim];
     mesh.get_elem_node_ranges(elem, xloc_min, xloc_max);
+    get_computational_coordinates_limits(mesh, elem, xi_min, xi_max);
+
+    for (int d = 0; d < spatial_dim; d++) {
+      xi_h[d] = xi_max[d] - xi_min[d];
+    }
 
     for (int i = 0; i < nnodes; i++) {
       T xloc[spatial_dim];
       mesh.get_node_xloc(nodes[i], xloc);
 
-      // make x, y in [-1, 1]
+      // make x, y in the Vandermonde framew, i.e. [-1, 1]^d
       T x = -1.0 + 2.0 * (xloc[0] - xloc_min[0]) / (xloc_max[0] - xloc_min[0]);
       T y = -1.0 + 2.0 * (xloc[1] - xloc_min[1]) / (xloc_max[1] - xloc_min[1]);
 
@@ -204,7 +209,15 @@ class VandermondeEvaluator {
     VandermondeCondLogger::add(elem, cond);
   }
 
-  // Evaluate the shape function and derivatives given a quadrature point
+  /**
+   * @brief Evaluate the shape function and derivatives given a quadrature point
+   *
+   * @tparam T2 numeric type
+   * @param pt [in] quadrature points in the reference frame, i.e. [0, 1]^d
+   * @param N [out] shape function evaluations for each dof
+   * @param Nxi [out] shape function derivatives for each dof
+   * @param Nxixi [out] shape function Hessians for each dof, optional
+   */
   template <typename T2>
   void operator()(const T2* pt, T2* N, T2* Nxi,
                   T2* Nxixi = (T2*)nullptr) const {
@@ -214,12 +227,20 @@ class VandermondeEvaluator {
         dx2pows(Np_1d), dy2pows(Np_1d);
 
     for (int ii = 0; ii < Np_1d; ii++) {
-      xpows[ii] = pow(pt[0], ii);
-      ypows[ii] = pow(pt[1], ii);
-      dxpows[ii] = ii > 0 ? T(ii) * pow(pt[0], ii - 1) : T(0.0);
-      dypows[ii] = ii > 0 ? T(ii) * pow(pt[1], ii - 1) : T(0.0);
-      dx2pows[ii] = ii > 1 ? T(ii) * T(ii - 1) * pow(pt[0], ii - 2) : T(0.0);
-      dy2pows[ii] = ii > 1 ? T(ii) * T(ii - 1) * pow(pt[1], ii - 2) : T(0.0);
+      xpows[ii] = pow(pt[0] * xi_h[0] + xi_min[0], ii);
+      ypows[ii] = pow(pt[1] * xi_h[1] + xi_min[1], ii);
+      dxpows[ii] =
+          ii > 0 ? T(ii) * xi_h[0] * pow(pt[0] * xi_h[0] + xi_min[0], ii - 1)
+                 : T(0.0);
+      dypows[ii] =
+          ii > 0 ? T(ii) * xi_h[1] * pow(pt[1] * xi_h[1] + xi_min[1], ii - 1)
+                 : T(0.0);
+      dx2pows[ii] = ii > 1 ? T(ii) * T(ii - 1) * xi_h[0] * xi_h[0] *
+                                 pow(pt[0] * xi_h[0] + xi_min[0], ii - 2)
+                           : T(0.0);
+      dy2pows[ii] = ii > 1 ? T(ii) * T(ii - 1) * xi_h[1] * xi_h[1] *
+                                 pow(pt[1] * xi_h[1] + xi_min[1], ii - 2)
+                           : T(0.0);
     }
 
     if (N) {
@@ -265,6 +286,7 @@ class VandermondeEvaluator {
   int nnodes;
   std::vector<T> Ck;
   std::vector<std::pair<int, int>> pterms;
+  T xi_min[spatial_dim], xi_h[spatial_dim];
 };
 
 template <typename T, int Np_1d>
@@ -288,18 +310,12 @@ class GDGaussQuadrature2D final : public QuadratureBase<T> {
     int constexpr spatial_dim = Mesh::spatial_dim;
     pts.resize(spatial_dim * num_quad_pts);
     wts.resize(num_quad_pts);
-    T xi_min[spatial_dim], xi_max[spatial_dim];
-    T wt = get_computational_coordinates_limits(mesh, elem, xi_min, xi_max);
-    T cx = xi_min[0];
-    T cy = xi_min[1];
-    T dx = xi_max[0] - cx;
-    T dy = xi_max[1] - cy;
     for (int q = 0; q < num_quad_pts; q++) {  // q = i * Np_1d + j
       int i = q / Np_1d;
       int j = q % Np_1d;
-      pts[q * spatial_dim] = cx + dx * pts_1d[i];
-      pts[q * spatial_dim + 1] = cy + dy * pts_1d[j];
-      wts[q] = wt * wts_1d[i] * wts_1d[j];
+      pts[q * spatial_dim] = pts_1d[i];
+      pts[q * spatial_dim + 1] = pts_1d[j];
+      wts[q] = wts_1d[i] * wts_1d[j];
     }
 
     return num_quad_pts;
@@ -344,15 +360,6 @@ class GDLSFQuadrature2D final : public QuadratureBase<T, quad_type> {
     // this is the element index in lsf mesh
     int cell = mesh.get_elem_cell(elem);
 
-    // Get bounds of the hyperrectangle for both cut mesh and ground grid
-    algoim::uvector<T, spatial_dim> xi_min_lsf, xi_max_lsf;
-    get_computational_coordinates_limits(lsf_mesh, cell, xi_min_lsf.data(),
-                                         xi_max_lsf.data());
-
-    algoim::uvector<T, spatial_dim> xi_min, xi_max;
-    T wcoef = get_computational_coordinates_limits(mesh, elem, xi_min.data(),
-                                                   xi_max.data());
-
     // Create the functor that evaluates the interpolation given an arbitrary
     // point within the computational coordinates
     VandermondeEvaluator<T, GridMesh_> eval(lsf_mesh, cell);
@@ -364,8 +371,7 @@ class GDLSFQuadrature2D final : public QuadratureBase<T, quad_type> {
                                              element_lsf);
 
     // Get quadrature points and weights
-    getQuadrature(xi_min, xi_max, xi_min_lsf, xi_max_lsf, element_lsf, eval,
-                  wcoef, pts, wts, ns);
+    getQuadrature(element_lsf, eval, pts, wts, ns);
 
     return wts.size();
   }
@@ -391,15 +397,6 @@ class GDLSFQuadrature2D final : public QuadratureBase<T, quad_type> {
     // this is the element index in lsf mesh
     int cell = mesh.get_elem_cell(elem);
 
-    // Get bounds of the hyperrectangle for both cut mesh and ground grid
-    algoim::uvector<T, spatial_dim> xi_min_lsf, xi_max_lsf;
-    get_computational_coordinates_limits(lsf_mesh, cell, xi_min_lsf.data(),
-                                         xi_max_lsf.data());
-
-    algoim::uvector<T, spatial_dim> xi_min, xi_max;
-    T wcoef = get_computational_coordinates_limits(mesh, elem, xi_min.data(),
-                                                   xi_max.data());
-
     // Create the functor that evaluates the interpolation given an arbitrary
     // point within the computational coordinates
     VandermondeEvaluator<T, GridMesh_> eval(lsf_mesh, cell);
@@ -411,8 +408,7 @@ class GDLSFQuadrature2D final : public QuadratureBase<T, quad_type> {
                                              element_lsf);
 
     // Get quadrature points and weights
-    getQuadrature(xi_min, xi_max, xi_min_lsf, xi_max_lsf, element_lsf, eval,
-                  wcoef, pts, wts, ns);
+    getQuadrature(element_lsf, eval, pts, wts, ns);
 
     int num_quad_pts = wts.size();
 
@@ -433,8 +429,7 @@ class GDLSFQuadrature2D final : public QuadratureBase<T, quad_type> {
     for (int i = 0; i < max_nnodes_per_element; i++) {
       element_lsf_d[i].dpart(1.0);
       std::vector<T> dpts, dwts, dwns;
-      getQuadrature(xi_min, xi_max, xi_min_lsf, xi_max_lsf, element_lsf_d, eval,
-                    wcoef, dpts, dwts, dwns);
+      getQuadrature(element_lsf_d, eval, dpts, dwts, dwns);
       element_lsf_d[i].dpart(0.0);
 
       if (dwts.size() != num_quad_pts) {
@@ -462,15 +457,12 @@ class GDLSFQuadrature2D final : public QuadratureBase<T, quad_type> {
  private:
   template <typename T2>
   void get_phi_vals(const VandermondeEvaluator<T, GridMesh_>& eval,
-                    const algoim::uvector<T, spatial_dim>& xi_min,
-                    const algoim::uvector<T, spatial_dim>& xi_max,
                     const T2 element_dof[],
                     algoim::xarray<T2, spatial_dim>& phi) const {
     algoim::bernstein::bernsteinInterpolate<spatial_dim>(
-        [&](const algoim::uvector<T2, spatial_dim>& x) {  // x in [0, 1]
+        [&](const algoim::uvector<T2, spatial_dim>& xi) {  // xi in [0, 1]
           T2 N[max_nnodes_per_element];
           // xi in [xi_min, xi_max]
-          algoim::uvector<T2, spatial_dim> xi = xi_min + x * (xi_max - xi_min);
           eval(xi.data(), N, (T2*)nullptr);
           T2 val;
           interp_val_grad<T2, Basis>(element_dof, N, nullptr, &val, nullptr);
@@ -480,13 +472,9 @@ class GDLSFQuadrature2D final : public QuadratureBase<T, quad_type> {
   }
 
   template <typename T2>
-  void getQuadrature(const algoim::uvector<T, spatial_dim>& xi_min,
-                     const algoim::uvector<T, spatial_dim>& xi_max,
-                     const algoim::uvector<T, spatial_dim>& xi_min_lsf,
-                     const algoim::uvector<T, spatial_dim>& xi_max_lsf,
-                     const T2 element_lsf[],
+  void getQuadrature(const T2 element_lsf[],
                      const VandermondeEvaluator<T, GridMesh_>& eval,
-                     const T wcoef, std::vector<T>& pts, std::vector<T>& wts,
+                     std::vector<T>& pts, std::vector<T>& wts,
                      std::vector<T>& ns) const {
     constexpr bool is_dual = is_specialization<T2, duals::dual>::value;
 
@@ -495,7 +483,7 @@ class GDLSFQuadrature2D final : public QuadratureBase<T, quad_type> {
     T2 data[Np_1d * Np_1d];
     algoim::xarray<T2, spatial_dim> phi(
         data, algoim::uvector<int, spatial_dim>(Np_1d, Np_1d));
-    get_phi_vals(eval, xi_min_lsf, xi_max_lsf, element_lsf, phi);
+    get_phi_vals(eval, element_lsf, phi);
 
     pts.clear();
     wts.clear();
@@ -509,45 +497,42 @@ class GDLSFQuadrature2D final : public QuadratureBase<T, quad_type> {
             if (algoim::bernstein::evalBernsteinPoly(phi, x) <= 0.0) {
               for (int d = 0; d < spatial_dim; d++) {
                 if constexpr (is_dual) {
-                  pts.push_back(
-                      (xi_min(d) + x(d) * (xi_max(d) - xi_min(d))).dpart());
+                  pts.push_back(x(d).dpart());
                 } else {
-                  pts.push_back(xi_min(d) + x(d) * (xi_max(d) - xi_min(d)));
+                  pts.push_back(x(d));
                 }
               }
               if constexpr (is_dual) {
-                wts.push_back(wcoef * w.dpart());
+                wts.push_back(w.dpart());
               } else {
-                wts.push_back(wcoef * w);
+                wts.push_back(w);
               }
             }
           });
     } else {  // quad_type == QuadPtType::SURFACE
-      ipquad.integrate_surf(
-          algoim::AutoMixed, Np_1d,
-          [&](const algoim::uvector<T2, spatial_dim>& x, T2 w,
-              const algoim::uvector<T2, spatial_dim>& _) {
-            // Evaluate the gradient on the quadrature point
-            // We assume that ipquad.phi.count() == 1 here
-            algoim::uvector<T2, spatial_dim> g =
-                algoim::bernstein::evalBernsteinPolyGradient(ipquad.phi.poly(0),
-                                                             x);
-            for (int d = 0; d < spatial_dim; d++) {
-              if constexpr (is_dual) {
-                pts.push_back(
-                    (xi_min(d) + x(d) * (xi_max(d) - xi_min(d))).dpart());
-                ns.push_back((g(d) * (xi_max(d) - xi_min(d))).dpart());
-              } else {
-                pts.push_back(xi_min(d) + x(d) * (xi_max(d) - xi_min(d)));
-                ns.push_back(g(d) * (xi_max(d) - xi_min(d)));
-              }
-            }
-            if constexpr (is_dual) {
-              wts.push_back(wcoef * w.dpart());
-            } else {
-              wts.push_back(wcoef * w);
-            }
-          });
+      ipquad.integrate_surf(algoim::AutoMixed, Np_1d,
+                            [&](const algoim::uvector<T2, spatial_dim>& x, T2 w,
+                                const algoim::uvector<T2, spatial_dim>& _) {
+                              // Evaluate the gradient on the quadrature point
+                              // We assume that ipquad.phi.count() == 1 here
+                              algoim::uvector<T2, spatial_dim> g =
+                                  algoim::bernstein::evalBernsteinPolyGradient(
+                                      ipquad.phi.poly(0), x);
+                              for (int d = 0; d < spatial_dim; d++) {
+                                if constexpr (is_dual) {
+                                  pts.push_back(x(d).dpart());
+                                  ns.push_back(g(d).dpart());
+                                } else {
+                                  pts.push_back(x(d));
+                                  ns.push_back(g(d));
+                                }
+                              }
+                              if constexpr (is_dual) {
+                                wts.push_back(w.dpart());
+                              } else {
+                                wts.push_back(w);
+                              }
+                            });
     }
   }
 
