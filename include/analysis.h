@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "a2dcore.h"
+#include "ad/a2dvecnorm.h"
 #include "elements/element_utils.h"
 #include "physics/volume.h"
 #include "sparse_utils/sparse_matrix.h"
@@ -77,7 +78,29 @@ class GalerkinAnalysis final {
           interp_val_grad<T, Basis>(element_x.data(), &N[offset_n], nullptr,
                                     &xq, nullptr);
         }
-        total_energy += physics.energy(wts[j], xq, J, vals, grad);
+
+        T qcoef = T(1.0);
+        if constexpr (Quadrature::quad_type == QuadPtType::SURFACE) {
+          static_assert(spatial_dim == 2,
+                        "This part is not yet implemented properly for 3D");
+          T dt_val[spatial_dim] = {
+              ns[spatial_dim * j + 1],
+              -ns[spatial_dim * j]};  // TODO: make this general for 3d
+
+          A2D::Mat<T, spatial_dim, spatial_dim> JTJ;
+          A2D::Vec<T, spatial_dim> dt(dt_val);
+          A2D::Vec<T, spatial_dim> JTJdt;
+          T detJ, dot, qcoef;
+
+          A2D::MatMatMult<A2D::MatOp::TRANSPOSE, A2D::MatOp::NORMAL>(J, J, JTJ);
+          A2D::MatDet(J, detJ);
+          A2D::MatVecMult(JTJ, dt, JTJdt);
+          A2D::VecDot(dt, JTJdt, qcoef);
+          A2D::VecDot(dt, dt, dot);
+          qcoef = sqrt(qcoef / dot) / detJ;
+        }
+
+        total_energy += physics.energy(qcoef * wts[j], xq, J, vals, grad);
       }
     }
 

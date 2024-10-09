@@ -26,6 +26,8 @@ if(CMAKE_BUILD_TYPE MATCHES Debug)
   add_definitions(-DXCGD_DEBUG_MODE)
 endif()
 
+# add_compile_options(-Og)
+
 # Dependencies
 include(cmake/utils.cmake)
 check_path_and_inform(FATAL_ERROR A2D ${XCGD_A2D_DIR} XCGD_A2D_DIR)

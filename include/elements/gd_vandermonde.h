@@ -314,10 +314,8 @@ class GDGaussQuadrature2D final : public QuadratureBase<T> {
 template <typename T, class Mesh>
 class GDBasis2D;
 
-enum class LSFQuadType { INNER, SURFACE };
-
-template <typename T, int Np_1d>
-class GDLSFQuadrature2D final : public QuadratureBase<T> {
+template <typename T, int Np_1d, QuadPtType quad_type = QuadPtType::INNER>
+class GDLSFQuadrature2D final : public QuadratureBase<T, quad_type> {
  private:
   // algoim limit, see gaussquad.hpp
   static_assert(Np_1d <= algoim::GaussQuad::p_max);  // algoim limit
@@ -329,9 +327,8 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
   constexpr static int max_nnodes_per_element = Basis::max_nnodes_per_element;
 
  public:
-  GDLSFQuadrature2D(const CutMesh_& mesh,
-                    LSFQuadType quad_type = LSFQuadType::INNER)
-      : mesh(mesh), lsf_mesh(mesh.get_lsf_mesh()), quad_type(quad_type) {}
+  GDLSFQuadrature2D(const CutMesh_& mesh)
+      : mesh(mesh), lsf_mesh(mesh.get_lsf_mesh()) {}
 
   /**
    * @brief Get the quadrature points and weights
@@ -505,7 +502,7 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
     ns.clear();
 
     algoim::ImplicitPolyQuadrature<spatial_dim, T2> ipquad(phi);
-    if (quad_type == LSFQuadType::INNER) {
+    if constexpr (quad_type == QuadPtType::INNER) {
       ipquad.integrate(
           algoim::AutoMixed, Np_1d,
           [&](const algoim::uvector<T2, spatial_dim>& x, T2 w) {
@@ -525,7 +522,7 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
               }
             }
           });
-    } else {  // quad_type == LSFQuadType::SURFACE
+    } else {  // quad_type == QuadPtType::SURFACE
       ipquad.integrate_surf(
           algoim::AutoMixed, Np_1d,
           [&](const algoim::uvector<T2, spatial_dim>& x, T2 w,
@@ -560,8 +557,6 @@ class GDLSFQuadrature2D final : public QuadratureBase<T> {
 
   // Mesh for the LSF dof. All grid verts are dof nodes.
   const GridMesh_& lsf_mesh;
-
-  LSFQuadType quad_type;
 };
 
 /**

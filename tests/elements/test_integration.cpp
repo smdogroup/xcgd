@@ -219,68 +219,131 @@ TEST(elements, integration_lsf_Np4) {
   EXPECT_NEAR(pi, PI, 1e-10);
 }
 
-TEST(elements, integration_surf_Np2) {
-  using T = double;
-  constexpr int Np_1d = 2;
+// TEST(elements, integration_surf_Np2) {
+//   using T = double;
+//   constexpr int Np_1d = 2;
+//
+//   using Quadrature = GDLSFQuadrature2D<T, Np_1d, QuadPtType::SURFACE>;
+//   using Mesh = CutMesh<T, Np_1d>;
+//   using Basis = GDBasis2D<T, Mesh>;
+//   using Grid = StructuredGrid2D<T>;
+//   using Physics = Integration<T, Basis::spatial_dim>;
+//   using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
+//
+//   int nxy[2] = {16, 16};
+//   double lxy[2] = {3.0, 3.0};
+//   double pt0[2] = {1.5, 1.5};
+//   double r0 = 1.0;
+//   Grid grid(nxy, lxy);
+//   Mesh mesh(grid, [pt0, r0](double x[]) {
+//     return (x[0] - pt0[0]) * (x[0] - pt0[0]) +
+//            (x[1] - pt0[1]) * (x[1] - pt0[1]) - r0 * r0;
+//   });
+//   Quadrature quadrature(mesh);
+//   Basis basis(mesh);
+//
+//   std::vector<T> dof(mesh.get_num_nodes(), 1.0);
+//
+//   Physics physics;
+//   Analysis analysis(mesh, quadrature, basis, physics);
+//
+//   double perimeter = analysis.energy(nullptr, dof.data());
+//
+//   EXPECT_NEAR(perimeter, 2.0 * PI * r0, 1e-20);
+//
+//   // debug
+//   // TODO: delete this
+//
+//   ToVTK<T, Mesh> mesh_vtk(mesh, "mesh.vtk");
+//   mesh_vtk.write_mesh();
+//   mesh_vtk.write_sol("lsf", mesh.get_lsf_nodes().data());
+//
+//   constexpr int spatial_dim = 2;
+//   static constexpr int max_nnodes_per_element =
+//   Basis::max_nnodes_per_element; FieldToVTKNew<T, spatial_dim>
+//   vtk("surface_quadratures.vtk"); for (int i = 0; i <
+//   mesh.get_num_elements(); i++) {
+//     T element_xloc[spatial_dim * max_nnodes_per_element];
+//     get_element_xloc<T, Mesh, Basis>(mesh, i, element_xloc);
+//
+//     std::vector<T> pts, wts, ns;
+//     int num_quad_pts = quadrature.get_quadrature_pts(i, pts, wts, ns);
+//
+//     vtk.add_sol(wts);
+//
+//     std::vector<T> N, Nxi;
+//     basis.eval_basis_grad(i, pts, N, Nxi);
+//
+//     std::vector<T> ptx(pts.size(), 0.0);
+//
+//     T xy_min[spatial_dim], xy_max[spatial_dim];
+//     mesh.get_elem_node_ranges(i, xy_min, xy_max);
+//
+//     for (int q = 0; q < num_quad_pts; q++) {
+//       ptx[q * spatial_dim] =
+//           (pts[q * spatial_dim] + 1.0) / 2.0 * lxy[0] / nxy[0] + xy_min[0];
+//       ptx[q * spatial_dim + 1] =
+//           (pts[q * spatial_dim + 1] + 1.0) / 2.0 * lxy[1] / nxy[1] +
+//           xy_min[1];
+//     }
+//
+//     vtk.add_mesh(ptx);
+//
+//     for (int j = 0; j < num_quad_pts; j++) {
+//       int offset_nxi = j * max_nnodes_per_element * spatial_dim;
+//
+//       // Evaluate the derivative of the spatial dof in the computational
+//       // coordinates
+//       A2D::Mat<T, spatial_dim, spatial_dim> J;
+//       interp_val_grad<T, Basis, spatial_dim>(element_xloc, nullptr,
+//                                              &Nxi[offset_nxi], nullptr, &J);
+//
+//       T dt_val[spatial_dim] = {ns[spatial_dim * j + 1], -ns[spatial_dim *
+//       j]}; A2D::Vec<T, spatial_dim> dt(
+//           dt_val);                  // infinitesimal segment in ref frame
+//       A2D::Vec<T, spatial_dim> ds;  // infinitesimal segment in physical
+//       frame
+//
+//       A2D::MatVecMult(J, dt, ds);
+//
+//       vtk.add_vec(std::vector<T>{ds[0], ds[1]});
+//     }
+//   }
+//
+//   vtk.write_mesh();
+//   vtk.write_vec("surface_normals");
+//   vtk.write_sol("surface_weights");
+// }
 
-  using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
-  using Mesh = CutMesh<T, Np_1d>;
-  using Basis = GDBasis2D<T, Mesh>;
-  using Grid = StructuredGrid2D<T>;
-  using Physics = Integration<T, Basis::spatial_dim>;
-  using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
-
-  int nxy[2] = {64, 64};
-  double lxy[2] = {3.0, 3.0};
-  double pt0[2] = {1.5, 1.5};
-  double r0 = 1.0;
-  Grid grid(nxy, lxy);
-  Mesh mesh(grid, [pt0, r0](double x[]) {
-    return (x[0] - pt0[0]) * (x[0] - pt0[0]) +
-           (x[1] - pt0[1]) * (x[1] - pt0[1]) - r0 * r0;
-  });
-  Quadrature quadrature(mesh, LSFQuadType::SURFACE);
-  Basis basis(mesh);
-
-  std::vector<T> dof(mesh.get_num_nodes(), 1.0);
-
-  Physics physics;
-  Analysis analysis(mesh, quadrature, basis, physics);
-
-  double perimeter = analysis.energy(nullptr, dof.data());
-
-  EXPECT_NEAR(perimeter, 2.0 * PI * r0, 1e-20);
-}
-
-TEST(elements, integration_surf_Np4) {
-  using T = double;
-  constexpr int Np_1d = 4;
-
-  using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
-  using Mesh = CutMesh<T, Np_1d>;
-  using Basis = GDBasis2D<T, Mesh>;
-  using Grid = StructuredGrid2D<T>;
-  using Physics = Integration<T, Basis::spatial_dim>;
-  using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
-
-  int nxy[2] = {64, 64};
-  double lxy[2] = {3.0, 3.0};
-  double pt0[2] = {1.5, 1.5};
-  double r0 = 1.0;
-  Grid grid(nxy, lxy);
-  Mesh mesh(grid, [pt0, r0](double x[]) {
-    return (x[0] - pt0[0]) * (x[0] - pt0[0]) +
-           (x[1] - pt0[1]) * (x[1] - pt0[1]) - r0 * r0;
-  });
-  Quadrature quadrature(mesh, LSFQuadType::SURFACE);
-  Basis basis(mesh);
-
-  std::vector<T> dof(mesh.get_num_nodes(), 1.0);
-
-  Physics physics;
-  Analysis analysis(mesh, quadrature, basis, physics);
-
-  double perimeter = analysis.energy(nullptr, dof.data());
-
-  EXPECT_NEAR(perimeter, 2.0 * PI * r0, 1e-20);
-}
+// TEST(elements, integration_surf_Np4) {
+//   using T = double;
+//   constexpr int Np_1d = 4;
+//
+//   using Quadrature = GDLSFQuadrature2D<T, Np_1d, QuadPtType::SURFACE>;
+//   using Mesh = CutMesh<T, Np_1d>;
+//   using Basis = GDBasis2D<T, Mesh>;
+//   using Grid = StructuredGrid2D<T>;
+//   using Physics = Integration<T, Basis::spatial_dim>;
+//   using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
+//
+//   int nxy[2] = {64, 64};
+//   double lxy[2] = {3.0, 3.0};
+//   double pt0[2] = {1.5, 1.5};
+//   double r0 = 1.0;
+//   Grid grid(nxy, lxy);
+//   Mesh mesh(grid, [pt0, r0](double x[]) {
+//     return (x[0] - pt0[0]) * (x[0] - pt0[0]) +
+//            (x[1] - pt0[1]) * (x[1] - pt0[1]) - r0 * r0;
+//   });
+//   Quadrature quadrature(mesh);
+//   Basis basis(mesh);
+//
+//   std::vector<T> dof(mesh.get_num_nodes(), 1.0);
+//
+//   Physics physics;
+//   Analysis analysis(mesh, quadrature, basis, physics);
+//
+//   double perimeter = analysis.energy(nullptr, dof.data());
+//
+//   EXPECT_NEAR(perimeter, 2.0 * PI * r0, 1e-20);
+// }

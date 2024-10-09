@@ -129,10 +129,13 @@ class GDMeshBase : public MeshBase<T, 2, Np_1d_ * Np_1d_, 4> {
   const Grid& grid;
 };
 
+enum class QuadPtType { INNER, SURFACE };
+
 // A quadrature class needs to implement the following method
-template <typename T>
+template <typename T, QuadPtType quad_type_ = QuadPtType::INNER>
 class QuadratureBase {
  public:
+  static constexpr QuadPtType quad_type = quad_type_;
   virtual int get_quadrature_pts(int elem, std::vector<T>& pts,
                                  std::vector<T>& wts,
                                  std::vector<T>& optional_wns) const = 0;
