@@ -370,17 +370,17 @@ class FieldToVTKNew {
     xloc_scalars.insert(xloc_scalars.end(), xloc.begin(), xloc.end());
   }
 
-  void add_sol(const std::vector<T>& vals) {
-    scalars.insert(scalars.end(), vals.begin(), vals.end());
+  void add_sol(const std::string name, const std::vector<T>& vals) {
+    scalars[name].insert(scalars[name].end(), vals.begin(), vals.end());
   }
 
-  void reset_sol() { scalars.clear(); }
+  void reset_sol(const std::string name) { scalars[name].clear(); }
 
-  void add_vec(const std::vector<T>& vec) {
-    vectors.insert(vectors.end(), vec.begin(), vec.end());
+  void add_vec(const std::string name, const std::vector<T>& vec) {
+    vectors[name].insert(vectors[name].end(), vec.begin(), vec.end());
   }
 
-  void reset_vec() { vectors.clear(); }
+  void reset_vec(const std::string name) { vectors[name].clear(); }
 
   void write_mesh() {
     int nverts = xloc_scalars.size() / spatial_dim;
@@ -398,13 +398,14 @@ class FieldToVTKNew {
   }
 
   void write_sol(const std::string sol_name) {
-    int nverts = scalars.size();
+    int nverts = scalars[sol_name].size();
     if (nverts * spatial_dim != xloc_scalars.size()) {
       char msg[256];
       std::snprintf(msg, 256,
                     "incompatible scalars (size %d) and xloc_scalars (size "
                     "%d) for the %d dimentional problem",
-                    (int)scalars.size(), (int)xloc_scalars.size(), spatial_dim);
+                    (int)scalars[sol_name].size(), (int)xloc_scalars.size(),
+                    spatial_dim);
       throw std::runtime_error(msg);
     }
 
@@ -415,19 +416,20 @@ class FieldToVTKNew {
 
     std::fprintf(fp, "SCALARS %s double 1\n", sol_name.c_str());
     std::fprintf(fp, "LOOKUP_TABLE default\n");
-    for (T s : scalars) {
+    for (T s : scalars[sol_name]) {
       write_real_val(fp, s);
       std::fprintf(fp, "\n");
     }
   }
 
   void write_vec(const std::string sol_name) {
-    if (vectors.size() != xloc_scalars.size()) {
+    if (vectors[sol_name].size() != xloc_scalars.size()) {
       char msg[256];
       std::snprintf(msg, 256,
                     "incompatible vectors (size %d) and xloc_scalars (size "
                     "%d) for the %d dimentional problem",
-                    (int)vectors.size(), (int)xloc_scalars.size(), spatial_dim);
+                    (int)vectors[sol_name].size(), (int)xloc_scalars.size(),
+                    spatial_dim);
       throw std::runtime_error(msg);
     }
 
@@ -441,13 +443,13 @@ class FieldToVTKNew {
 
     for (int i = 0; i < nverts; i++) {
       if constexpr (spatial_dim == 2) {
-        write_real_val(fp, vectors[spatial_dim * i]);
-        write_real_val(fp, vectors[spatial_dim * i + 1]);
+        write_real_val(fp, vectors[sol_name][spatial_dim * i]);
+        write_real_val(fp, vectors[sol_name][spatial_dim * i + 1]);
         write_real_val(fp, 0.0);
       } else {
-        write_real_val(fp, vectors[spatial_dim * i]);
-        write_real_val(fp, vectors[spatial_dim * i + 1]);
-        write_real_val(fp, vectors[spatial_dim * i + 2]);
+        write_real_val(fp, vectors[sol_name][spatial_dim * i]);
+        write_real_val(fp, vectors[sol_name][spatial_dim * i + 1]);
+        write_real_val(fp, vectors[sol_name][spatial_dim * i + 2]);
       }
       std::fprintf(fp, "\n");
     }
@@ -458,8 +460,8 @@ class FieldToVTKNew {
  private:
   std::FILE* fp;
   std::vector<T> xloc_scalars;
-  std::vector<T> scalars;
-  std::vector<T> vectors;
+  std::map<std::string, std::vector<T>> scalars;
+  std::map<std::string, std::vector<T>> vectors;
 
   bool vtk_has_nodal_sol_header = false;
 };

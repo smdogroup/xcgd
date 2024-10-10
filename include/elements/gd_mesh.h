@@ -630,11 +630,10 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
  * @param elem element index
  * @param xi_min output, lower bounds of computational coordinates
  * @param xi_max output, upper bounds of computational coordinates
- * @return T area ratio
  */
 template <typename T, class Mesh>
-T get_computational_coordinates_limits(const Mesh& mesh, int elem, T* xi_min,
-                                       T* xi_max) {
+void get_computational_coordinates_limits(const Mesh& mesh, int elem, T* xi_min,
+                                          T* xi_max) {
   static_assert(Mesh::is_gd_mesh, "function only works with a GD mesh");
   int constexpr spatial_dim = Mesh::spatial_dim;
   T xy_min[spatial_dim], xy_max[spatial_dim];
@@ -644,7 +643,6 @@ T get_computational_coordinates_limits(const Mesh& mesh, int elem, T* xi_min,
 
   T hx = (uv_max[0] - uv_min[0]) / (xy_max[0] - xy_min[0]);
   T hy = (uv_max[1] - uv_min[1]) / (xy_max[1] - xy_min[1]);
-  T wcoef = 4.0 * hx * hy;
 
   T cx = (2.0 * uv_min[0] - xy_min[0] - xy_max[0]) / (xy_max[0] - xy_min[0]);
   T dx = 2.0 * hx;
@@ -655,8 +653,6 @@ T get_computational_coordinates_limits(const Mesh& mesh, int elem, T* xi_min,
   xi_min[1] = cy;
   xi_max[0] = cx + dx;
   xi_max[1] = cy + dy;
-
-  return wcoef;
 }
 
 /**

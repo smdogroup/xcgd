@@ -75,13 +75,13 @@ void quadratures_multipoly() {
   FieldToVTKNew<T, spatial_dim> vtk_inner("quadratures_multipoly_inner.vtk");
   vtk_inner.add_mesh(pts_inner);
   vtk_inner.write_mesh();
-  vtk_inner.add_sol(w_inner);
+  vtk_inner.add_sol("w_inner", w_inner);
   vtk_inner.write_sol("w_inner");
 
   FieldToVTKNew<T, spatial_dim> vtk_outer("quadratures_multipoly_outer.vtk");
   vtk_outer.add_mesh(pts_outer);
   vtk_outer.write_mesh();
-  vtk_outer.add_sol(w_outer);
+  vtk_outer.add_sol("w_outer", w_outer);
   vtk_outer.write_sol("w_outer");
 }
 

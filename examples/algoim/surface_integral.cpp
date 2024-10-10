@@ -4,14 +4,15 @@
 #include "utils/json.h"
 #include "utils/vtk.h"
 
-template <int Np_1d>
-void quadratures_multipoly() {
+int main() {
+  constexpr int Np_1d = 5;
   using T = double;
   constexpr int spatial_dim = 2;
 
   // Define the LSF functor
   auto phi_functor = [](const algoim::uvector<T, spatial_dim>& x) -> T {
-    return x(0) * x(0) + 2.0 * x(1) * x(1) - 1.0;
+    return x(0) * x(0) + x(1) * x(1) - 1.0;
+    // return x(0) + x(1) - 0.5;
   };
 
   // Set bounds of the hyperrectangle
@@ -34,22 +35,24 @@ void quadratures_multipoly() {
   std::vector<algoim::uvector<T, spatial_dim>> qpts, qns;
   std::vector<T> ws;
 
-  ipquad.integrate_surf(
-      algoim::AutoMixed, Np_1d,
-      [&](const algoim::uvector<T, spatial_dim>& x, T w,
-          const algoim::uvector<T, spatial_dim>& _) {
-        qpts.push_back(x);
-        ws.push_back(w);
+  ipquad.integrate_surf(algoim::AutoMixed, Np_1d,
+                        [&](const algoim::uvector<T, spatial_dim>& x, T w,
+                            const algoim::uvector<T, spatial_dim>& wn) {
+                          qpts.push_back(x);
+                          ws.push_back(w);
 
-        // Evaluate the gradient on the quadrature point
-        // We assume that ipquad.phi.count() == 1 here
-        algoim::uvector<T, spatial_dim> g =
-            algoim::bernstein::evalBernsteinPolyGradient(ipquad.phi.poly(0), x);
-        qns.push_back(g);
+                          // Evaluate the gradient on the quadrature point
+                          // We assume that ipquad.phi.count() == 1 here
+                          algoim::uvector<T, spatial_dim> g =
+                              algoim::bernstein::evalBernsteinPolyGradient(
+                                  ipquad.phi.poly(0), x);
+                          qns.push_back(g);
 
-        std::printf("pt: (%10.5f, %10.5f), gradient: (%10.5f, %10.5f)\n", x(0),
-                    x(1), g(0), g(1));
-      });
+                          std::printf(
+                              "pt: (%12.5e, %12.5e), gradient: (%12.5e, "
+                              "%12.5e), w: %12.5e, wn: (%12.5e, %12.5e)\n",
+                              x(0), x(1), g(0), g(1), w, wn(0), wn(1));
+                        });
 
   std::vector<T> pts, ns;
   std::vector<std::vector<T>> qpts_json(qpts.size()), qns_json(qns.size());
@@ -86,11 +89,9 @@ void quadratures_multipoly() {
   vtk.add_mesh(pts);
   vtk.write_mesh();
 
-  vtk.add_sol(ws);
+  vtk.add_sol("weights", ws);
   vtk.write_sol("weights");
 
-  vtk.add_vec(ns);
+  vtk.add_vec("quadrature_surface_norms", ns);
   vtk.write_vec("quadrature_surface_norms");
 }
-
-int main() { quadratures_multipoly<3>(); }

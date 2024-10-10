@@ -90,14 +90,13 @@ class GalerkinAnalysis final {
           A2D::Mat<T, spatial_dim, spatial_dim> JTJ;
           A2D::Vec<T, spatial_dim> dt(dt_val);
           A2D::Vec<T, spatial_dim> JTJdt;
-          T detJ, dot, qcoef;
+          T detJ;
 
           A2D::MatMatMult<A2D::MatOp::TRANSPOSE, A2D::MatOp::NORMAL>(J, J, JTJ);
           A2D::MatDet(J, detJ);
           A2D::MatVecMult(JTJ, dt, JTJdt);
           A2D::VecDot(dt, JTJdt, qcoef);
-          A2D::VecDot(dt, dt, dot);
-          qcoef = sqrt(qcoef / dot) / detJ;
+          qcoef = sqrt(qcoef) / detJ;
         }
 
         total_energy += physics.energy(qcoef * wts[j], xq, J, vals, grad);

@@ -367,8 +367,9 @@ class GDLSFQuadrature2D final : public QuadratureBase<T, quad_type> {
     // Get element LSF dofs
     const std::vector<T>& lsf_dof = mesh.get_lsf_dof();
     T element_lsf[max_nnodes_per_element];
-    get_element_vars<T, 1, GridMesh_, Basis>(lsf_mesh, cell, lsf_dof.data(),
-                                             element_lsf);
+    constexpr int lsf_dim = 1;
+    get_element_vars<T, lsf_dim, GridMesh_, Basis>(lsf_mesh, cell,
+                                                   lsf_dof.data(), element_lsf);
 
     // Get quadrature points and weights
     getQuadrature(element_lsf, eval, pts, wts, ns);
@@ -404,8 +405,9 @@ class GDLSFQuadrature2D final : public QuadratureBase<T, quad_type> {
     // Get element LSF dofs
     const std::vector<T>& lsf_dof = mesh.get_lsf_dof();
     T element_lsf[max_nnodes_per_element];
-    get_element_vars<T, 1, GridMesh_, Basis>(lsf_mesh, cell, lsf_dof.data(),
-                                             element_lsf);
+    constexpr int lsf_dim = 1;
+    get_element_vars<T, lsf_dim, GridMesh_, Basis>(lsf_mesh, cell,
+                                                   lsf_dof.data(), element_lsf);
 
     // Get quadrature points and weights
     getQuadrature(element_lsf, eval, pts, wts, ns);
@@ -518,6 +520,17 @@ class GDLSFQuadrature2D final : public QuadratureBase<T, quad_type> {
                               algoim::uvector<T2, spatial_dim> g =
                                   algoim::bernstein::evalBernsteinPolyGradient(
                                       ipquad.phi.poly(0), x);
+
+                              // Normalize g
+                              T2 nrm = T2(0.0);
+                              for (int d = 0; d < spatial_dim; d++) {
+                                nrm += g(d) * g(d);
+                              }
+                              nrm = sqrt(nrm);
+                              for (int d = 0; d < spatial_dim; d++) {
+                                g(d) = g(d) / nrm;
+                              }
+
                               for (int d = 0; d < spatial_dim; d++) {
                                 if constexpr (is_dual) {
                                   pts.push_back(x(d).dpart());
