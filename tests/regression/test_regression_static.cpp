@@ -98,7 +98,7 @@ void test_regression_static(json j) {
 
 TEST(regression, static) {
   using T = double;
-  std::string json_path = "./prob.json";
+  std::string json_path = "./data_static.json";
 
   json j = read_json(json_path);
   switch (int(j["Np_1d"])) {
