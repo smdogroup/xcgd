@@ -339,11 +339,11 @@ class GalerkinAnalysis final {
         }
 
         // Evaluate the residuals at the quadrature points
-        typename Physics::x_t x_val{};
+        typename Physics::dv_t dv_val{};
         physics.adjoint_jacobian_product(wts[j], xq, J, vals, grad, psi_vals,
-                                         psi_grad, x_val);
+                                         psi_grad, dv_val);
 
-        add_jac_adj_product<T, Basis>(&N[offset_n], x_val, element_dfdx);
+        add_jac_adj_product<T, Basis>(&N[offset_n], dv_val, element_dfdx);
       }
 
       add_element_dfdx<T, Mesh, Basis>(mesh, i, element_dfdx, dfdx);
