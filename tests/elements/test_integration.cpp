@@ -219,10 +219,8 @@ TEST(elements, integration_lsf_Np4) {
   EXPECT_NEAR(pi, PI, 1e-10);
 }
 
-TEST(elements, integration_surf_Np2) {
-  using T = double;
-  constexpr int Np_1d = 2;
-
+template <typename T, int Np_1d, class Func>
+T compute_surface_length(std::string name, const Func& lsf_func) {
   using Quadrature = GDLSFQuadrature2D<T, Np_1d, QuadPtType::SURFACE>;
   using Mesh = CutMesh<T, Np_1d>;
   using Basis = GDBasis2D<T, Mesh>;
@@ -232,13 +230,9 @@ TEST(elements, integration_surf_Np2) {
 
   int nxy[2] = {16, 16};
   double lxy[2] = {3.0, 3.0};
-  double pt0[2] = {1.5, 1.5};
-  double r0 = 1.0;
-  Grid grid(nxy, lxy);
-  Mesh mesh(grid, [pt0, r0](double x[]) {
-    return (x[0] - pt0[0]) * (x[0] - pt0[0]) +
-           (x[1] - pt0[1]) * (x[1] - pt0[1]) - r0 * r0;
-  });
+  double xy0[2] = {-1.5, -1.5};
+  Grid grid(nxy, lxy, xy0);
+  Mesh mesh(grid, lsf_func);
   Quadrature quadrature(mesh);
   Basis basis(mesh);
 
@@ -247,21 +241,17 @@ TEST(elements, integration_surf_Np2) {
   Physics physics;
   Analysis analysis(mesh, quadrature, basis, physics);
 
-  double perimeter = analysis.energy(nullptr, dof.data());
-
-  double tol = 0.05;  // Very loose tolerance, as the perimeter evaluation with
-                      // Np=2 is not precise
-  EXPECT_NEAR(perimeter, 2.0 * PI * r0, tol);
+  T perimeter = analysis.energy(nullptr, dof.data());
 
 #ifdef XCGD_DEBUG_MODE
 
-  ToVTK<T, Mesh> mesh_vtk(mesh, "mesh.vtk");
+  ToVTK<T, Mesh> mesh_vtk(mesh, name + "_mesh.vtk");
   mesh_vtk.write_mesh();
   mesh_vtk.write_sol("lsf", mesh.get_lsf_nodes().data());
 
   constexpr int spatial_dim = 2;
   static constexpr int max_nnodes_per_element = Basis::max_nnodes_per_element;
-  FieldToVTKNew<T, spatial_dim> vtk("surface_quadratures.vtk");
+  FieldToVTKNew<T, spatial_dim> vtk(name + "_surface_quadratures.vtk");
 
   for (int i = 0; i < mesh.get_num_elements(); i++) {
     T element_xloc[spatial_dim * max_nnodes_per_element];
@@ -278,7 +268,7 @@ TEST(elements, integration_surf_Np2) {
     std::vector<T> ptx(pts.size(), 0.0);
 
     T xy_min[spatial_dim], xy_max[spatial_dim];
-    mesh.get_elem_node_ranges(i, xy_min, xy_max);
+    mesh.get_elem_vert_ranges(i, xy_min, xy_max);
 
     for (int q = 0; q < num_quad_pts; q++) {
       ptx[q * spatial_dim] = pts[q * spatial_dim] * lxy[0] / nxy[0] + xy_min[0];
@@ -327,37 +317,64 @@ TEST(elements, integration_surf_Np2) {
   vtk.write_sol("detJ");
   vtk.write_sol("ds_over_dt");
 #endif
+
+  return perimeter;
 }
 
-TEST(elements, integration_surf_Np4) {
-  using T = double;
-  constexpr int Np_1d = 4;
+TEST(elements, surf_integration_circle_Np2) {
+  double perimeter = compute_surface_length<double, 2>(
+      "circle_Np2", [](double x[]) { return x[0] * x[0] + x[1] * x[1] - 1.0; });
+  double perimeter_exact = 2.0 * PI;
 
-  using Quadrature = GDLSFQuadrature2D<T, Np_1d, QuadPtType::SURFACE>;
-  using Mesh = CutMesh<T, Np_1d>;
-  using Basis = GDBasis2D<T, Mesh>;
-  using Grid = StructuredGrid2D<T>;
-  using Physics = Integration<T, Basis::spatial_dim>;
-  using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
+  double tol = 0.05;  // Very loose tolerance, as the perimeter evaluation using
+                      // Np=2 is not precise
+  EXPECT_NEAR(perimeter, perimeter_exact, tol);
+}
 
-  int nxy[2] = {64, 64};
-  double lxy[2] = {3.0, 3.0};
-  double pt0[2] = {1.5, 1.5};
-  double r0 = 1.0;
-  Grid grid(nxy, lxy);
-  Mesh mesh(grid, [pt0, r0](double x[]) {
-    return (x[0] - pt0[0]) * (x[0] - pt0[0]) +
-           (x[1] - pt0[1]) * (x[1] - pt0[1]) - r0 * r0;
-  });
-  Quadrature quadrature(mesh);
-  Basis basis(mesh);
+TEST(elements, surf_integration_circle_Np4) {
+  double perimeter = compute_surface_length<double, 4>(
+      "circle_Np4", [](double x[]) { return x[0] * x[0] + x[1] * x[1] - 1.0; });
+  double perimeter_exact = 2.0 * PI;
 
-  std::vector<T> dof(mesh.get_num_nodes(), 1.0);
+  double tol = 1e-8;
+  EXPECT_NEAR(perimeter, perimeter_exact, tol);
+}
 
-  Physics physics;
-  Analysis analysis(mesh, quadrature, basis, physics);
+TEST(elements, surf_integration_circle_Np6) {
+  double perimeter = compute_surface_length<double, 6>(
+      "circle_Np6", [](double x[]) { return x[0] * x[0] + x[1] * x[1] - 1.0; });
+  double perimeter_exact = 2.0 * PI;
 
-  double perimeter = analysis.energy(nullptr, dof.data());
+  double tol = 1e-12;
+  EXPECT_NEAR(perimeter, perimeter_exact, tol);
+}
 
-  EXPECT_NEAR(perimeter, 2.0 * PI * r0, 1e-12);
+TEST(elements, surf_integration_ellipse_Np2) {
+  double perimeter = compute_surface_length<double, 2>(
+      "ellipse_Np2",
+      [](double x[]) { return x[0] * x[0] + x[1] * x[1] / 0.7225 - 1.0; });
+  double perimeter_exact = 5.821502480253473;
+
+  double tol = 0.05;
+  EXPECT_NEAR(perimeter, perimeter_exact, tol);
+}
+
+TEST(elements, surf_integration_ellipse_Np4) {
+  double perimeter = compute_surface_length<double, 4>(
+      "ellipse_Np4",
+      [](double x[]) { return x[0] * x[0] + x[1] * x[1] / 0.7225 - 1.0; });
+  double perimeter_exact = 5.821502480253473;
+
+  double tol = 1e-6;
+  EXPECT_NEAR(perimeter, perimeter_exact, tol);
+}
+
+TEST(elements, surf_integration_ellipse_Np6) {
+  double perimeter = compute_surface_length<double, 6>(
+      "ellipse_Np6",
+      [](double x[]) { return x[0] * x[0] + x[1] * x[1] / 0.7225 - 1.0; });
+  double perimeter_exact = 5.821502480253473;
+
+  double tol = 1e-10;
+  EXPECT_NEAR(perimeter, perimeter_exact, tol);
 }
