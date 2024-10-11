@@ -15,15 +15,17 @@ class HelmholtzPhysics final : public PhysicsBase<T, spatial_dim, 1, 1> {
 
   HelmholtzPhysics(T r0) : r0square(r0 * r0) {}
 
-  T energy(T weight, T x, const A2D::Mat<T, spatial_dim, spatial_dim>& J,
-           T& val, A2D::Vec<T, spatial_dim>& grad) const {
+  T energy(T weight, T x, A2D::Vec<T, spatial_dim>& _,
+           A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
+           A2D::Vec<T, spatial_dim>& grad) const {
     T detJ, dot;
     A2D::MatDet(J, detJ);
     A2D::VecDot(grad, grad, dot);
     return 0.5 * weight * detJ * (r0square * dot + val * val - 2.0 * val * x);
   }
 
-  void residual(T weight, T x, A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
+  void residual(T weight, T x, A2D::Vec<T, spatial_dim>& _,
+                A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
                 A2D::Vec<T, spatial_dim>& grad, T& coef_val,
                 A2D::Vec<T, spatial_dim>& coef_grad) const {
     A2D::ADObj<T> dot_obj, output_obj, detJ_obj, x_obj(x);
@@ -42,8 +44,9 @@ class HelmholtzPhysics final : public PhysicsBase<T, spatial_dim, 1, 1> {
     stack.reverse();
   }
 
-  void jacobian_product(T weight, T x, A2D::Mat<T, spatial_dim, spatial_dim>& J,
-                        T& val, A2D::Vec<T, spatial_dim>& grad, T& direct_val,
+  void jacobian_product(T weight, T x, A2D::Vec<T, spatial_dim>& _,
+                        A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
+                        A2D::Vec<T, spatial_dim>& grad, T& direct_val,
                         A2D::Vec<T, spatial_dim>& direct_grad, T& coef_val,
                         A2D::Vec<T, spatial_dim>& coef_grad) const {
     A2D::Vec<T, spatial_dim> bgrad;
@@ -66,7 +69,7 @@ class HelmholtzPhysics final : public PhysicsBase<T, spatial_dim, 1, 1> {
     stack.hproduct();
   }
 
-  void adjoint_jacobian_product(T weight, T x,
+  void adjoint_jacobian_product(T weight, T x, A2D::Vec<T, spatial_dim>& _,
                                 A2D::Mat<T, spatial_dim, spatial_dim>& J,
                                 T& val, A2D::Vec<T, spatial_dim>& grad,
                                 T& psi_val, A2D::Vec<T, spatial_dim>& psi_grad,
@@ -92,7 +95,8 @@ class HelmholtzPhysics final : public PhysicsBase<T, spatial_dim, 1, 1> {
     stack.hproduct();
   }
 
-  void jacobian(T weight, T x, A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
+  void jacobian(T weight, T x, A2D::Vec<T, spatial_dim>& _,
+                A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
                 A2D::Vec<T, spatial_dim>& grad, T& jac_val,
                 A2D::Mat<T, dof_per_node * spatial_dim,
                          dof_per_node * spatial_dim>& jac_grad) const {

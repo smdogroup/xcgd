@@ -19,7 +19,8 @@ class LinearElasticity final
     lambda = E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu));
   }
 
-  T energy(T weight, T _, const A2D::Mat<T, spatial_dim, spatial_dim>& J,
+  T energy(T weight, T _, A2D::Vec<T, spatial_dim>& __,
+           A2D::Mat<T, spatial_dim, spatial_dim>& J,
            A2D::Vec<T, dof_per_node>& ___,
            A2D::Mat<T, dof_per_node, spatial_dim>& grad) const {
     T detJ, energy;
@@ -33,10 +34,11 @@ class LinearElasticity final
     return output;
   }
 
-  void residual(T weight, T _, A2D::Mat<T, spatial_dim, spatial_dim>& J,
+  void residual(T weight, T _, A2D::Vec<T, spatial_dim>& __,
+                A2D::Mat<T, spatial_dim, spatial_dim>& J,
                 A2D::Vec<T, dof_per_node>& vals,
                 A2D::Mat<T, dof_per_node, spatial_dim>& grad,
-                A2D::Vec<T, dof_per_node>& __,
+                A2D::Vec<T, dof_per_node>& ___,
                 A2D::Mat<T, dof_per_node, spatial_dim>& coef_grad) const {
     A2D::ADObj<T> detJ_obj, energy_obj, output_obj;
     A2D::ADObj<A2D::SymMat<T, spatial_dim>> E_obj, S_obj;
@@ -56,8 +58,8 @@ class LinearElasticity final
   }
 
   void jacobian_product(
-      T weight, T _, A2D::Mat<T, spatial_dim, spatial_dim>& J,
-      A2D::Vec<T, dof_per_node>& vals,
+      T weight, T _, A2D::Vec<T, spatial_dim>& __,
+      A2D::Mat<T, spatial_dim, spatial_dim>& J, A2D::Vec<T, dof_per_node>& vals,
       A2D::Mat<T, dof_per_node, spatial_dim>& grad,
       A2D::Vec<T, dof_per_node>& direct_vals,
       A2D::Mat<T, dof_per_node, spatial_dim>& direct_grad,
@@ -81,7 +83,8 @@ class LinearElasticity final
     stack.hproduct();
   }
 
-  void jacobian(T weight, T _, A2D::Mat<T, spatial_dim, spatial_dim>& J,
+  void jacobian(T weight, T _, A2D::Vec<T, spatial_dim>& __,
+                A2D::Mat<T, spatial_dim, spatial_dim>& J,
                 A2D::Vec<T, dof_per_node>& vals,
                 A2D::Mat<T, dof_per_node, spatial_dim>& grad,
                 A2D::Mat<T, dof_per_node, dof_per_node>& jac_vals,

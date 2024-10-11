@@ -20,7 +20,8 @@ class NeohookeanPhysics final
 
   NeohookeanPhysics(T C1, T D1) : C1(C1), D1(D1) {}
 
-  T energy(T weight, T _, const A2D::Mat<T, spatial_dim, spatial_dim>& J,
+  T energy(T weight, T _, A2D::Vec<T, spatial_dim>& __,
+           A2D::Mat<T, spatial_dim, spatial_dim>& J,
            A2D::Vec<T, dof_per_node>& vals,
            A2D::Mat<T, dof_per_node, spatial_dim>& grad) const {
     A2D::Mat<T, spatial_dim, spatial_dim> Jinv, F, FTF, I;
@@ -52,7 +53,8 @@ class NeohookeanPhysics final
     return weight * detJ * energy_density;
   }
 
-  void residual(T weight, T _, A2D::Mat<T, spatial_dim, spatial_dim>& J,
+  void residual(T weight, T _, A2D::Vec<T, spatial_dim>& __,
+                A2D::Mat<T, spatial_dim, spatial_dim>& J,
                 A2D::Vec<T, dof_per_node>& vals,
                 A2D::Mat<T, dof_per_node, spatial_dim>& grad,
                 A2D::Vec<T, dof_per_node>& coef_vals,
@@ -88,8 +90,8 @@ class NeohookeanPhysics final
   }
 
   void jacobian_product(
-      T weight, T x, A2D::Mat<T, spatial_dim, spatial_dim>& J,
-      A2D::Vec<T, dof_per_node>& vals,
+      T weight, T _, A2D::Vec<T, spatial_dim>& __,
+      A2D::Mat<T, spatial_dim, spatial_dim>& J, A2D::Vec<T, dof_per_node>& vals,
       A2D::Mat<T, dof_per_node, spatial_dim>& grad,
       A2D::Vec<T, dof_per_node>& direct_vals,
       A2D::Mat<T, dof_per_node, spatial_dim>& direct_grad,
@@ -127,7 +129,8 @@ class NeohookeanPhysics final
     stack.hproduct();
   }
 
-  void jacobian(T weight, T x, A2D::Mat<T, spatial_dim, spatial_dim>& J,
+  void jacobian(T weight, T _, A2D::Vec<T, spatial_dim>& __,
+                A2D::Mat<T, spatial_dim, spatial_dim>& J,
                 A2D::Vec<T, dof_per_node>& vals,
                 A2D::Mat<T, dof_per_node, spatial_dim>& grad,
                 A2D::Mat<T, dof_per_node, dof_per_node>& jac_vals,

@@ -60,9 +60,10 @@ class GalerkinAnalysis final {
 
         // Evaluate the derivative of the spatial dof in the computational
         // coordinates
+        A2D::Vec<T, spatial_dim> xloc;
         A2D::Mat<T, spatial_dim, spatial_dim> J;
-        interp_val_grad<T, Basis, spatial_dim>(element_xloc, nullptr,
-                                               &Nxi[offset_nxi], nullptr, &J);
+        interp_val_grad<T, Basis, spatial_dim>(element_xloc, &N[offset_n],
+                                               &Nxi[offset_nxi], &xloc, &J);
 
         // Evaluate the derivative of the dof in the computational coordinates
         typename Physics::dof_t vals{};
@@ -99,7 +100,7 @@ class GalerkinAnalysis final {
           qcoef = sqrt(qcoef) / detJ;
         }
 
-        total_energy += physics.energy(qcoef * wts[j], xq, J, vals, grad);
+        total_energy += physics.energy(qcoef * wts[j], xq, xloc, J, vals, grad);
       }
     }
 
@@ -142,9 +143,10 @@ class GalerkinAnalysis final {
 
         // Evaluate the derivative of the spatial dof in the computational
         // coordinates
+        A2D::Vec<T, spatial_dim> xloc;
         A2D::Mat<T, spatial_dim, spatial_dim> J;
-        interp_val_grad<T, Basis, spatial_dim>(element_xloc, nullptr,
-                                               &Nxi[offset_nxi], nullptr, &J);
+        interp_val_grad<T, Basis, spatial_dim>(element_xloc, &N[offset_n],
+                                               &Nxi[offset_nxi], &xloc, &J);
 
         // Evaluate the derivative of the dof in the computational coordinates
         typename Physics::dof_t vals{};
@@ -162,7 +164,7 @@ class GalerkinAnalysis final {
         // Evaluate the residuals at the quadrature points
         typename Physics::dof_t coef_vals{};
         typename Physics::grad_t coef_grad{}, coef_grad_ref{};
-        physics.residual(wts[j], xq, J, vals, grad, coef_vals, coef_grad);
+        physics.residual(wts[j], xq, xloc, J, vals, grad, coef_vals, coef_grad);
 
         // Transform gradient from physical coordinates back to ref coordinates
         rtransform(J, coef_grad, coef_grad_ref);
@@ -218,9 +220,10 @@ class GalerkinAnalysis final {
 
         // Evaluate the derivative of the spatial dof in the computational
         // coordinates
+        A2D::Vec<T, spatial_dim> xloc;
         A2D::Mat<T, spatial_dim, spatial_dim> J;
-        interp_val_grad<T, Basis, spatial_dim>(element_xloc, nullptr,
-                                               &Nxi[offset_nxi], nullptr, &J);
+        interp_val_grad<T, Basis, spatial_dim>(element_xloc, &N[offset_n],
+                                               &Nxi[offset_nxi], &xloc, &J);
 
         // Evaluate the derivative of the dof in the computational coordinates
         typename Physics::dof_t vals{};
@@ -250,7 +253,7 @@ class GalerkinAnalysis final {
         // Evaluate the residuals at the quadrature points
         typename Physics::dof_t coef_vals{};
         typename Physics::grad_t coef_grad{}, coef_grad_ref{};
-        physics.jacobian_product(wts[j], xq, J, vals, grad, direct_vals,
+        physics.jacobian_product(wts[j], xq, xloc, J, vals, grad, direct_vals,
                                  direct_grad, coef_vals, coef_grad);
 
         // Transform gradient from physical coordinates back to ref coordinates
@@ -310,9 +313,10 @@ class GalerkinAnalysis final {
 
         // Evaluate the derivative of the spatial dof in the computational
         // coordinates
+        A2D::Vec<T, spatial_dim> xloc;
         A2D::Mat<T, spatial_dim, spatial_dim> J;
-        interp_val_grad<T, Basis, spatial_dim>(element_xloc, nullptr,
-                                               &Nxi[offset_nxi], nullptr, &J);
+        interp_val_grad<T, Basis, spatial_dim>(element_xloc, &N[offset_n],
+                                               &Nxi[offset_nxi], &xloc, &J);
 
         // Evaluate the derivative of the dof in the computational coordinates
         typename Physics::dof_t vals{};
@@ -340,8 +344,8 @@ class GalerkinAnalysis final {
 
         // Evaluate the residuals at the quadrature points
         typename Physics::dv_t dv_val{};
-        physics.adjoint_jacobian_product(wts[j], xq, J, vals, grad, psi_vals,
-                                         psi_grad, dv_val);
+        physics.adjoint_jacobian_product(wts[j], xq, xloc, J, vals, grad,
+                                         psi_vals, psi_grad, dv_val);
 
         add_jac_adj_product<T, Basis>(&N[offset_n], dv_val, element_dfdx);
       }
@@ -389,9 +393,10 @@ class GalerkinAnalysis final {
 
         // Evaluate the derivative of the spatial dof in the computational
         // coordinates
+        A2D::Vec<T, spatial_dim> xloc;
         A2D::Mat<T, spatial_dim, spatial_dim> J;
-        interp_val_grad<T, Basis, spatial_dim>(element_xloc, nullptr,
-                                               &Nxi[offset_nxi], nullptr, &J);
+        interp_val_grad<T, Basis, spatial_dim>(element_xloc, &N[offset_n],
+                                               &Nxi[offset_nxi], &xloc, &J);
 
         // Evaluate the derivative of the dof in the computational coordinates
         typename Physics::dof_t vals{};
@@ -412,7 +417,7 @@ class GalerkinAnalysis final {
             jac_grad;
         A2D::Mat<T, dof_per_node * spatial_dim, dof_per_node * spatial_dim>
             jac_grad_ref;
-        physics.jacobian(wts[j], xq, J, vals, grad, jac_vals, jac_grad);
+        physics.jacobian(wts[j], xq, xloc, J, vals, grad, jac_vals, jac_grad);
 
         // Transform hessian from physical coordinates back to ref coordinates
         jtransform<T, dof_per_node, spatial_dim>(J, jac_grad, jac_grad_ref);
@@ -465,9 +470,10 @@ class GalerkinAnalysis final {
         int offset_nxixi =
             j * max_nnodes_per_element * spatial_dim * spatial_dim;
 
+        A2D::Vec<T, spatial_dim> xloc;
         A2D::Mat<T, spatial_dim, spatial_dim> J;
-        interp_val_grad<T, Basis, spatial_dim>(element_xloc, nullptr,
-                                               &Nxi[offset_nxi], nullptr, &J);
+        interp_val_grad<T, Basis, spatial_dim>(element_xloc, &N[offset_n],
+                                               &Nxi[offset_nxi], &xloc, &J);
 
         // Evaluate the derivative of the dof in the computational coordinates
         typename Physics::dof_t uq{}, psiq{};           // uq, psiq
@@ -495,9 +501,10 @@ class GalerkinAnalysis final {
         T detJ;
         A2D::MatDet(J, detJ);
 
-        physics.residual(1.0 / detJ, 0.0, J, uq, ugrad, coef_uq, coef_ugrad);
-        physics.jacobian_product(1.0 / detJ, 0.0, J, uq, ugrad, psiq, pgrad,
-                                 jp_uq, jp_ugrad);
+        physics.residual(1.0 / detJ, 0.0, xloc, J, uq, ugrad, coef_uq,
+                         coef_ugrad);
+        physics.jacobian_product(1.0 / detJ, 0.0, xloc, J, uq, ugrad, psiq,
+                                 pgrad, jp_uq, jp_ugrad);
 
         typename Physics::grad_t coef_ugrad_ref{};  // ∂e/∂(∇_ξ)uq
         typename Physics::grad_t jp_ugrad_ref{};  // ∂2e/∂(∇_ξ)uq2 * (∇_ξ)psiq
