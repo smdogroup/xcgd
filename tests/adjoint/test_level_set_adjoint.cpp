@@ -268,7 +268,10 @@ TEST(adjoint, JacPsiProductPoisson) {
   using Basis = GDBasis2D<T, CutMesh>;
   using LSF = Line;
   using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
-  using Physics = PoissonPhysics<T, Basis::spatial_dim>;
+  auto source_fun = [](const A2D::Vec<T, Basis::spatial_dim>& _) {
+    return T(0.0);
+  };
+  using Physics = PoissonPhysics<T, Basis::spatial_dim, typeof(source_fun)>;
 
   int nxy[2] = {5, 5};
   T lxy[2] = {1.0, 1.0};
@@ -279,9 +282,9 @@ TEST(adjoint, JacPsiProductPoisson) {
   Basis basis(mesh);
   Quadrature quadrature(mesh);
 
-  Physics physics;
+  Physics physics(source_fun);
 
-  test_jac_psi_product<T>(basis, mesh, quadrature, physics);
+  test_jac_psi_product<T>(basis, mesh, quadrature, physics, 1e-6, 1e-5);
 }
 
 TEST(adjoint, JacPsiProductElasticityPeriodic) {

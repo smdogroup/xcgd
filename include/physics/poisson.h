@@ -3,7 +3,7 @@
 
 #include "physics_commons.h"
 
-template <typename T, int spatial_dim>
+template <typename T, int spatial_dim, class SourceFunc>
 class PoissonPhysics final : public PhysicsBase<T, spatial_dim, 0, 1> {
  private:
   using PhysicsBase = PhysicsBase<T, spatial_dim, 0, 1>;
@@ -13,19 +13,22 @@ class PoissonPhysics final : public PhysicsBase<T, spatial_dim, 0, 1> {
   using PhysicsBase::dof_per_node;
   using PhysicsBase::spatial_dim;
 
-  PoissonPhysics() : source(1.0) {}
-  PoissonPhysics(T source) : source(source) {}
+  /**
+   * @param source_fun [in] the source term callable that takes in
+   * const A2D::Vec<T, spatial_dim>& and returns T
+   */
+  PoissonPhysics(SourceFunc source_fun) : source_fun(source_fun) {}
 
-  T energy(T weight, T _, A2D::Vec<T, spatial_dim>& __,
+  T energy(T weight, T _, A2D::Vec<T, spatial_dim>& xloc,
            A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
            A2D::Vec<T, spatial_dim>& grad) const {
     T detJ, output, dot, u = val;
     A2D::MatDet(J, detJ);
     A2D::VecDot(grad, grad, dot);
-    return weight * detJ * (0.5 * dot - source * u);
+    return weight * detJ * (0.5 * dot - source_fun(xloc) * u);
   }
 
-  void residual(T weight, T _, A2D::Vec<T, spatial_dim>& __,
+  void residual(T weight, T _, A2D::Vec<T, spatial_dim>& xloc,
                 A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
                 A2D::Vec<T, spatial_dim>& grad, T& coef_val,
                 A2D::Vec<T, spatial_dim>& coef_grad) const {
@@ -36,14 +39,15 @@ class PoissonPhysics final : public PhysicsBase<T, spatial_dim, 0, 1> {
 
     auto stack = A2D::MakeStack(
         A2D::MatDet(J_obj, detJ_obj), A2D::VecDot(grad_obj, grad_obj, dot_obj),
-        A2D::Eval(weight * detJ_obj * (0.5 * dot_obj - source * u_obj),
-                  output_obj));
+        A2D::Eval(
+            weight * detJ_obj * (0.5 * dot_obj - source_fun(xloc) * u_obj),
+            output_obj));
 
     output_obj.bvalue() = 1.0;
     stack.reverse();
   }
 
-  void jacobian_product(T weight, T _, A2D::Vec<T, spatial_dim>& __,
+  void jacobian_product(T weight, T _, A2D::Vec<T, spatial_dim>& xloc,
                         A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
                         A2D::Vec<T, spatial_dim>& grad, T& direct_val,
                         A2D::Vec<T, spatial_dim>& direct_grad, T& coef_val,
@@ -59,14 +63,15 @@ class PoissonPhysics final : public PhysicsBase<T, spatial_dim, 0, 1> {
 
     auto stack = A2D::MakeStack(
         A2D::MatDet(J_obj, detJ_obj), A2D::VecDot(grad_obj, grad_obj, dot_obj),
-        A2D::Eval(weight * detJ_obj * (0.5 * dot_obj - source * u_obj),
-                  output_obj));
+        A2D::Eval(
+            weight * detJ_obj * (0.5 * dot_obj - source_fun(xloc) * u_obj),
+            output_obj));
 
     output_obj.bvalue() = 1.0;
     stack.hproduct();
   }
 
-  void jacobian(T weight, T _, A2D::Vec<T, spatial_dim>& __,
+  void jacobian(T weight, T _, A2D::Vec<T, spatial_dim>& xloc,
                 A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
                 A2D::Vec<T, spatial_dim>& grad, T& jac_val,
                 A2D::Mat<T, dof_per_node * spatial_dim,
@@ -82,15 +87,16 @@ class PoissonPhysics final : public PhysicsBase<T, spatial_dim, 0, 1> {
 
     auto stack = A2D::MakeStack(
         A2D::MatDet(J_obj, detJ_obj), A2D::VecDot(grad_obj, grad_obj, dot_obj),
-        A2D::Eval(weight * detJ_obj * (0.5 * dot_obj - source * u_obj),
-                  output_obj));
+        A2D::Eval(
+            weight * detJ_obj * (0.5 * dot_obj - source_fun(xloc) * u_obj),
+            output_obj));
 
     output_obj.bvalue() = 1.0;
     stack.hextract(pgrad, hgrad, jac_grad);
   }
 
  private:
-  T source;
+  SourceFunc source_fun;
 };
 
 #endif  // XCGD_POISSON_H

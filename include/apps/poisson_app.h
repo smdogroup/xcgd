@@ -5,10 +5,11 @@
 
 #pragma once
 
-template <typename T, class Mesh, class Quadrature, class Basis>
+template <typename T, class Mesh, class Quadrature, class Basis,
+          class SourceFunc>
 class PoissonApp final {
  public:
-  using Physics = PoissonPhysics<T, Basis::spatial_dim>;
+  using Physics = PoissonPhysics<T, Basis::spatial_dim, SourceFunc>;
 
  private:
   using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
@@ -16,11 +17,12 @@ class PoissonApp final {
   using CSCMat = SparseUtils::CSCMat<T>;
 
  public:
-  PoissonApp(Mesh& mesh, Quadrature& quadrature, Basis& basis, T source = 1.0)
+  PoissonApp(Mesh& mesh, Quadrature& quadrature, Basis& basis,
+             SourceFunc source_fun)
       : mesh(mesh),
         quadrature(quadrature),
         basis(basis),
-        physics(source),
+        physics(source_fun),
         analysis(mesh, quadrature, basis, physics) {}
 
   ~PoissonApp() = default;

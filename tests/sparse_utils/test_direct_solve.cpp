@@ -76,7 +76,11 @@ TEST(sparse_utils, Poisson) {
   using Quadrature = GDGaussQuadrature2D<T, Np_1d>;
   using Mesh = GridMesh<T, Np_1d>;
   using Basis = GDBasis2D<T, Mesh>;
-  using Poisson = PoissonApp<T, Mesh, Quadrature, Basis>;
+
+  auto source_fun = [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
+    return T(1.0);
+  };
+  using Poisson = PoissonApp<T, Mesh, Quadrature, Basis, typeof(source_fun)>;
 
   using BSRMat = GalerkinBSRMat<T, Poisson::Physics::dof_per_node>;
   using CSCMat = SparseUtils::CSCMat<T>;
@@ -89,7 +93,7 @@ TEST(sparse_utils, Poisson) {
   Quadrature quadrature(mesh);
   Basis basis(mesh);
 
-  Poisson poisson(mesh, quadrature, basis);
+  Poisson poisson(mesh, quadrature, basis, source_fun);
 
   std::vector<int> dof_bcs;
   double tol = 1e-6, xmin = -1.0, xmax = 1.0, ymin = -1.0, ymax = 1.0;

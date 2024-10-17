@@ -196,8 +196,11 @@ template <class Quadrature, class Basis>
 void test_poisson(
     std::tuple<typename Basis::Mesh *, Quadrature *, Basis *> tuple,
     double source, double h = 1e-30, double tol = 1e-14) {
-  using Physics = PoissonPhysics<T, Basis::spatial_dim>;
-  Physics physics(source);
+  auto source_fun = [source](const A2D::Vec<T, Basis::spatial_dim> &_) {
+    return T(source);
+  };
+  using Physics = PoissonPhysics<T, Basis::spatial_dim, typeof(source_fun)>;
+  Physics physics(source_fun);
   test_physics(tuple, physics, h, tol);
 }
 

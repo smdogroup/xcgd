@@ -12,12 +12,15 @@
 template <typename T, class Mesh, class Quadrature, class Basis>
 void solve_poisson(T *lxy, Mesh &mesh, Quadrature &quadrature, Basis &basis,
                    std::string name) {
-  using Physics = PoissonPhysics<T, Basis::spatial_dim>;
+  auto source_fun = [](const A2D::Vec<T, Basis::spatial_dim> &xloc) {
+    return T(0.0);
+  };
+  using Physics = PoissonPhysics<T, Basis::spatial_dim, typeof(source_fun)>;
   using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
   using BSRMat = GalerkinBSRMat<T, Physics::dof_per_node>;
   using CSCMat = SparseUtils::CSCMat<T>;
 
-  Physics physics;
+  Physics physics(source_fun);
   Analysis analysis(mesh, quadrature, basis, physics);
 
   int ndof = Basis::spatial_dim * mesh.get_num_nodes();

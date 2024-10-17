@@ -7,9 +7,12 @@
 template <typename T, class Mesh, class Quadrature, class Basis>
 void expect_sol_near(T xmin, T xmax, T ymin, T ymax, Mesh &mesh,
                      Quadrature &quadrature, Basis &basis) {
-  using Poisson = PoissonApp<T, Mesh, Quadrature, Basis>;
+  auto source_fun = [](const A2D::Vec<T, Basis::spatial_dim> &xloc) {
+    return T(0.0);
+  };
+  using Poisson = PoissonApp<T, Mesh, Quadrature, Basis, typeof(source_fun)>;
 
-  Poisson poisson(mesh, quadrature, basis, 0.0);
+  Poisson poisson(mesh, quadrature, basis, source_fun);
 
   int nnodes = mesh.get_num_nodes();
 
