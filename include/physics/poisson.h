@@ -20,6 +20,7 @@ class PoissonPhysics final : public PhysicsBase<T, spatial_dim, 0, 1> {
   PoissonPhysics(SourceFunc source_fun) : source_fun(source_fun) {}
 
   T energy(T weight, T _, A2D::Vec<T, spatial_dim>& xloc,
+           A2D::Vec<T, spatial_dim>& __,
            A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
            A2D::Vec<T, spatial_dim>& grad) const {
     T detJ, output, dot, u = val;
@@ -29,6 +30,7 @@ class PoissonPhysics final : public PhysicsBase<T, spatial_dim, 0, 1> {
   }
 
   void residual(T weight, T _, A2D::Vec<T, spatial_dim>& xloc,
+                A2D::Vec<T, spatial_dim>& __,
                 A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
                 A2D::Vec<T, spatial_dim>& grad, T& coef_val,
                 A2D::Vec<T, spatial_dim>& coef_grad) const {
@@ -48,6 +50,7 @@ class PoissonPhysics final : public PhysicsBase<T, spatial_dim, 0, 1> {
   }
 
   void jacobian_product(T weight, T _, A2D::Vec<T, spatial_dim>& xloc,
+                        A2D::Vec<T, spatial_dim>& __,
                         A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
                         A2D::Vec<T, spatial_dim>& grad, T& direct_val,
                         A2D::Vec<T, spatial_dim>& direct_grad, T& coef_val,
@@ -72,6 +75,7 @@ class PoissonPhysics final : public PhysicsBase<T, spatial_dim, 0, 1> {
   }
 
   void jacobian(T weight, T _, A2D::Vec<T, spatial_dim>& xloc,
+                A2D::Vec<T, spatial_dim>& __,
                 A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
                 A2D::Vec<T, spatial_dim>& grad, T& jac_val,
                 A2D::Mat<T, dof_per_node * spatial_dim,

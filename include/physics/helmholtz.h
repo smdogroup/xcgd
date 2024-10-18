@@ -16,6 +16,7 @@ class HelmholtzPhysics final : public PhysicsBase<T, spatial_dim, 1, 1> {
   HelmholtzPhysics(T r0) : r0square(r0 * r0) {}
 
   T energy(T weight, T x, A2D::Vec<T, spatial_dim>& _,
+           A2D::Vec<T, spatial_dim>& __,
            A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
            A2D::Vec<T, spatial_dim>& grad) const {
     T detJ, dot;
@@ -25,6 +26,7 @@ class HelmholtzPhysics final : public PhysicsBase<T, spatial_dim, 1, 1> {
   }
 
   void residual(T weight, T x, A2D::Vec<T, spatial_dim>& _,
+                A2D::Vec<T, spatial_dim>& __,
                 A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
                 A2D::Vec<T, spatial_dim>& grad, T& coef_val,
                 A2D::Vec<T, spatial_dim>& coef_grad) const {
@@ -45,6 +47,7 @@ class HelmholtzPhysics final : public PhysicsBase<T, spatial_dim, 1, 1> {
   }
 
   void jacobian_product(T weight, T x, A2D::Vec<T, spatial_dim>& _,
+                        A2D::Vec<T, spatial_dim>& __,
                         A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
                         A2D::Vec<T, spatial_dim>& grad, T& direct_val,
                         A2D::Vec<T, spatial_dim>& direct_grad, T& coef_val,
@@ -70,6 +73,7 @@ class HelmholtzPhysics final : public PhysicsBase<T, spatial_dim, 1, 1> {
   }
 
   void adjoint_jacobian_product(T weight, T x, A2D::Vec<T, spatial_dim>& _,
+                                A2D::Vec<T, spatial_dim>& __,
                                 A2D::Mat<T, spatial_dim, spatial_dim>& J,
                                 T& val, A2D::Vec<T, spatial_dim>& grad,
                                 T& psi_val, A2D::Vec<T, spatial_dim>& psi_grad,
@@ -96,6 +100,7 @@ class HelmholtzPhysics final : public PhysicsBase<T, spatial_dim, 1, 1> {
   }
 
   void jacobian(T weight, T x, A2D::Vec<T, spatial_dim>& _,
+                A2D::Vec<T, spatial_dim>& __,
                 A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
                 A2D::Vec<T, spatial_dim>& grad, T& jac_val,
                 A2D::Mat<T, dof_per_node * spatial_dim,

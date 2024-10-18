@@ -16,6 +16,7 @@ class GradPenalization final : public PhysicsBase<T, spatial_dim, 0, 1> {
   GradPenalization(T coeff) : coeff(coeff) {}
 
   T energy(T weight, T _, A2D::Vec<T, spatial_dim>& __,
+           A2D::Vec<T, spatial_dim>& ___,
            A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
            A2D::Vec<T, spatial_dim>& grad) const {
     T detJ, dot;
@@ -25,6 +26,7 @@ class GradPenalization final : public PhysicsBase<T, spatial_dim, 0, 1> {
   }
 
   void residual(T weight, T _, A2D::Vec<T, spatial_dim>& __,
+                A2D::Vec<T, spatial_dim>& ___,
                 A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
                 A2D::Vec<T, spatial_dim>& grad, T& coef_val,
                 A2D::Vec<T, spatial_dim>& coef_grad) const {

@@ -353,6 +353,8 @@ class GDLSFQuadrature2D final : public QuadratureBase<T, quad_type> {
    * @param pts concatenation of [ξ, η] for each quadrature point, size:
    * num_quad * spatial_dim
    * @param wts quadrature weights, size: num_quad
+   * @param ns if is surface quadrature, stores the normal vector in reference
+   * frame
    * @return int num_quad
    */
   int get_quadrature_pts(int elem, std::vector<T>& pts, std::vector<T>& wts,

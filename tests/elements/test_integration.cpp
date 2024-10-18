@@ -13,14 +13,41 @@
 #define PI 3.141592653589793
 
 template <typename T, int spatial_dim>
-class Integration final : public PhysicsBase<T, spatial_dim, 0, 1> {
+class BulkIntegration final : public PhysicsBase<T, spatial_dim, 0, 1> {
  public:
   T energy(T weight, T _, A2D::Vec<T, spatial_dim>& __,
+           A2D::Vec<T, spatial_dim>& ___,
            A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
-           A2D::Vec<T, spatial_dim>& ___) const {
+           A2D::Vec<T, spatial_dim>& ____) const {
     T detJ;
     A2D::MatDet(J, detJ);
     return weight * detJ * val;
+  }
+};
+
+template <typename T, int spatial_dim>
+class SurfaceIntegration final : public PhysicsBase<T, spatial_dim, 0, 1> {
+  static_assert(spatial_dim == 2,
+                "This part is not yet implemented properly for 3D");
+
+ public:
+  T energy(T weight, T _, A2D::Vec<T, spatial_dim>& __,
+           A2D::Vec<T, spatial_dim>& nrm_ref,
+           A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
+           A2D::Vec<T, spatial_dim>& ___) const {
+    T dt_val[spatial_dim] = {nrm_ref[1], -nrm_ref[0]};
+
+    A2D::Mat<T, spatial_dim, spatial_dim> JTJ;
+    A2D::Vec<T, spatial_dim> dt(dt_val);
+    A2D::Vec<T, spatial_dim> JTJdt;
+    T scale;
+
+    A2D::MatMatMult<A2D::MatOp::TRANSPOSE, A2D::MatOp::NORMAL>(J, J, JTJ);
+    A2D::MatVecMult(JTJ, dt, JTJdt);
+    A2D::VecDot(dt, JTJdt, scale);
+    scale = sqrt(scale);
+
+    return weight * scale * val;
   }
 };
 
@@ -28,7 +55,7 @@ template <typename T, class Quadrature, class Basis>
 T hypercircle_area(typename Basis::Mesh& mesh, Quadrature& quadrature,
                    Basis& basis, const T pt0[Basis::spatial_dim], double r0,
                    std::vector<double>* dof_ = nullptr) {
-  using Physics = Integration<T, Basis::spatial_dim>;
+  using Physics = BulkIntegration<T, Basis::spatial_dim>;
   using Analysis =
       GalerkinAnalysis<T, typename Basis::Mesh, Quadrature, Basis, Physics>;
   constexpr int spatial_dim = Basis::spatial_dim;
@@ -162,7 +189,7 @@ TEST(elements, integration_lsf_Np2) {
   using Mesh = CutMesh<T, Np_1d>;
   using Basis = GDBasis2D<T, Mesh>;
   using Grid = StructuredGrid2D<T>;
-  using Physics = Integration<T, Basis::spatial_dim>;
+  using Physics = BulkIntegration<T, Basis::spatial_dim>;
   using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
 
   int nxy[2] = {64, 64};
@@ -195,7 +222,7 @@ TEST(elements, integration_lsf_Np4) {
   using Mesh = CutMesh<T, Np_1d>;
   using Basis = GDBasis2D<T, Mesh>;
   using Grid = StructuredGrid2D<T>;
-  using Physics = Integration<T, Basis::spatial_dim>;
+  using Physics = BulkIntegration<T, Basis::spatial_dim>;
   using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
 
   int nxy[2] = {64, 64};
@@ -226,7 +253,7 @@ T compute_surface_length(std::string name, const Func& lsf_func) {
   using Mesh = CutMesh<T, Np_1d>;
   using Basis = GDBasis2D<T, Mesh>;
   using Grid = StructuredGrid2D<T>;
-  using Physics = Integration<T, Basis::spatial_dim>;
+  using Physics = SurfaceIntegration<T, Basis::spatial_dim>;
   using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
 
   int nxy[2] = {16, 16};

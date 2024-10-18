@@ -10,6 +10,7 @@ class VolumePhysics final : public PhysicsBase<T, spatial_dim, 0, 1> {
 
  public:
   T energy(T weight, T _, A2D::Vec<T, spatial_dim>& __,
+           A2D::Vec<T, spatial_dim>& ___,
            A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
            A2D::Vec<T, spatial_dim>& grad) const {
     T detJ;
