@@ -135,13 +135,13 @@ class CutDirichlet final : public PhysicsBase<T, spatial_dim, 0, 1> {
     A2D::MatVecMult(J, nrm_ref, nrm);
 
     // Create quantites
-    T ub = 0.0, up = 1.0;
+    T ub = 0.0, up = 0.0, uh = 0.0;
     A2D::Vec<T, spatial_dim> bgrad, pgrad, hgrad;
     A2D::A2DObj<T> ngrad_obj, scale_obj, output_obj;
     A2D::A2DObj<A2D::Mat<T, spatial_dim, spatial_dim>> J_obj(J), JTJ_obj;
     A2D::A2DObj<A2D::Vec<T, spatial_dim>> JTJdt_obj;
 
-    A2D::A2DObj<T&> u_obj(val, ub, up, jac_val);
+    A2D::A2DObj<T&> u_obj(val, ub, up, uh);
     A2D::A2DObj<A2D::Vec<T, spatial_dim>&> grad_obj(grad, bgrad, pgrad, hgrad);
 
     // Compute
@@ -156,7 +156,26 @@ class CutDirichlet final : public PhysicsBase<T, spatial_dim, 0, 1> {
                   output_obj));
     output_obj.bvalue() = 1.0;
 
-    stack.hextract(pgrad, hgrad, jac_grad);
+    // Note: this part is zero for this physics
+    // // Extract Hessian w.r.t. ∇u: ∂2e/∂(∇_x)uq2
+    // stack.hextract(pgrad, hgrad, jac_grad);
+
+    stack.reverse();
+
+    // Extract the mixed Hessian w.r.t. u and ∇u:
+    hgrad.zero();
+    stack.hzero();
+    up = 1.0;
+
+    stack.hforward();
+    stack.hreverse();
+
+    for (int d = 0; d < spatial_dim; d++) {
+      jac_mixed(d) = hgrad(d);
+    }
+
+    // Extract the Hessian w.r.t. u
+    jac_val = uh;
   }
 
  private:

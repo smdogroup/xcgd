@@ -33,6 +33,7 @@ class PhysicsBase {
   using jac_mixed_t = typename std::conditional<
       dof_per_node == 1, A2D::Vec<T, spatial_dim>,
       A2D::Mat<T, dof_per_node, spatial_dim * dof_per_node>>::type;
+
   using jac_grad_t =
       A2D::Mat<T, dof_per_node * spatial_dim, dof_per_node * spatial_dim>;
 
@@ -137,7 +138,7 @@ class PhysicsBase {
    * @param [in] vals uq, state variable at the quadrature point
    * @param [in] grad (∇_x)uq, gradients of state w.r.t. x at quadrature point
    * @param [out] jac_vals ∂2e/∂uq2
-   * @param [out] jac_mixed ∂2e/∂uq∂(∇_x)uq, shape (dim(uq), dim(∂(∇_x)uq))
+   * @param [out] jac_mixed ∂/∂(∇_x)uq(∂e/∂uq), shape (dim(uq), dim(∂(∇_x)uq))
    * @param [out] jac_grad ∂2e/∂(∇_x)uq2
    */
   virtual void jacobian(T weight, dv_t dv, xloc_t& xloc, nrm_t& nrm_ref, J_t& J,

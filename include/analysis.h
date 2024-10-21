@@ -426,22 +426,19 @@ class GalerkinAnalysis final {
 
         // Evaluate the residuals at the quadrature points
         typename Physics::jac_t jac_vals{};
-        typename Physics::jac_mixed_t jac_mixed, jac_mixed_ref;
-        typename Physics::jac_grad_t jac_grad, jac_grad_ref;
-        // A2D::Mat<T, dof_per_node * spatial_dim, dof_per_node * spatial_dim>
-        //     jac_grad;
-        // A2D::Mat<T, dof_per_node * spatial_dim, dof_per_node * spatial_dim>
-        //     jac_grad_ref;
+        typename Physics::jac_mixed_t jac_mixed{}, jac_mixed_ref{};
+        typename Physics::jac_grad_t jac_grad{}, jac_grad_ref{};
 
         physics.jacobian(wts[j], xq, xloc, nrm_ref, J, vals, grad, jac_vals,
                          jac_mixed, jac_grad);
 
         // Transform hessian from physical coordinates back to ref coordinates
         jtransform<T, dof_per_node, spatial_dim>(J, jac_grad, jac_grad_ref);
+        mtransform(J, jac_mixed, jac_mixed_ref);
 
         // Add the contributions to the element Jacobian
         add_matrix<T, Basis>(&N[offset_n], &Nxi[offset_nxi], jac_vals,
-                             jac_grad_ref, element_jac);
+                             jac_mixed_ref, jac_grad_ref, element_jac);
       }
 
       mat->add_block_values(i, mesh, element_jac);

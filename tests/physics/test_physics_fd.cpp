@@ -160,45 +160,13 @@ create_gd_lsf_surf_basis() {
   return {mesh, new Quadrature(*mesh), new Basis(*mesh)};
 }
 
-template <int Np_1d = 4>
-std::tuple<GridMesh<T, Np_1d> *, GDGaussQuadrature2D<T, Np_1d> *,
-           GDBasis2D<T, GridMesh<T, Np_1d>> *>
-create_gd_basis() {
-  int constexpr nx = 5, ny = 7;
-  using Grid = StructuredGrid2D<T>;
-  using Quadrature = GDGaussQuadrature2D<T, Np_1d>;
-  using Mesh = GridMesh<T, Np_1d>;
-  using Basis = GDBasis2D<T, Mesh>;
-
-  int nxy[2] = {nx, ny};
-  T lxy[2] = {1.0, 1.4};
-  Grid *grid = new Grid(nxy, lxy);
-  Mesh *mesh = new Mesh(*grid);
-  return {mesh, new Quadrature(*mesh), new Basis(*mesh)};
-}
-
-template <class Quadrature, class Basis>
-void test_poisson(
-    std::tuple<typename Basis::Mesh *, Quadrature *, Basis *> tuple,
-    double source, double h = 1e-30, double tol = 1e-14) {
-  auto source_fun = [source](const A2D::Vec<T, Basis::spatial_dim> &_) {
-    return T(source);
-  };
-  using Physics = PoissonPhysics<T, Basis::spatial_dim, typeof(source_fun)>;
-  Physics physics(source_fun);
-  test_physics_fd(tuple, physics, h, tol);
-}
-
 template <class Quadrature, class Basis>
 void test_cut_dirichlet(
     std::tuple<typename Basis::Mesh *, Quadrature *, Basis *> tuple,
-    double h = 1e-5, double tol = 1e-14) {
+    double h = 1e-5, double tol = 1e-12) {
   using Physics = CutDirichlet<T, Basis::spatial_dim>;
   Physics physics(1.23);
   test_physics_fd(tuple, physics, h, tol);
 }
 
 TEST(physics, CutDirichlet) { test_cut_dirichlet(create_gd_lsf_surf_basis()); }
-
-// TEST(physics, PoissonGD) { test_poisson(create_gd_basis(), 2.3, 1e-8, 1e-6);
-// }

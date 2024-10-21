@@ -67,6 +67,46 @@ inline void rtransform(const A2D::Mat<T, spatial_dim, spatial_dim> &J,
   A2D::MatMatMult<A2D::MatOp::NORMAL, A2D::MatOp::TRANSPOSE>(grad, Jinv,
                                                              grad_ref);
 }
+
+/**
+ * @brief Transform the mixed Hessian from physical coordinates to reference
+ * coordinates
+ *
+ * @tparam T numeric type
+ * @tparam dim dof dimension
+ * @tparam spatial_dim spatial dimension
+ * @param J coordinate transformation matrix
+ * @param hess_mixed ∂/∂(∇_x)uq(∂e/∂uq)
+ * @param hess_mixed_ref ∂/∂(∇_ξ)uq(∂e/∂uq), output
+ */
+template <typename T, int dim, int spatial_dim>
+inline void mtransform(const A2D::Mat<T, spatial_dim, spatial_dim> &J,
+                       const A2D::Mat<T, dim, spatial_dim * dim> &hess_mixed,
+                       A2D::Mat<T, dim, spatial_dim * dim> &hess_mixed_ref) {
+  // throw std::runtime_error(
+  //     "Uncomment the following code to verify and use this function");
+
+  A2D::Mat<T, spatial_dim, spatial_dim> Jinv;
+  A2D::MatInv(J, Jinv);
+  hess_mixed_ref.zero();
+  for (int i = 0; i < dim; i++) {
+    for (int j = 0; j < dim; j++) {
+      for (int ii = 0; ii < spatial_dim; ii++) {
+        for (int jj = 0; jj < spatial_dim; jj++) {
+          hess_mixed_ref(i, j * spatial_dim + jj) +=
+              hess_mixed(i, j * spatial_dim + ii) * Jinv(jj, ii);
+        }
+      }
+    }
+  }
+}
+template <typename T, int spatial_dim>
+inline void mtransform(const A2D::Mat<T, spatial_dim, spatial_dim> &J,
+                       const A2D::Vec<T, spatial_dim> &hess_mixed,
+                       A2D::Vec<T, spatial_dim> &hess_mixed_ref) {
+  rtransform<T, spatial_dim>(J, hess_mixed, hess_mixed_ref);
+}
+
 /**
  * @brief Transform Hessian from physical coordinates to reference coordinates
  *
@@ -375,12 +415,14 @@ void add_grad(const T N[], const T Nxi[], const T &coef_val,
  * @param Nxi shape function gradients w.r.t. computational coordinates ξ,
  * size of max_nnodes_per_element * spatial_dim
  * @param coef_vals ∂^2e/∂(uq)^2
+ * @param coef_mixed ∂/∂(∇_ξ)uq(∂e/∂uq)
  * @param coef_hess ∂^2e/∂((∇_ξ)uq)^2
  * @param elem_jac d^2e/du^2
  */
 template <typename T, class Basis, int dim>
 void add_matrix(const T N[], const T Nxi[],
                 const A2D::Mat<T, dim, dim> &coef_vals,
+                const A2D::Mat<T, dim, Basis::spatial_dim * dim> &coef_mixed,
                 const A2D::Mat<T, dim * Basis::spatial_dim,
                                dim * Basis::spatial_dim> &coef_hess,
                 T elem_jac[]) {
@@ -411,6 +453,12 @@ void add_matrix(const T N[], const T Nxi[],
                      nxi[kk] * nxj[ll];
             }
           }
+
+          for (int ll = 0; ll < spatial_dim; ll++) {
+            val += coef_mixed(ii, spatial_dim * jj + ll) * ni * nxj[ll] +
+                   coef_mixed(jj, spatial_dim * ii + ll) * nj * nxi[ll];
+          }
+
           elem_jac[col + row * max_dof_per_element] +=
               val + coef_vals(ii, jj) * ni * nj;
         }
@@ -423,7 +471,8 @@ void add_matrix(const T N[], const T Nxi[],
 template <typename T, class Basis>
 void add_matrix(
     const T N[], const T Nxi[], const T &coef_val,
-    const A2D::Mat<T, Basis::spatial_dim, Basis::spatial_dim> &coef_grad,
+    const A2D::Vec<T, Basis::spatial_dim> &coef_mixed,
+    const A2D::Mat<T, Basis::spatial_dim, Basis::spatial_dim> &coef_hess,
     T elem_jac[]) {
   static constexpr int spatial_dim = Basis::spatial_dim;
   static constexpr int max_nnodes_per_element = Basis::max_nnodes_per_element;
@@ -443,9 +492,14 @@ void add_matrix(
       T val = 0.0;
       for (int kk = 0; kk < spatial_dim; kk++) {
         for (int ll = 0; ll < spatial_dim; ll++) {
-          val += coef_grad(kk, ll) * nxi[kk] * nxj[ll];
+          val += coef_hess(kk, ll) * nxi[kk] * nxj[ll];
         }
       }
+
+      for (int ll = 0; ll < spatial_dim; ll++) {
+        val += coef_mixed(ll) * (ni * nxj[ll] + nj * nxi[ll]);
+      }
+
       elem_jac[j + i * max_dof_per_element] += val + coef_val * ni * nj;
     }
   }
