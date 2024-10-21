@@ -6,7 +6,7 @@
  * @brief The Dirichlet boundary condition applied on the cut boundary using
  * Nitsche's method.
  */
-template <typename T, int spatial_dim>
+template <typename T, int spatial_dim, class BCFunc>
 class CutDirichlet final : public PhysicsBase<T, spatial_dim, 0, 1> {
  private:
   static_assert(spatial_dim == 2,
@@ -17,9 +17,10 @@ class CutDirichlet final : public PhysicsBase<T, spatial_dim, 0, 1> {
   using PhysicsBase::data_per_node;
   using PhysicsBase::spatial_dim;
 
-  CutDirichlet(double eta) : eta(eta) {}
+  CutDirichlet(double eta, const BCFunc& bc_func)
+      : eta(eta), bc_func(bc_func) {}
 
-  T energy(T weight, T _, A2D::Vec<T, spatial_dim>& __,
+  T energy(T weight, T _, A2D::Vec<T, spatial_dim>& xloc,
            A2D::Vec<T, spatial_dim>& nrm_ref,
            A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
            A2D::Vec<T, spatial_dim>& grad) const {
@@ -43,10 +44,11 @@ class CutDirichlet final : public PhysicsBase<T, spatial_dim, 0, 1> {
     T ngrad;
     A2D::VecDot(grad, nrm, ngrad);
 
-    return weight * sqrt(scale) * (ngrad * u - eta * u * u);
+    return weight * sqrt(scale) *
+           (-ngrad * u + 0.5 * eta * u * u + bc_func(xloc) * (ngrad - eta * u));
   }
 
-  void residual(T weight, T _, A2D::Vec<T, spatial_dim>& __,
+  void residual(T weight, T _, A2D::Vec<T, spatial_dim>& xloc,
                 A2D::Vec<T, spatial_dim>& nrm_ref,
                 A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
                 A2D::Vec<T, spatial_dim>& grad, T& coef_val,
@@ -75,13 +77,14 @@ class CutDirichlet final : public PhysicsBase<T, spatial_dim, 0, 1> {
         A2D::VecDot(tan_ref, JTJdt_obj, scale_obj),
         A2D::VecDot(grad_obj, nrm, ngrad_obj),
         A2D::Eval(weight * sqrt(scale_obj) *
-                      (ngrad_obj * u_obj - eta * u_obj * u_obj),
+                      (-ngrad_obj * u_obj + 0.5 * eta * u_obj * u_obj +
+                       bc_func(xloc) * (ngrad_obj - eta * u_obj)),
                   output_obj));
     output_obj.bvalue() = 1.0;
     stack.reverse();
   }
 
-  void jacobian_product(T weight, T _, A2D::Vec<T, spatial_dim>& __,
+  void jacobian_product(T weight, T _, A2D::Vec<T, spatial_dim>& xloc,
                         A2D::Vec<T, spatial_dim>& nrm_ref,
                         A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
                         A2D::Vec<T, spatial_dim>& grad, T& direct_val,
@@ -114,13 +117,14 @@ class CutDirichlet final : public PhysicsBase<T, spatial_dim, 0, 1> {
         A2D::VecDot(tan_ref, JTJdt_obj, scale_obj),
         A2D::VecDot(grad_obj, nrm, ngrad_obj),
         A2D::Eval(weight * sqrt(scale_obj) *
-                      (ngrad_obj * u_obj - eta * u_obj * u_obj),
+                      (-ngrad_obj * u_obj + 0.5 * eta * u_obj * u_obj +
+                       bc_func(xloc) * (ngrad_obj - eta * u_obj)),
                   output_obj));
     output_obj.bvalue() = 1.0;
     stack.hproduct();
   }
 
-  void jacobian(T weight, T _, A2D::Vec<T, spatial_dim>& __,
+  void jacobian(T weight, T _, A2D::Vec<T, spatial_dim>& xloc,
                 A2D::Vec<T, spatial_dim>& nrm_ref,
                 A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
                 A2D::Vec<T, spatial_dim>& grad, T& jac_val,
@@ -152,7 +156,8 @@ class CutDirichlet final : public PhysicsBase<T, spatial_dim, 0, 1> {
         A2D::VecDot(tan_ref, JTJdt_obj, scale_obj),
         A2D::VecDot(grad_obj, nrm, ngrad_obj),
         A2D::Eval(weight * sqrt(scale_obj) *
-                      (ngrad_obj * u_obj - eta * u_obj * u_obj),
+                      (-ngrad_obj * u_obj + 0.5 * eta * u_obj * u_obj +
+                       bc_func(xloc) * (ngrad_obj - eta * u_obj)),
                   output_obj));
     output_obj.bvalue() = 1.0;
 
@@ -179,5 +184,6 @@ class CutDirichlet final : public PhysicsBase<T, spatial_dim, 0, 1> {
   }
 
  private:
-  double eta;  // A sufficiently largeN itsche parameter
+  double eta;             // A sufficiently largeN itsche parameter
+  const BCFunc& bc_func;  // the Dirichlet boundary value evaluator
 };

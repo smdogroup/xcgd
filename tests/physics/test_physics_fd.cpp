@@ -164,8 +164,11 @@ template <class Quadrature, class Basis>
 void test_cut_dirichlet(
     std::tuple<typename Basis::Mesh *, Quadrature *, Basis *> tuple,
     double h = 1e-5, double tol = 1e-12) {
-  using Physics = CutDirichlet<T, Basis::spatial_dim>;
-  Physics physics(1.23);
+  auto bc_fun = [](const A2D::Vec<T, Basis::spatial_dim> &xloc) {
+    return xloc(0) * xloc(0) + xloc(1) * xloc(1);
+  };
+  using Physics = CutDirichlet<T, Basis::spatial_dim, typeof(bc_fun)>;
+  Physics physics(1.23, bc_fun);
   test_physics_fd(tuple, physics, h, tol);
 }
 
