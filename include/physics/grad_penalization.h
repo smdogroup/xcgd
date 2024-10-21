@@ -10,7 +10,6 @@ class GradPenalization final : public PhysicsBase<T, spatial_dim, 0, 1> {
 
  public:
   using PhysicsBase::data_per_node;
-  using PhysicsBase::dof_per_node;
   using PhysicsBase::spatial_dim;
 
   GradPenalization(T coeff) : coeff(coeff) {}
@@ -43,6 +42,20 @@ class GradPenalization final : public PhysicsBase<T, spatial_dim, 0, 1> {
     output_obj.bvalue() = 1.0;
     stack.reverse();
   }
+
+  void jacobian_product(T weight, T _, A2D::Vec<T, spatial_dim>& xloc,
+                        A2D::Vec<T, spatial_dim>& __,
+                        A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
+                        A2D::Vec<T, spatial_dim>& grad, T& direct_val,
+                        A2D::Vec<T, spatial_dim>& direct_grad, T& coef_val,
+                        A2D::Vec<T, spatial_dim>& coef_grad) const {}
+
+  void jacobian(T weight, T _, A2D::Vec<T, spatial_dim>& xloc,
+                A2D::Vec<T, spatial_dim>& __,
+                A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
+                A2D::Vec<T, spatial_dim>& grad, T& jac_val,
+                A2D::Vec<T, spatial_dim>& ___,
+                A2D::Mat<T, spatial_dim, spatial_dim>& jac_grad) const {}
 
  private:
   T coeff;

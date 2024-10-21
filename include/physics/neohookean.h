@@ -23,7 +23,7 @@ class NeohookeanPhysics final
   T energy(T weight, T _, A2D::Vec<T, spatial_dim>& __,
            A2D::Vec<T, spatial_dim>& ___,
            A2D::Mat<T, spatial_dim, spatial_dim>& J,
-           A2D::Vec<T, dof_per_node>& vals,
+           A2D::Vec<T, dof_per_node>& ____,
            A2D::Mat<T, dof_per_node, spatial_dim>& grad) const {
     A2D::Mat<T, spatial_dim, spatial_dim> Jinv, F, FTF, I;
 
@@ -57,7 +57,7 @@ class NeohookeanPhysics final
   void residual(T weight, T _, A2D::Vec<T, spatial_dim>& __,
                 A2D::Vec<T, spatial_dim>& ___,
                 A2D::Mat<T, spatial_dim, spatial_dim>& J,
-                A2D::Vec<T, dof_per_node>& vals,
+                A2D::Vec<T, dof_per_node>& ____,
                 A2D::Mat<T, dof_per_node, spatial_dim>& grad,
                 A2D::Vec<T, dof_per_node>& coef_vals,
                 A2D::Mat<T, dof_per_node, spatial_dim>& coef_grad) const {
@@ -94,7 +94,7 @@ class NeohookeanPhysics final
   void jacobian_product(
       T weight, T _, A2D::Vec<T, spatial_dim>& __,
       A2D::Vec<T, spatial_dim>& ___, A2D::Mat<T, spatial_dim, spatial_dim>& J,
-      A2D::Vec<T, dof_per_node>& vals,
+      A2D::Vec<T, dof_per_node>& ____,
       A2D::Mat<T, dof_per_node, spatial_dim>& grad,
       A2D::Vec<T, dof_per_node>& direct_vals,
       A2D::Mat<T, dof_per_node, spatial_dim>& direct_grad,
@@ -135,9 +135,10 @@ class NeohookeanPhysics final
   void jacobian(T weight, T _, A2D::Vec<T, spatial_dim>& __,
                 A2D::Vec<T, spatial_dim>& ___,
                 A2D::Mat<T, spatial_dim, spatial_dim>& J,
-                A2D::Vec<T, dof_per_node>& vals,
+                A2D::Vec<T, dof_per_node>& ____,
                 A2D::Mat<T, dof_per_node, spatial_dim>& grad,
                 A2D::Mat<T, dof_per_node, dof_per_node>& jac_vals,
+                A2D::Mat<T, dof_per_node, dof_per_node * spatial_dim>& _____,
                 A2D::Mat<T, dof_per_node * spatial_dim,
                          dof_per_node * spatial_dim>& jac_grad) const {
     // Identity matrix

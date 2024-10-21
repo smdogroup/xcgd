@@ -92,6 +92,7 @@ class LinearElasticity final
                 A2D::Vec<T, dof_per_node>& vals,
                 A2D::Mat<T, dof_per_node, spatial_dim>& grad,
                 A2D::Mat<T, dof_per_node, dof_per_node>& jac_vals,
+                A2D::Mat<T, dof_per_node, dof_per_node * spatial_dim>& ____,
                 A2D::Mat<T, dof_per_node * spatial_dim,
                          dof_per_node * spatial_dim>& jac_grad) const {
     A2D::Mat<T, dof_per_node, spatial_dim> bgrad, pgrad, hgrad;

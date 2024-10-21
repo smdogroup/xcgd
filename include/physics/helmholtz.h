@@ -10,7 +10,6 @@ class HelmholtzPhysics final : public PhysicsBase<T, spatial_dim, 1, 1> {
 
  public:
   using PhysicsBase::data_per_node;
-  using PhysicsBase::dof_per_node;
   using PhysicsBase::spatial_dim;
 
   HelmholtzPhysics(T r0) : r0square(r0 * r0) {}
@@ -103,8 +102,8 @@ class HelmholtzPhysics final : public PhysicsBase<T, spatial_dim, 1, 1> {
                 A2D::Vec<T, spatial_dim>& __,
                 A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
                 A2D::Vec<T, spatial_dim>& grad, T& jac_val,
-                A2D::Mat<T, dof_per_node * spatial_dim,
-                         dof_per_node * spatial_dim>& jac_grad) const {
+                A2D::Vec<T, spatial_dim>& ___,
+                A2D::Mat<T, spatial_dim, spatial_dim>& jac_grad) const {
     A2D::Vec<T, spatial_dim> bgrad, pgrad, hgrad;
     T ub = 0.0, up = 1.0;
 

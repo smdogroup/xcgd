@@ -1,6 +1,7 @@
 #pragma once
 
 #include <exception>
+#include <string>
 
 class StencilConstructionFailed : public std::exception {
  public:
@@ -14,4 +15,14 @@ class StencilConstructionFailed : public std::exception {
 
  private:
   int elem;
+};
+
+class NotImplemented : public std::exception {
+ public:
+  NotImplemented(const std::string &msg) : msg(msg) {}
+
+  const char *what() const noexcept { return msg.c_str(); }
+
+ private:
+  std::string msg;
 };
