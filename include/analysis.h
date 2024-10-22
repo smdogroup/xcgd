@@ -362,8 +362,11 @@ class GalerkinAnalysis final {
   }
 
   void jacobian(const T x[], const T dof[],
-                GalerkinBSRMat<T, dof_per_node>* mat) const {
-    mat->zero();
+                GalerkinBSRMat<T, dof_per_node>* mat,
+                bool zero_jac = true) const {
+    if (zero_jac) {
+      mat->zero();
+    }
 
     T xq = 0.0;
     std::vector<T> element_x(max_nnodes_per_element);

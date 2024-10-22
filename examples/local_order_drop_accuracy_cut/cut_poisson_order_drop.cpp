@@ -3,9 +3,12 @@
 #include <set>
 #include <string>
 
-#include "apps/poisson_app.h"
+#include "analysis.h"
 #include "elements/gd_mesh.h"
 #include "elements/gd_vandermonde.h"
+#include "physics/cut_bcs.h"
+#include "physics/poisson.h"
+#include "sparse_utils/sparse_utils.h"
 #include "utils/argparser.h"
 #include "utils/json.h"
 #include "utils/loggers.h"
@@ -14,7 +17,7 @@
 
 template <typename T, class Mesh>
 void write_vtk(std::string vtkpath, const Mesh& mesh, const std::vector<T>& sol,
-               bool save_stencils) {
+               const std::vector<T>& exact_sol, bool save_stencils) {
   ToVTK<T, Mesh> vtk(mesh, vtkpath);
   vtk.write_mesh();
 
@@ -27,6 +30,7 @@ void write_vtk(std::string vtkpath, const Mesh& mesh, const std::vector<T>& sol,
   }
   vtk.write_cell_sol("nstencils", nstencils.data());
   vtk.write_sol("u", sol.data());
+  vtk.write_sol("u_exact", exact_sol.data());
   vtk.write_sol("lsf", mesh.get_lsf_nodes().data());
 
   if (save_stencils) {
@@ -50,15 +54,30 @@ void solve_poisson_problem(std::string prefix, int nxy, int Np_bc,
                            bool save_stencils) {
   using T = double;
   using Grid = StructuredGrid2D<T>;
-  using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
+  using QuadratureBulk = GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER>;
+  using QuadratureBCs = GDLSFQuadrature2D<T, Np_1d, QuadPtType::SURFACE>;
   using Mesh = CutMesh<T, Np_1d>;
   using Basis = GDBasis2D<T, Mesh>;
 
   auto source_fun = [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
     T r2 = xloc[0] * xloc[0] + xloc[1] * xloc[1];
-    return r2 * r2;
+    return -r2 * r2;
   };
-  using Poisson = PoissonApp<T, Mesh, Quadrature, Basis, typeof(source_fun)>;
+
+  auto bc_fun = [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
+    return T(0.0);
+  };
+
+  using PoissonBulk = PoissonPhysics<T, Basis::spatial_dim, typeof(source_fun)>;
+  using PoissonBCs = CutDirichlet<T, Basis::spatial_dim, typeof(bc_fun)>;
+
+  using AnalysisBulk =
+      GalerkinAnalysis<T, Mesh, QuadratureBulk, Basis, PoissonBulk>;
+  using AnalysisBCs =
+      GalerkinAnalysis<T, Mesh, QuadratureBCs, Basis, PoissonBCs>;
+
+  using BSRMat = GalerkinBSRMat<T, PoissonBulk::dof_per_node>;
+  using CSCMat = SparseUtils::CSCMat<T>;
 
   DegenerateStencilLogger::enable();
 
@@ -69,31 +88,67 @@ void solve_poisson_problem(std::string prefix, int nxy, int Np_bc,
   Grid grid(nx_ny, lxy, xy0);
   Mesh mesh(grid,
             [R](double x[]) { return x[0] * x[0] + x[1] * x[1] - R * R; });
-  Quadrature quadrature(mesh);
+
+  QuadratureBulk quadrature_bulk(mesh);
+  QuadratureBCs quadrature_bcs(mesh);
   Basis basis(mesh);
 
-  Poisson poisson(mesh, quadrature, basis, source_fun);
+  PoissonBulk poisson_bulk(source_fun);
+  PoissonBCs poisson_bcs(1e6, bc_fun);
 
-  int nnodes = mesh.get_num_nodes();
+  AnalysisBulk analysis_bulk(mesh, quadrature_bulk, basis, poisson_bulk);
+  AnalysisBCs analysis_bcs(mesh, quadrature_bcs, basis, poisson_bcs);
 
-  std::vector<T> sol_exact(nnodes, 0.0);
-  for (int i = 0; i < nnodes; i++) {
+  int ndof = mesh.get_num_nodes();
+
+  // Set up the Jacobian matrix for Poisson's problem with Nitsche's boundary
+  // conditions
+  int *rowp = nullptr, *cols = nullptr;
+  SparseUtils::CSRFromConnectivityFunctor(
+      mesh.get_num_nodes(), mesh.get_num_elements(),
+      mesh.max_nnodes_per_element,
+      [&mesh](int elem, int* nodes) -> int {
+        return mesh.get_elem_dof_nodes(elem, nodes);
+      },
+      &rowp, &cols);
+  int nnz = rowp[mesh.get_num_nodes()];
+  BSRMat* jac_bsr = new BSRMat(ndof, nnz, rowp, cols);
+  std::vector<T> zeros(ndof, 0.0);
+  analysis_bulk.jacobian(nullptr, zeros.data(), jac_bsr);
+  jac_bsr->write_mtx(std::filesystem::path(prefix) /
+                     std::filesystem::path("poisson_jac.mtx"));
+  analysis_bcs.jacobian(nullptr, zeros.data(), jac_bsr,
+                        false);  // Add bcs contribution
+  jac_bsr->write_mtx(std::filesystem::path(prefix) /
+                     std::filesystem::path("poisson_jac_with_nitsche.mtx"));
+  CSCMat* jac_csc = SparseUtils::bsr_to_csc(jac_bsr);
+
+  // Set up the right hand side
+  std::vector<T> rhs(ndof, 0.0);
+
+  analysis_bulk.residual(nullptr, zeros.data(), rhs.data());
+  analysis_bcs.residual(nullptr, zeros.data(), rhs.data());
+  for (int i = 0; i < ndof; i++) {
+    rhs[i] *= -1.0;
+  }
+
+  // Solve
+  SparseUtils::CholOrderingType order = SparseUtils::CholOrderingType::ND;
+  SparseUtils::SparseCholesky<T>* chol =
+      new SparseUtils::SparseCholesky<T>(jac_csc);
+  chol->factor();
+  std::vector<T> sol = rhs;
+  chol->solve(sol.data());
+
+  // Get exact solution
+  std::vector<T> sol_exact(ndof, 0.0);
+  for (int i = 0; i < ndof; i++) {
     T xloc[Basis::spatial_dim];
     mesh.get_node_xloc(i, xloc);
 
     T r = sqrt(xloc[0] * xloc[0] + xloc[1] * xloc[1]);
     sol_exact[i] = (r * r * r * r * r * r - R * R * R * R * R * R) / 42.0;
   }
-
-  std::set<int> dof_bcs{};
-  for (int i = 0; i < mesh.get_num_elements(); i++) {
-    // Find all boundary elements
-    // TODO: finish from here
-  }
-
-  std::vector<T> dof_vals{};
-
-  std::vector<T> sol = poisson.solve(dof_bcs, dof_vals);
 
   json j = {{"sol", sol}, {"sol_exact", sol_exact}};
 
@@ -102,7 +157,7 @@ void solve_poisson_problem(std::string prefix, int nxy, int Np_bc,
              j);
   write_vtk<T>(
       std::filesystem::path(prefix) / std::filesystem::path("poisson.vtk"),
-      mesh, sol, save_stencils);
+      mesh, sol, sol_exact, save_stencils);
 }
 
 int main(int argc, char* argv[]) {
