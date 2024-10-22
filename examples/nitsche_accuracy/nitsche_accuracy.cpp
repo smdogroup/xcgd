@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cassert>
 #include <exception>
 #include <set>
@@ -14,6 +15,20 @@
 #include "utils/loggers.h"
 #include "utils/misc.h"
 #include "utils/vtk.h"
+
+#define PI 3.14159265358979323846
+
+double hard_max(std::vector<double> vals) {
+  return *std::max_element(vals.begin(), vals.end());
+}
+
+double ks_max(std::vector<double> vals, double ksrho = 50.0) {
+  double umax = hard_max(vals);
+  std::vector<double> eta(vals.size());
+  std::transform(vals.begin(), vals.end(), eta.begin(),
+                 [umax, ksrho](double x) { return exp(ksrho * (x - umax)); });
+  return log(std::accumulate(eta.begin(), eta.end(), 0.0)) / ksrho + umax;
+}
 
 template <typename T, class Mesh>
 void write_vtk(std::string vtkpath, const Mesh& mesh, const std::vector<T>& sol,
@@ -50,8 +65,8 @@ void write_vtk(std::string vtkpath, const Mesh& mesh, const std::vector<T>& sol,
 
 // Get the l2 error of the numerical Poisson solution
 template <int Np_1d>
-void solve_poisson_problem(std::string prefix, int nxy, int Np_bc,
-                           bool save_stencils) {
+void solve_poisson_problem(std::string prefix, int nxy, bool save_stencils,
+                           double nitsche_eta) {
   using T = double;
   using Grid = StructuredGrid2D<T>;
   using QuadratureBulk = GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER>;
@@ -61,11 +76,14 @@ void solve_poisson_problem(std::string prefix, int nxy, int Np_bc,
 
   auto source_fun = [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
     T r2 = xloc[0] * xloc[0] + xloc[1] * xloc[1];
-    return -r2 * r2;
+    T r = sqrt(r2);
+    return -(4.0 - r2) * sin(r) - 5.0 * r * cos(r);
   };
 
   auto bc_fun = [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
-    return T(0.0);
+    T r2 = xloc[0] * xloc[0] + xloc[1] * xloc[1];
+    T r = sqrt(r2);
+    return r2 * sin(r);
   };
 
   using PoissonBulk = PoissonPhysics<T, Basis::spatial_dim, typeof(source_fun)>;
@@ -82,19 +100,25 @@ void solve_poisson_problem(std::string prefix, int nxy, int Np_bc,
   DegenerateStencilLogger::enable();
 
   int nx_ny[2] = {nxy, nxy};
-  T lxy[2] = {3.0, 3.0};
-  T xy0[2] = {-1.5, -1.5};
-  T R = 1.0;
+  double R = 2.0 * PI;
+  double lxy[2] = {3.0 * R, 3.0 * R};
+  double xy0[2] = {-1.5 * R, -1.5 * R};
+  double angle = PI / 6.0;
   Grid grid(nx_ny, lxy, xy0);
-  Mesh mesh(grid,
-            [R](double x[]) { return x[0] * x[0] + x[1] * x[1] - R * R; });
+  Mesh mesh(grid, [R, angle](double x[]) {
+    double region1 = x[0] * x[0] + x[1] * x[1] - R * R;          // <= 0
+    double region2 = -x[1];                                      // <= 0
+    double region3 = x[1] - tan(angle) * x[0];                   // <= 0
+    double region4 = -x[0] * x[0] - x[1] * x[1] + 0.25 * R * R;  // <= 0
+    return region1;
+  });
 
   QuadratureBulk quadrature_bulk(mesh);
   QuadratureBCs quadrature_bcs(mesh);
   Basis basis(mesh);
 
   PoissonBulk poisson_bulk(source_fun);
-  PoissonBCs poisson_bcs(1e6, bc_fun);
+  PoissonBCs poisson_bcs(nitsche_eta, bc_fun);
 
   AnalysisBulk analysis_bulk(mesh, quadrature_bulk, basis, poisson_bulk);
   AnalysisBCs analysis_bcs(mesh, quadrature_bcs, basis, poisson_bcs);
@@ -145,12 +169,13 @@ void solve_poisson_problem(std::string prefix, int nxy, int Np_bc,
   for (int i = 0; i < ndof; i++) {
     T xloc[Basis::spatial_dim];
     mesh.get_node_xloc(i, xloc);
-
-    T r = sqrt(xloc[0] * xloc[0] + xloc[1] * xloc[1]);
-    sol_exact[i] = (r * r * r * r * r * r - R * R * R * R * R * R) / 42.0;
+    T r2 = xloc[0] * xloc[0] + xloc[1] * xloc[1];
+    T r = sqrt(r2);
+    sol_exact[i] = r2 * sin(r);
   }
 
-  json j = {{"sol", sol}, {"sol_exact", sol_exact}};
+  json j = {
+      {"sol", sol}, {"sol_exact", sol_exact}, {"lsf", mesh.get_lsf_nodes()}};
 
   char json_name[256];
   write_json(std::filesystem::path(prefix) / std::filesystem::path("sol.json"),
@@ -164,8 +189,8 @@ int main(int argc, char* argv[]) {
   ArgParser p;
   p.add_argument<int>("--save-degenerate-stencils", 0);
   p.add_argument<int>("--Np_1d", 2);
-  p.add_argument<int>("--Np_bc", 2);
   p.add_argument<int>("--nxy", 64);
+  p.add_argument<double>("--nitsche_eta", 1e6);
   p.add_argument<std::string>("--prefix", {});
   p.parse_args(argc, argv);
 
@@ -180,24 +205,24 @@ int main(int argc, char* argv[]) {
                        std::filesystem::path("args.txt"));
 
   int Np_1d = p.get<int>("Np_1d");
-  int Np_bc = p.get<int>("Np_bc");
   int nxy = p.get<int>("nxy");
+  double nitsche_eta = p.get<double>("nitsche_eta");
 
   switch (Np_1d) {
     case 2:
-      solve_poisson_problem<2>(prefix, nxy, Np_bc, save_stencils);
+      solve_poisson_problem<2>(prefix, nxy, save_stencils, nitsche_eta);
       break;
     case 4:
-      solve_poisson_problem<4>(prefix, nxy, Np_bc, save_stencils);
+      solve_poisson_problem<4>(prefix, nxy, save_stencils, nitsche_eta);
       break;
     case 6:
-      solve_poisson_problem<6>(prefix, nxy, Np_bc, save_stencils);
+      solve_poisson_problem<6>(prefix, nxy, save_stencils, nitsche_eta);
       break;
     case 8:
-      solve_poisson_problem<8>(prefix, nxy, Np_bc, save_stencils);
+      solve_poisson_problem<8>(prefix, nxy, save_stencils, nitsche_eta);
       break;
     case 10:
-      solve_poisson_problem<10>(prefix, nxy, Np_bc, save_stencils);
+      solve_poisson_problem<10>(prefix, nxy, save_stencils, nitsche_eta);
       break;
     default:
       printf("Unsupported Np_1d (%d), exiting...\n", Np_1d);
