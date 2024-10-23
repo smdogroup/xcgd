@@ -1,13 +1,17 @@
 #pragma once
 
+#include <algorithm>
 #include <any>
 #include <cctype>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <set>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 
 std::map<std::string, std::string> get_cmd_args(int argc, char* argv[]) {
@@ -44,7 +48,8 @@ class ArgParser {
 
  public:
   template <typename Type>
-  void add_argument(std::string name, Type default_val) {
+  void add_argument(std::string name, Type default_val,
+                    std::set<Type> choices = {}) {
     static_assert(isValidArgType<Type>::value,
                   "attempted argument type is not supported");
 
@@ -52,6 +57,11 @@ class ArgParser {
     if (name.empty()) return;
 
     args[name] = default_val;
+    std::set<std::string> choice_strs;
+    for (auto c : choices) {
+      choice_strs.insert(choice_to_string(c));
+    }
+    choice_strings[name] = choice_strs;
     keys.push_back(name);
   }
 
@@ -101,6 +111,20 @@ class ArgParser {
       std::string k = strip_leading_hyphens(kv.first);
       std::string v = kv.second;
 
+      // Check if the option is restricted to certain choices
+      if (choice_strings[k].size() > 0) {
+        if (!choice_strings[k].count(v)) {
+          std::string msg =
+              "argument " + k + " has invalid choice: " + v + " (choose from";
+          for (auto c : choice_strings[k]) {
+            msg += " " + c + ",";
+          }
+          msg.pop_back();  // Remove the last comma
+          msg += ")";
+          throw std::runtime_error(msg.c_str());
+        }
+      }
+
       if (!args.count(k)) {
         std::printf("[Warning] unknown cmd argument %s\n", k.c_str());
         continue;
@@ -131,7 +155,15 @@ class ArgParser {
     return name;
   }
 
+  template <class Type>
+  std::string choice_to_string(Type val) {
+    return std::to_string(val);
+  }
+
+  std::string choice_to_string(std::string val) { return val; }
+
   std::map<std::string, arg_t> args;
+  std::map<std::string, std::set<std::string>> choice_strings;
   std::vector<std::string> keys;
 };
 
