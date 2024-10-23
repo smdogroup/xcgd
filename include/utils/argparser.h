@@ -144,7 +144,17 @@ class ArgParser {
   void show_help_info_and_exit() {
     std::printf("Usage: ./prog_name [-h,--help]");
     for (std::string k : keys) {
-      std::printf(" --%s=...", k.c_str());
+      if (choice_strings[k].size() > 0) {
+        std::string msg = " --" + k + "=[";
+        for (auto c : choice_strings[k]) {
+          msg += c + ",";
+        }
+        msg.pop_back();
+        msg += "]";
+        std::cout << msg;
+      } else {
+        std::printf(" --%s=...", k.c_str());
+      }
     }
     std::printf("\n");
     exit(0);
