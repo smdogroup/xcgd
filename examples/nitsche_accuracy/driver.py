@@ -17,11 +17,25 @@ def get_poisson_l2_error(prefix, cmd):
     with open(join(prefix, "sol.json")) as f:
         j = json.load(f)
 
-    return np.abs(
-        np.linalg.norm(np.array(j["sol"]), ord=2)
-        / np.linalg.norm(np.array(j["sol_exact"]), ord=2)
-        - 1.0
-    )
+    def compute_error(sol, sol_exact):
+        return np.abs(
+            np.linalg.norm(sol, ord=2) / np.linalg.norm(sol_exact, ord=2) - 1.0
+        )
+
+    sol = np.array(j["sol"])
+    sol_exact = np.array(j["sol_exact"])
+    lsf = np.array(j["lsf"])
+    solq_bulk = np.array(j["solq_bulk"])
+    solq_bulk_exact = np.array(j["solq_bulk_exact"])
+    solq_bcs = np.array(j["solq_bcs"])
+    solq_bcs_exact = np.array(j["solq_bcs_exact"])
+
+    err_raw = compute_error(sol, sol_exact)
+    err_interior = compute_error(sol[lsf < 0.0], sol_exact[lsf < 0.0])
+    err_quad_bulk = compute_error(solq_bulk, solq_bulk_exact)
+    err_quad_surf = compute_error(solq_bcs, solq_bcs_exact)
+
+    return err_raw, err_interior, err_quad_bulk, err_quad_surf
 
 
 def annotate_slope(
@@ -84,48 +98,54 @@ def annotate_slope(
     return
 
 
-def run_experiments(
-    Np_1d_list=[2, 4, 6, 8], max_order_drop=2, nxy_list=[8, 16, 32, 64, 128]
-):
-    order = [
-        (Np_1d, Np_bc)
-        for Np_1d in Np_1d_list
-        for Np_bc in reversed(range(max(2, Np_1d - max_order_drop), Np_1d + 1))
-    ]
-
+def run_experiments(Np_1d_list, nxy_list, nitsche_eta_list):
     df_data = {
         "Np_1d": [],
-        "Np_bc": [],
         "nxy": [],
         "h": [],
-        "relerr": [],
+        "nitsche_eta": [],
+        "err_raw": [],
+        "err_interior": [],
+        "err_quad_bulk": [],
+        "err_quad_surf": [],
     }
 
-    for Np_1d, Np_bc in order:
+    for Np_1d in Np_1d_list:
         for nxy in nxy_list:
-            prefix = f"outputs_Np1d_{Np_1d}_Npbc_{Np_bc}_nxy_{nxy}"
-            cmd = [
-                "./poisson_order_drop",
-                "--save-degenerate-stencils=0",
-                f"--Np_1d={Np_1d}",
-                f"--Np_bc={Np_bc}",
-                f"--nxy={nxy}",
-                f"--prefix={prefix}",
-            ]
+            for nitsche_eta in nitsche_eta_list:
+                prefix = f"outputs_Np_{Np_1d}_nxy_{nxy}_nitsche_{nitsche_eta:.1e}"
+                cmd = [
+                    "./nitsche_accuracy",
+                    "--save-degenerate-stencils=0",
+                    f"--Np_1d={Np_1d}",
+                    f"--nxy={nxy}",
+                    f"--prefix={prefix}",
+                    f"--nitsche_eta={nitsche_eta}",
+                ]
 
-            t1 = time()
-            err = get_poisson_l2_error(prefix, cmd)
-            t2 = time()
+                t1 = time()
+                (
+                    err_raw,
+                    err_interior,
+                    err_quad_bulk,
+                    err_quad_surf,
+                ) = get_poisson_l2_error(prefix, cmd)
 
-            print(
-                f"Np_1d: {Np_1d:2d}, Np_bc: {Np_bc:2d}, nxy: {nxy:4d}, execution time: {t2 - t1:.2f} s"
-            )
+                t2 = time()
 
-            df_data["Np_1d"].append(Np_1d)
-            df_data["Np_bc"].append(Np_bc)
-            df_data["nxy"].append(nxy)
-            df_data["h"].append(2.0 / nxy)
-            df_data["relerr"].append(err)
+                print(
+                    f"Np_1d: {Np_1d:2d}, nxy: {nxy:4d}, nitsche_eta: {nitsche_eta:.2e}, execution time: {t2 - t1:.2f} s"
+                )
+
+                df_data["Np_1d"].append(Np_1d)
+                df_data["nxy"].append(nxy)
+                df_data["h"].append(2.0 / nxy)
+                df_data["nitsche_eta"].append(nitsche_eta)
+
+                df_data["err_raw"].append(err_raw)
+                df_data["err_interior"].append(err_interior)
+                df_data["err_quad_bulk"].append(err_quad_bulk)
+                df_data["err_quad_surf"].append(err_quad_surf)
 
     return pd.DataFrame(df_data)
 
@@ -148,7 +168,9 @@ def adjust_plot_lim(ax, left=0.0, right=0.2, bottom=0.3, up=0.0):
     return
 
 
-def plot(cases_df):
+def plot(cases_df, xname):
+    assert xname in ["h", "nitsche_eta"]
+
     fig, ax = plt.subplots(
         ncols=1,
         nrows=1,
@@ -162,30 +184,30 @@ def plot(cases_df):
 
     # Cases for each Np
     for i, Np_1d in enumerate(Np_1d_list):
-        df = cases_df[cases_df["Np_1d"] == Np_1d]
+        for j, err_type in enumerate(
+            ["err_raw", "err_interior", "err_quad_bulk", "err_quad_surf"]
+        ):
+            df = cases_df[cases_df["Np_1d"] == Np_1d]
 
-        Np_bc_list = sorted(list(set(df["Np_bc"])), reverse=True)
-
-        for j, Np_bc in enumerate(Np_bc_list):
-            x = df[df["Np_bc"] == Np_bc]["h"]
-            # x = df[df["Np_bc"] == Np_bc]["nxy"]
-            y = df[df["Np_bc"] == Np_bc]["relerr"]
+            x = df[xname]
+            y = df[err_type]
 
             # Get averaged slope
             slope, _ = np.polyfit(np.log10(x), np.log10(y), deg=1)
 
-            label = f"$p={Np_1d - 1}, p_{{bc}}={Np_bc-1}, \Delta:{slope:.2f}$"
+            label = f"$p={Np_1d - 1}, \Delta:{slope:.2f}$, err: {j}"
             ax.loglog(x, y, linestyles[j], color=colors[i], clip_on=False, label=label)
 
             print(label)
 
-            if j == 0:
-                x0, x1 = x.iloc[-2:]
-                y0, y1 = y.iloc[-2:]
-                annotate_slope(ax, (x0, y0), (x1, y1))
+            # x0, x1 = x.iloc[-2:]
+            # y0, y1 = y.iloc[-2:]
+            # annotate_slope(ax, (x0, y0), (x1, y1))
 
-    ax.set_xlabel("Mesh size $h$")
-    # ax.set_xlabel("number of elements in each dimension")
+    if xname == "h":
+        ax.set_xlabel("Mesh size $h$")
+    else:
+        ax.set_xlabel(r"Nitsche parameter $\eta$")
 
     ax.set_ylabel(
         "Normalized relative solution error\n"
@@ -212,17 +234,25 @@ if __name__ == "__main__":
         help="list of Np_1d to use",
     )
     p.add_argument(
-        "--max-order-drop",
-        type=int,
-        default=2,
-        help="maximum order to drop for boundary elements",
-    )
-    p.add_argument(
         "--nxy",
         nargs="+",
         default=[8, 16, 32, 64, 128],
         type=int,
         help="list of number of mesh elements per dimension",
+    )
+    p.add_argument(
+        "--nitsche_eta",
+        nargs="+",
+        default=[1e1, 1e2, 1e3, 1e4, 1e5, 1e6],
+        type=float,
+        help="list of Nitsche parameter",
+    )
+
+    p.add_argument(
+        "--xname",
+        default="h",
+        choices=["h", "nitsche_eta"],
+        help="which quantity to use for x axis of the plot",
     )
 
     args = p.parse_args()
@@ -230,8 +260,8 @@ if __name__ == "__main__":
     if args.csv is None:
         df = run_experiments(
             Np_1d_list=args.Np_1d,
-            max_order_drop=args.max_order_drop,
             nxy_list=args.nxy,
+            nitsche_eta_list=args.nitsche_eta,
         )
         df.to_csv("cases_data.csv")
     else:
@@ -239,14 +269,14 @@ if __name__ == "__main__":
         drop_column = "Unnamed: 0"
         if drop_column in df.columns:
             df = df.drop(columns=[drop_column])
-        df = df.sort_values(
-            ["Np_1d", "Np_bc", "nxy"], ascending=[True, False, True]
-        ).reset_index(drop=True)
+        df = df.sort_values(["Np_1d", "nxy"], ascending=[True, True]).reset_index(
+            drop=True
+        )
 
         # with pd.option_context("display.max_rows", None, "display.max_columns", None):
         #     print(df)
         #     exit()
 
-    fig, ax = plot(df)
-    fig.savefig("poisson_accuracy_study.pdf")
-    df.to_csv("poisson_accuracy_study.csv", index=False)
+    fig, ax = plot(df, args.xname)
+    fig.savefig(f"nitsche_precision_x_{args.xname}.pdf")
+    df.to_csv(f"nitsche_precision_x_{args.xname}.csv", index=False)

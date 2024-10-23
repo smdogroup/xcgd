@@ -277,7 +277,7 @@ class ToVTK {
  * @brief Scattered data to vtk
  *
  * Example usage:
- *   FieldToVEK<T, spatial_dim> vtk("field.vtk");
+ *   FieldToVTK<T, spatial_dim> vtk("field.vtk");
  *   vtk.add_scalar_field(xloc, vals);
  *   vtk.write_vtk();
  */
@@ -349,7 +349,7 @@ class FieldToVTK {
  * @brief Scattered data to vtk
  *
  * Example usage:
- *   FieldToVEK<T, spatial_dim> vtk("field.vtk");
+ *   FieldToVTK<T, spatial_dim> vtk("field.vtk");
  *   vtk.add_scalar_field(xloc, vals);
  *   vtk.write_vtk();
  */

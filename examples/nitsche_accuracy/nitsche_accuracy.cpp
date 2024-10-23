@@ -63,6 +63,20 @@ void write_vtk(std::string vtkpath, const Mesh& mesh, const std::vector<T>& sol,
   }
 }
 
+template <typename T, class Mesh, class Analysis>
+void write_field_vtk(std::string field_vtkpath, const Mesh& mesh,
+                     const Analysis& analysis, const std::vector<T>& sol) {
+  FieldToVTKNew<T, Mesh::spatial_dim> field_vtk(field_vtkpath);
+
+  auto [xloc_q, dof_q] = analysis.interpolate_dof(sol.data());
+
+  field_vtk.add_mesh(xloc_q);
+  field_vtk.add_sol("sol", dof_q);
+
+  field_vtk.write_mesh();
+  field_vtk.write_sol("sol");
+}
+
 // Get the l2 error of the numerical Poisson solution
 template <int Np_1d>
 void solve_poisson_problem(std::string prefix, int nxy, bool save_stencils,
@@ -174,8 +188,38 @@ void solve_poisson_problem(std::string prefix, int nxy, bool save_stencils,
     sol_exact[i] = r2 * sin(r);
   }
 
-  json j = {
-      {"sol", sol}, {"sol_exact", sol_exact}, {"lsf", mesh.get_lsf_nodes()}};
+  // Get numerical and exact solutions at quadrature points
+  auto [xlocq_bulk, solq_bulk] = analysis_bulk.interpolate_dof(sol.data());
+  auto [xlocq_bcs, solq_bcs] = analysis_bcs.interpolate_dof(sol.data());
+
+  std::vector<T> solq_bulk_exact(solq_bulk.size()),
+      solq_bcs_exact(solq_bcs.size());
+
+  for (int i = 0; i < solq_bulk.size(); i++) {
+    T r2 = xlocq_bulk[Basis::spatial_dim * i] *
+               xlocq_bulk[Basis::spatial_dim * i] +
+           xlocq_bulk[Basis::spatial_dim * i + 1] *
+               xlocq_bulk[Basis::spatial_dim * i + 1];
+    T r = sqrt(r2);
+    solq_bulk_exact[i] = r2 * sin(r);
+  }
+
+  for (int i = 0; i < solq_bcs.size(); i++) {
+    T r2 = xlocq_bulk[Basis::spatial_dim * i] *
+               xlocq_bulk[Basis::spatial_dim * i] +
+           xlocq_bulk[Basis::spatial_dim * i + 1] *
+               xlocq_bulk[Basis::spatial_dim * i + 1];
+    T r = sqrt(r2);
+    solq_bcs_exact[i] = r2 * sin(r);
+  }
+
+  json j = {{"sol", sol},
+            {"sol_exact", sol_exact},
+            {"lsf", mesh.get_lsf_nodes()},
+            {"solq_bulk", solq_bulk},
+            {"solq_bulk_exact", solq_bulk_exact},
+            {"solq_bcs", solq_bcs},
+            {"solq_bcs_exact", solq_bcs_exact}};
 
   char json_name[256];
   write_json(std::filesystem::path(prefix) / std::filesystem::path("sol.json"),
@@ -183,6 +227,14 @@ void solve_poisson_problem(std::string prefix, int nxy, bool save_stencils,
   write_vtk<T>(
       std::filesystem::path(prefix) / std::filesystem::path("poisson.vtk"),
       mesh, sol, sol_exact, save_stencils);
+
+  write_field_vtk<T>(std::filesystem::path(prefix) /
+                         std::filesystem::path("field_poisson_bulk.vtk"),
+                     mesh, analysis_bulk, sol);
+
+  write_field_vtk<T>(std::filesystem::path(prefix) /
+                         std::filesystem::path("field_poisson_bcs.vtk"),
+                     mesh, analysis_bcs, sol);
 }
 
 int main(int argc, char* argv[]) {

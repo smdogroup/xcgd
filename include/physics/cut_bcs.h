@@ -15,6 +15,7 @@ class CutDirichlet final : public PhysicsBase<T, spatial_dim, 0, 1> {
 
  public:
   using PhysicsBase::data_per_node;
+  using PhysicsBase::dof_per_node;
   using PhysicsBase::spatial_dim;
 
   CutDirichlet(double eta, const BCFunc& bc_func)

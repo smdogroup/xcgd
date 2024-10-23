@@ -601,6 +601,55 @@ class GalerkinAnalysis final {
     }
   }
 
+  // Interpolate dof on quadrature points, intended to be used for
+  // debug or post-process
+  std::pair<std::vector<T>, std::vector<T>> interpolate_dof(
+      const T dof[]) const {
+    std::vector<T> xloc_q, dof_q;
+
+    for (int i = 0; i < mesh.get_num_elements(); i++) {
+      // Get the element node locations
+      T element_xloc[spatial_dim * max_nnodes_per_element];
+      get_element_xloc<T, Mesh, Basis>(mesh, i, element_xloc);
+
+      // Get the element degrees of freedom
+      T element_dof[max_dof_per_element];
+      get_element_vars<T, dof_per_node, Mesh, Basis>(mesh, i, dof, element_dof);
+
+      std::vector<T> pts, wts, ns;
+      int num_quad_pts = quadrature.get_quadrature_pts(i, pts, wts, ns);
+
+      std::vector<T> N, Nxi;
+      basis.eval_basis_grad(i, pts, N, Nxi);
+
+      for (int j = 0; j < num_quad_pts; j++) {
+        int offset_n = j * max_nnodes_per_element;
+        int offset_nxi = j * max_nnodes_per_element * spatial_dim;
+
+        A2D::Vec<T, spatial_dim> xloc;
+        interp_val_grad<T, Basis, spatial_dim>(element_xloc, &N[offset_n],
+                                               nullptr, &xloc, nullptr);
+
+        typename Physics::dof_t vals{};
+        interp_val_grad<T, Basis>(element_dof, &N[offset_n], nullptr, &vals,
+                                  nullptr);
+
+        for (int d = 0; d < spatial_dim; d++) {
+          xloc_q.push_back(xloc(d));
+        }
+
+        for (int k = 0; k < Physics::dof_per_node; k++) {
+          if constexpr (Physics::dof_per_node > 1) {
+            dof_q.push_back(vals(k));
+          } else {
+            dof_q.push_back(vals);
+          }
+        }
+      }
+    }
+    return {xloc_q, dof_q};
+  }
+
  private:
   const Mesh& mesh;
   const Quadrature& quadrature;
