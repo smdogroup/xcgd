@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cassert>
 #include <exception>
+#include <memory>
 #include <set>
 #include <string>
 
@@ -77,10 +78,23 @@ void write_field_vtk(std::string field_vtkpath, const Mesh& mesh,
   field_vtk.write_sol("sol");
 }
 
+enum class ProbInstance { Circle, Wedge };
+
+template <typename T, typename Vec>
+T exact_solution(ProbInstance instance, Vec xloc) {
+  if (instance == ProbInstance::Circle) {
+    T r2 = xloc[0] * xloc[0] + xloc[1] * xloc[1];
+    T r = sqrt(r2);
+    return r2 * sin(r);
+  } else {  // Wedge
+    return sin(xloc[0]) * sin(xloc[1]);
+  }
+}
+
 // Get the l2 error of the numerical Poisson solution
 template <int Np_1d>
-void solve_poisson_problem(std::string prefix, int nxy, bool save_stencils,
-                           double nitsche_eta) {
+void solve_poisson_problem(std::string prefix, ProbInstance instance, int nxy,
+                           bool save_stencils, double nitsche_eta) {
   using T = double;
   using Grid = StructuredGrid2D<T>;
   using QuadratureBulk = GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER>;
@@ -88,16 +102,18 @@ void solve_poisson_problem(std::string prefix, int nxy, bool save_stencils,
   using Mesh = CutMesh<T, Np_1d>;
   using Basis = GDBasis2D<T, Mesh>;
 
-  auto source_fun = [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
-    T r2 = xloc[0] * xloc[0] + xloc[1] * xloc[1];
-    T r = sqrt(r2);
-    return -(4.0 - r2) * sin(r) - 5.0 * r * cos(r);
+  auto source_fun = [instance](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
+    if (instance == ProbInstance::Circle) {
+      T r2 = xloc[0] * xloc[0] + xloc[1] * xloc[1];
+      T r = sqrt(r2);
+      return -(4.0 - r2) * sin(r) - 5.0 * r * cos(r);
+    } else {  // Wedge
+      return -2.0 * sin(xloc[0]) * sin(xloc[1]);
+    }
   };
 
-  auto bc_fun = [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
-    T r2 = xloc[0] * xloc[0] + xloc[1] * xloc[1];
-    T r = sqrt(r2);
-    return r2 * sin(r);
+  auto bc_fun = [instance](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
+    return exact_solution<T>(instance, xloc);
   };
 
   using PoissonBulk = PoissonPhysics<T, Basis::spatial_dim, typeof(source_fun)>;
@@ -113,43 +129,49 @@ void solve_poisson_problem(std::string prefix, int nxy, bool save_stencils,
 
   DegenerateStencilLogger::enable();
 
-  int nx_ny[2] = {nxy, nxy};
-  double R = 2.0 * PI;
-  double lxy[2] = {3.0 * R, 3.0 * R};
-  double xy0[2] = {-1.5 * R, -1.5 * R};
-  double angle = PI / 6.0;
-  Grid grid(nx_ny, lxy, xy0);
-  Mesh mesh(grid, [R, angle](double x[]) {
-    double region1 = x[0] * x[0] + x[1] * x[1] - R * R;          // <= 0
-    double region2 = -x[1];                                      // <= 0
-    double region3 = x[1] - tan(angle) * x[0];                   // <= 0
-    double region4 = -x[0] * x[0] - x[1] * x[1] + 0.25 * R * R;  // <= 0
-    return region1;
-  });
+  std::shared_ptr<Mesh> mesh;
+  if (instance == ProbInstance::Circle) {
+    int nx_ny[2] = {nxy, nxy};
+    double R = 2.0 * PI;
+    double lxy[2] = {3.0 * R, 3.0 * R};
+    double xy0[2] = {-1.5 * R, -1.5 * R};
+    Grid grid(nx_ny, lxy, xy0);
+    mesh = std::make_shared<Mesh>(grid, [R](double x[]) {
+      return x[0] * x[0] + x[1] * x[1] - R * R;  // <= 0
+    });
+  } else {  // Wedge
+    int nx_ny[2] = {nxy, nxy};
+    double lxy[2] = {2.0 * PI, 2.0 * PI};
+    double angle = PI / 6.0;
+    Grid grid(nx_ny, lxy);
+    mesh = std::make_shared<Mesh>(grid, [angle](double x[]) {
+      return sin(angle) * (x[0] - 2.0 * PI) + cos(angle) * x[1];  // <= 0
+    });
+  }
 
-  QuadratureBulk quadrature_bulk(mesh);
-  QuadratureBCs quadrature_bcs(mesh);
-  Basis basis(mesh);
+  QuadratureBulk quadrature_bulk(*mesh);
+  QuadratureBCs quadrature_bcs(*mesh);
+  Basis basis(*mesh);
 
   PoissonBulk poisson_bulk(source_fun);
   PoissonBCs poisson_bcs(nitsche_eta, bc_fun);
 
-  AnalysisBulk analysis_bulk(mesh, quadrature_bulk, basis, poisson_bulk);
-  AnalysisBCs analysis_bcs(mesh, quadrature_bcs, basis, poisson_bcs);
+  AnalysisBulk analysis_bulk(*mesh, quadrature_bulk, basis, poisson_bulk);
+  AnalysisBCs analysis_bcs(*mesh, quadrature_bcs, basis, poisson_bcs);
 
-  int ndof = mesh.get_num_nodes();
+  int ndof = mesh->get_num_nodes();
 
   // Set up the Jacobian matrix for Poisson's problem with Nitsche's boundary
   // conditions
   int *rowp = nullptr, *cols = nullptr;
   SparseUtils::CSRFromConnectivityFunctor(
-      mesh.get_num_nodes(), mesh.get_num_elements(),
-      mesh.max_nnodes_per_element,
+      mesh->get_num_nodes(), mesh->get_num_elements(),
+      mesh->max_nnodes_per_element,
       [&mesh](int elem, int* nodes) -> int {
-        return mesh.get_elem_dof_nodes(elem, nodes);
+        return mesh->get_elem_dof_nodes(elem, nodes);
       },
       &rowp, &cols);
-  int nnz = rowp[mesh.get_num_nodes()];
+  int nnz = rowp[mesh->get_num_nodes()];
   BSRMat* jac_bsr = new BSRMat(ndof, nnz, rowp, cols);
   std::vector<T> zeros(ndof, 0.0);
   analysis_bulk.jacobian(nullptr, zeros.data(), jac_bsr);
@@ -182,10 +204,8 @@ void solve_poisson_problem(std::string prefix, int nxy, bool save_stencils,
   std::vector<T> sol_exact(ndof, 0.0);
   for (int i = 0; i < ndof; i++) {
     T xloc[Basis::spatial_dim];
-    mesh.get_node_xloc(i, xloc);
-    T r2 = xloc[0] * xloc[0] + xloc[1] * xloc[1];
-    T r = sqrt(r2);
-    sol_exact[i] = r2 * sin(r);
+    mesh->get_node_xloc(i, xloc);
+    sol_exact[i] = exact_solution<T>(instance, xloc);
   }
 
   // Get numerical and exact solutions at quadrature points
@@ -196,26 +216,18 @@ void solve_poisson_problem(std::string prefix, int nxy, bool save_stencils,
       solq_bcs_exact(solq_bcs.size());
 
   for (int i = 0; i < solq_bulk.size(); i++) {
-    T r2 = xlocq_bulk[Basis::spatial_dim * i] *
-               xlocq_bulk[Basis::spatial_dim * i] +
-           xlocq_bulk[Basis::spatial_dim * i + 1] *
-               xlocq_bulk[Basis::spatial_dim * i + 1];
-    T r = sqrt(r2);
-    solq_bulk_exact[i] = r2 * sin(r);
+    solq_bulk_exact[i] =
+        exact_solution<T>(instance, &xlocq_bulk[Basis::spatial_dim * i]);
   }
 
   for (int i = 0; i < solq_bcs.size(); i++) {
-    T r2 = xlocq_bulk[Basis::spatial_dim * i] *
-               xlocq_bulk[Basis::spatial_dim * i] +
-           xlocq_bulk[Basis::spatial_dim * i + 1] *
-               xlocq_bulk[Basis::spatial_dim * i + 1];
-    T r = sqrt(r2);
-    solq_bcs_exact[i] = r2 * sin(r);
+    solq_bcs_exact[i] =
+        exact_solution<T>(instance, &xlocq_bcs[Basis::spatial_dim * i]);
   }
 
   json j = {{"sol", sol},
             {"sol_exact", sol_exact},
-            {"lsf", mesh.get_lsf_nodes()},
+            {"lsf", mesh->get_lsf_nodes()},
             {"solq_bulk", solq_bulk},
             {"solq_bulk_exact", solq_bulk_exact},
             {"solq_bcs", solq_bcs},
@@ -226,15 +238,15 @@ void solve_poisson_problem(std::string prefix, int nxy, bool save_stencils,
              j);
   write_vtk<T>(
       std::filesystem::path(prefix) / std::filesystem::path("poisson.vtk"),
-      mesh, sol, sol_exact, save_stencils);
+      *mesh, sol, sol_exact, save_stencils);
 
   write_field_vtk<T>(std::filesystem::path(prefix) /
                          std::filesystem::path("field_poisson_bulk.vtk"),
-                     mesh, analysis_bulk, sol);
+                     *mesh, analysis_bulk, sol);
 
   write_field_vtk<T>(std::filesystem::path(prefix) /
                          std::filesystem::path("field_poisson_bcs.vtk"),
-                     mesh, analysis_bcs, sol);
+                     *mesh, analysis_bcs, sol);
 }
 
 int main(int argc, char* argv[]) {
@@ -244,6 +256,7 @@ int main(int argc, char* argv[]) {
   p.add_argument<int>("--nxy", 64);
   p.add_argument<double>("--nitsche_eta", 1e6);
   p.add_argument<std::string>("--prefix", {});
+  p.add_argument<std::string>("--instance", "circle", {"circle", "wedge"});
   p.parse_args(argc, argv);
 
   bool save_stencils = p.get<int>("save-degenerate-stencils");
@@ -259,22 +272,30 @@ int main(int argc, char* argv[]) {
   int Np_1d = p.get<int>("Np_1d");
   int nxy = p.get<int>("nxy");
   double nitsche_eta = p.get<double>("nitsche_eta");
+  ProbInstance instance = std::map<std::string, ProbInstance>{
+      {"circle", ProbInstance::Circle},
+      {"wedge", ProbInstance::Wedge}}[p.get<std::string>("instance")];
 
   switch (Np_1d) {
     case 2:
-      solve_poisson_problem<2>(prefix, nxy, save_stencils, nitsche_eta);
+      solve_poisson_problem<2>(prefix, instance, nxy, save_stencils,
+                               nitsche_eta);
       break;
     case 4:
-      solve_poisson_problem<4>(prefix, nxy, save_stencils, nitsche_eta);
+      solve_poisson_problem<4>(prefix, instance, nxy, save_stencils,
+                               nitsche_eta);
       break;
     case 6:
-      solve_poisson_problem<6>(prefix, nxy, save_stencils, nitsche_eta);
+      solve_poisson_problem<6>(prefix, instance, nxy, save_stencils,
+                               nitsche_eta);
       break;
     case 8:
-      solve_poisson_problem<8>(prefix, nxy, save_stencils, nitsche_eta);
+      solve_poisson_problem<8>(prefix, instance, nxy, save_stencils,
+                               nitsche_eta);
       break;
     case 10:
-      solve_poisson_problem<10>(prefix, nxy, save_stencils, nitsche_eta);
+      solve_poisson_problem<10>(prefix, instance, nxy, save_stencils,
+                                nitsche_eta);
       break;
     default:
       printf("Unsupported Np_1d (%d), exiting...\n", Np_1d);
