@@ -78,7 +78,7 @@ void write_field_vtk(std::string field_vtkpath, const Mesh& mesh,
   field_vtk.write_sol("sol");
 }
 
-enum class ProbInstance { Circle, Wedge };
+enum class ProbInstance { Circle, Wedge, Image };
 
 template <typename T, typename Vec>
 T exact_solution(ProbInstance instance, Vec xloc) {
@@ -86,15 +86,16 @@ T exact_solution(ProbInstance instance, Vec xloc) {
     T r2 = xloc[0] * xloc[0] + xloc[1] * xloc[1];
     T r = sqrt(r2);
     return r2 * sin(r);
-  } else {  // Wedge
-    return sin(xloc[0]) * sin(xloc[1]);
+  } else {  // Wedge and image
+    return sin(xloc[0] * 4.0 * PI) * sin(xloc[1] * 4.0 * PI);
   }
 }
 
 // Get the l2 error of the numerical Poisson solution
 template <int Np_1d>
-void solve_poisson_problem(std::string prefix, ProbInstance instance, int nxy,
-                           bool save_stencils, double nitsche_eta) {
+void solve_poisson_problem(std::string prefix, ProbInstance instance,
+                           std::string image_json, int nxy, bool save_stencils,
+                           double nitsche_eta) {
   using T = double;
   using Grid = StructuredGrid2D<T>;
   using QuadratureBulk = GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER>;
@@ -107,8 +108,8 @@ void solve_poisson_problem(std::string prefix, ProbInstance instance, int nxy,
       T r2 = xloc[0] * xloc[0] + xloc[1] * xloc[1];
       T r = sqrt(r2);
       return -(4.0 - r2) * sin(r) - 5.0 * r * cos(r);
-    } else {  // Wedge
-      return -2.0 * sin(xloc[0]) * sin(xloc[1]);
+    } else {  // Wedge and image
+      return 32.0 * PI * PI * sin(xloc[0] * 4.0 * PI) * sin(xloc[1] * 4.0 * PI);
     }
   };
 
@@ -139,14 +140,42 @@ void solve_poisson_problem(std::string prefix, ProbInstance instance, int nxy,
     mesh = std::make_shared<Mesh>(grid, [R](double x[]) {
       return x[0] * x[0] + x[1] * x[1] - R * R;  // <= 0
     });
-  } else {  // Wedge
+  } else if (instance == ProbInstance::Wedge) {
     int nx_ny[2] = {nxy, nxy};
-    double lxy[2] = {2.0 * PI, 2.0 * PI};
+    double lxy[2] = {1.0, 1.0};
     double angle = PI / 6.0;
     Grid grid(nx_ny, lxy);
     mesh = std::make_shared<Mesh>(grid, [angle](double x[]) {
-      return sin(angle) * (x[0] - 2.0 * PI) + cos(angle) * x[1];  // <= 0
+      T region1 = sin(angle) * (x[0] - 1.0) + cos(angle) * x[1];  // <= 0
+      T region2 = 1e-6 - x[0];
+      T region3 = 1e-6 - x[1];
+      return hard_max({region1, region2, region3});
     });
+  } else {  // Image
+    json j;
+    try {
+      j = read_json(image_json);
+    } catch (const std::exception& e) {
+      std::cout << "failed to load the json file \"" + image_json +
+                       "\" with the following exception message:\n";
+      std::cout << std::string(e.what()) << "\n";
+    }
+    std::vector<double> lsf_dof = j["lsf_dof"];
+    int nxy[2] = {j["nxy"], j["nxy"]};
+    double lxy[2] = {1.0, 1.0};
+    Grid grid(nxy, lxy);
+    mesh = std::make_shared<Mesh>(grid);
+    if (mesh->get_lsf_dof().size() != lsf_dof.size()) {
+      std::string msg =
+          "Attempting to populate the LSF dof from input image, but the "
+          "dimensions don't match, the mesh has " +
+          std::to_string(mesh->get_lsf_dof().size()) +
+          " LSF nodes, but the input json has " +
+          std::to_string(lsf_dof.size()) + " entries.";
+      throw std::runtime_error(msg.c_str());
+    }
+    mesh->get_lsf_dof() = lsf_dof;
+    mesh->update_mesh();
   }
 
   QuadratureBulk quadrature_bulk(*mesh);
@@ -256,7 +285,9 @@ int main(int argc, char* argv[]) {
   p.add_argument<int>("--nxy", 64);
   p.add_argument<double>("--nitsche_eta", 1e6);
   p.add_argument<std::string>("--prefix", {});
-  p.add_argument<std::string>("--instance", "circle", {"circle", "wedge"});
+  p.add_argument<std::string>("--instance", "circle",
+                              {"circle", "wedge", "image"});
+  p.add_argument<std::string>("--image_json", "image.json");
   p.parse_args(argc, argv);
 
   bool save_stencils = p.get<int>("save-degenerate-stencils");
@@ -274,28 +305,29 @@ int main(int argc, char* argv[]) {
   double nitsche_eta = p.get<double>("nitsche_eta");
   ProbInstance instance = std::map<std::string, ProbInstance>{
       {"circle", ProbInstance::Circle},
-      {"wedge", ProbInstance::Wedge}}[p.get<std::string>("instance")];
-
+      {"wedge", ProbInstance::Wedge},
+      {"image", ProbInstance::Image}}[p.get<std::string>("instance")];
+  std::string image_json = p.get<std::string>("image_json");
   switch (Np_1d) {
     case 2:
-      solve_poisson_problem<2>(prefix, instance, nxy, save_stencils,
+      solve_poisson_problem<2>(prefix, instance, image_json, nxy, save_stencils,
                                nitsche_eta);
       break;
     case 4:
-      solve_poisson_problem<4>(prefix, instance, nxy, save_stencils,
+      solve_poisson_problem<4>(prefix, instance, image_json, nxy, save_stencils,
                                nitsche_eta);
       break;
     case 6:
-      solve_poisson_problem<6>(prefix, instance, nxy, save_stencils,
+      solve_poisson_problem<6>(prefix, instance, image_json, nxy, save_stencils,
                                nitsche_eta);
       break;
     case 8:
-      solve_poisson_problem<8>(prefix, instance, nxy, save_stencils,
+      solve_poisson_problem<8>(prefix, instance, image_json, nxy, save_stencils,
                                nitsche_eta);
       break;
     case 10:
-      solve_poisson_problem<10>(prefix, instance, nxy, save_stencils,
-                                nitsche_eta);
+      solve_poisson_problem<10>(prefix, instance, image_json, nxy,
+                                save_stencils, nitsche_eta);
       break;
     default:
       printf("Unsupported Np_1d (%d), exiting...\n", Np_1d);

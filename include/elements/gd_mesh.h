@@ -576,19 +576,21 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
       }
     }
 
-// check  if the stencil is a valid stencil
-#ifdef XCGD_DEBUG_MODE
-    for (int index = 0; index < max_nnodes_per_element; index++) {
-      int vert = verts[index];
-      if (vert_nodes.count(vert) == 0) {
-        int coords[spatial_dim];
-        this->grid.get_vert_coords(vert, coords);
-        std::printf(
-            "[Debug] vert %d (%d, %d) is not an active node for cell: %d\n",
-            vert, coords[0], coords[1], cell);
-      }
-    }
-#endif
+    // check  if the stencil is a valid stencil
+    /*
+    #ifdef XCGD_DEBUG_MODE
+        for (int index = 0; index < max_nnodes_per_element; index++) {
+          int vert = verts[index];
+          if (vert_nodes.count(vert) == 0) {
+            int coords[spatial_dim];
+            this->grid.get_vert_coords(vert, coords);
+            std::printf(
+                "[Debug] vert %d (%d, %d) is not an active node for cell: %d\n",
+                vert, coords[0], coords[1], cell);
+          }
+        }
+    #endif
+    */
   }
 
   LSFMesh lsf_mesh;

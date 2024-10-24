@@ -103,7 +103,8 @@ class ArgParser {
   void parse_args(int argc, char* argv[]) {
     std::map<std::string, std::string> cmd_args = get_cmd_args(argc, argv);
 
-    if (cmd_args.count("--help") or cmd_args.count("-h")) {
+    if (cmd_args.count("--help") or cmd_args.count("-h") or
+        cmd_args.count("--h")) {
       show_help_info_and_exit();
     }
 
