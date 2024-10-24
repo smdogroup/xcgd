@@ -94,8 +94,8 @@ T exact_solution(ProbInstance instance, Vec xloc) {
 // Get the l2 error of the numerical Poisson solution
 template <int Np_1d>
 void solve_poisson_problem(std::string prefix, ProbInstance instance,
-                           std::string image_json, int nxy, bool save_stencils,
-                           double nitsche_eta) {
+                           std::string image_json, int nxy_val,
+                           bool save_stencils, double nitsche_eta) {
   using T = double;
   using Grid = StructuredGrid2D<T>;
   using QuadratureBulk = GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER>;
@@ -130,22 +130,23 @@ void solve_poisson_problem(std::string prefix, ProbInstance instance,
 
   DegenerateStencilLogger::enable();
 
+  std::shared_ptr<Grid> grid;
   std::shared_ptr<Mesh> mesh;
   if (instance == ProbInstance::Circle) {
-    int nx_ny[2] = {nxy, nxy};
+    int nxy[2] = {nxy_val, nxy_val};
     double R = 2.0 * PI;
     double lxy[2] = {3.0 * R, 3.0 * R};
     double xy0[2] = {-1.5 * R, -1.5 * R};
-    Grid grid(nx_ny, lxy, xy0);
-    mesh = std::make_shared<Mesh>(grid, [R](double x[]) {
+    grid = std::make_shared<Grid>(nxy, lxy, xy0);
+    mesh = std::make_shared<Mesh>(*grid, [R](double x[]) {
       return x[0] * x[0] + x[1] * x[1] - R * R;  // <= 0
     });
   } else if (instance == ProbInstance::Wedge) {
-    int nx_ny[2] = {nxy, nxy};
+    int nxy[2] = {nxy_val, nxy_val};
     double lxy[2] = {1.0, 1.0};
     double angle = PI / 6.0;
-    Grid grid(nx_ny, lxy);
-    mesh = std::make_shared<Mesh>(grid, [angle](double x[]) {
+    grid = std::make_shared<Grid>(nxy, lxy);
+    mesh = std::make_shared<Mesh>(*grid, [angle](double x[]) {
       T region1 = sin(angle) * (x[0] - 1.0) + cos(angle) * x[1];  // <= 0
       T region2 = 1e-6 - x[0];
       T region3 = 1e-6 - x[1];
@@ -163,8 +164,8 @@ void solve_poisson_problem(std::string prefix, ProbInstance instance,
     std::vector<double> lsf_dof = j["lsf_dof"];
     int nxy[2] = {j["nxy"], j["nxy"]};
     double lxy[2] = {1.0, 1.0};
-    Grid grid(nxy, lxy);
-    mesh = std::make_shared<Mesh>(grid);
+    grid = std::make_shared<Grid>(nxy, lxy);
+    mesh = std::make_shared<Mesh>(*grid);
     if (mesh->get_lsf_dof().size() != lsf_dof.size()) {
       std::string msg =
           "Attempting to populate the LSF dof from input image, but the "
@@ -237,6 +238,15 @@ void solve_poisson_problem(std::string prefix, ProbInstance instance,
     sol_exact[i] = exact_solution<T>(instance, xloc);
   }
 
+  // Compute the L2 norm of the solution field (not vector)
+  std::vector<T> diff_squared(sol.size());
+  for (int i = 0; i < sol.size(); i++) {
+    diff_squared[i] = (sol[i] - sol_exact[i]);
+  }
+
+  T err_l2norm_bulk = analysis_bulk.energy(nullptr, diff_squared.data());
+  T err_l2norm_bcs = analysis_bcs.energy(nullptr, diff_squared.data());
+
   // Get numerical and exact solutions at quadrature points
   auto [xlocq_bulk, solq_bulk] = analysis_bulk.interpolate_dof(sol.data());
   auto [xlocq_bcs, solq_bcs] = analysis_bcs.interpolate_dof(sol.data());
@@ -260,7 +270,9 @@ void solve_poisson_problem(std::string prefix, ProbInstance instance,
             {"solq_bulk", solq_bulk},
             {"solq_bulk_exact", solq_bulk_exact},
             {"solq_bcs", solq_bcs},
-            {"solq_bcs_exact", solq_bcs_exact}};
+            {"solq_bcs_exact", solq_bcs_exact},
+            {"err_l2norm_bulk", err_l2norm_bulk},
+            {"err_l2norm_bcs", err_l2norm_bcs}};
 
   char json_name[256];
   write_json(std::filesystem::path(prefix) / std::filesystem::path("sol.json"),
@@ -301,7 +313,7 @@ int main(int argc, char* argv[]) {
                        std::filesystem::path("args.txt"));
 
   int Np_1d = p.get<int>("Np_1d");
-  int nxy = p.get<int>("nxy");
+  int nxy_val = p.get<int>("nxy");
   double nitsche_eta = p.get<double>("nitsche_eta");
   ProbInstance instance = std::map<std::string, ProbInstance>{
       {"circle", ProbInstance::Circle},
@@ -310,23 +322,23 @@ int main(int argc, char* argv[]) {
   std::string image_json = p.get<std::string>("image_json");
   switch (Np_1d) {
     case 2:
-      solve_poisson_problem<2>(prefix, instance, image_json, nxy, save_stencils,
-                               nitsche_eta);
+      solve_poisson_problem<2>(prefix, instance, image_json, nxy_val,
+                               save_stencils, nitsche_eta);
       break;
     case 4:
-      solve_poisson_problem<4>(prefix, instance, image_json, nxy, save_stencils,
-                               nitsche_eta);
+      solve_poisson_problem<4>(prefix, instance, image_json, nxy_val,
+                               save_stencils, nitsche_eta);
       break;
     case 6:
-      solve_poisson_problem<6>(prefix, instance, image_json, nxy, save_stencils,
-                               nitsche_eta);
+      solve_poisson_problem<6>(prefix, instance, image_json, nxy_val,
+                               save_stencils, nitsche_eta);
       break;
     case 8:
-      solve_poisson_problem<8>(prefix, instance, image_json, nxy, save_stencils,
-                               nitsche_eta);
+      solve_poisson_problem<8>(prefix, instance, image_json, nxy_val,
+                               save_stencils, nitsche_eta);
       break;
     case 10:
-      solve_poisson_problem<10>(prefix, instance, image_json, nxy,
+      solve_poisson_problem<10>(prefix, instance, image_json, nxy_val,
                                 save_stencils, nitsche_eta);
       break;
     default:

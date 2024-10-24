@@ -63,7 +63,6 @@ class StructuredGrid2D final {
   }
 
   inline int get_num_verts() const {
-    const int* nxy = get_nxy();
     int nnodes = 1;
     for (int d = 0; d < spatial_dim; d++) {
       nnodes *= nxy[d] + 1;
@@ -72,7 +71,6 @@ class StructuredGrid2D final {
   }
 
   inline int get_num_cells() const {
-    const int* nxy = get_nxy();
     int nelems = 1;
     for (int d = 0; d < spatial_dim; d++) {
       nelems *= nxy[d];

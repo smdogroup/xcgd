@@ -11,7 +11,7 @@ import argparse
 from time import time
 
 
-def get_poisson_l2_error(prefix, cmd):
+def get_poisson_l2_error_deprecated(prefix, cmd):
     subprocess.run(cmd, capture_output=True)
 
     with open(join(prefix, "sol.json")) as f:
@@ -36,6 +36,22 @@ def get_poisson_l2_error(prefix, cmd):
     err_quad_surf = compute_error(solq_bcs, solq_bcs_exact)
 
     return err_raw, err_interior, err_quad_bulk, err_quad_surf
+
+
+def get_poisson_l2_error(prefix, cmd):
+    try:
+        subprocess.run(cmd, capture_output=True)
+    # except subprocess.CalledProcessError as e:
+    except Exception as e:
+        print("execution of the following command has failed:")
+        print(" ".join(cmd))
+        print("Below is the error info")
+        print(e)
+
+    with open(join(prefix, "sol.json")) as f:
+        j = json.load(f)
+
+    return j["err_l2norm_bulk"], j["err_l2norm_bcs"]
 
 
 def annotate_slope(
@@ -98,16 +114,14 @@ def annotate_slope(
     return
 
 
-def run_experiments(Np_1d_list, nxy_list, nitsche_eta_list):
+def run_experiments(instance, Np_1d_list, nxy_list, nitsche_eta_list):
     df_data = {
         "Np_1d": [],
         "nxy": [],
         "h": [],
         "nitsche_eta": [],
-        "err_raw": [],
-        "err_interior": [],
-        "err_quad_bulk": [],
-        "err_quad_surf": [],
+        "err_l2norm_bulk": [],
+        "err_l2norm_bcs": [],
     }
 
     for Np_1d in Np_1d_list:
@@ -116,6 +130,7 @@ def run_experiments(Np_1d_list, nxy_list, nitsche_eta_list):
                 prefix = f"outputs_Np_{Np_1d}_nxy_{nxy}_nitsche_{nitsche_eta:.1e}"
                 cmd = [
                     "./nitsche_accuracy",
+                    f"--instance={instance}",
                     "--save-degenerate-stencils=0",
                     f"--Np_1d={Np_1d}",
                     f"--nxy={nxy}",
@@ -125,10 +140,8 @@ def run_experiments(Np_1d_list, nxy_list, nitsche_eta_list):
 
                 t1 = time()
                 (
-                    err_raw,
-                    err_interior,
-                    err_quad_bulk,
-                    err_quad_surf,
+                    err_l2norm_bulk,
+                    err_l2norm_bcs,
                 ) = get_poisson_l2_error(prefix, cmd)
 
                 t2 = time()
@@ -142,10 +155,8 @@ def run_experiments(Np_1d_list, nxy_list, nitsche_eta_list):
                 df_data["h"].append(2.0 / nxy)
                 df_data["nitsche_eta"].append(nitsche_eta)
 
-                df_data["err_raw"].append(err_raw)
-                df_data["err_interior"].append(err_interior)
-                df_data["err_quad_bulk"].append(err_quad_bulk)
-                df_data["err_quad_surf"].append(err_quad_surf)
+                df_data["err_l2norm_bulk"].append(err_l2norm_bulk)
+                df_data["err_l2norm_bcs"].append(err_l2norm_bcs)
 
     return pd.DataFrame(df_data)
 
@@ -184,9 +195,7 @@ def plot(cases_df, xname):
 
     # Cases for each Np
     for i, Np_1d in enumerate(Np_1d_list):
-        for j, err_type in enumerate(
-            ["err_raw", "err_interior", "err_quad_bulk", "err_quad_surf"]
-        ):
+        for j, err_type in enumerate(["err_l2norm_bulk", "err_l2norm_bcs"]):
             df = cases_df[cases_df["Np_1d"] == Np_1d]
 
             x = df[xname]
@@ -195,7 +204,7 @@ def plot(cases_df, xname):
             # Get averaged slope
             slope, _ = np.polyfit(np.log10(x), np.log10(y), deg=1)
 
-            label = f"$p={Np_1d - 1}, \Delta:{slope:.2f}$, err: {j}"
+            label = f"$p={Np_1d - 1}, \Delta:{slope:.2f}$, {err_type}"
             ax.loglog(x, y, linestyles[j], color=colors[i], clip_on=False, label=label)
 
             print(label)
@@ -226,6 +235,7 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(formatter_class=argparse.HelpFormatter)
 
     p.add_argument("--csv", type=str, default=None, help="case data csv")
+    p.add_argument("--instance", default="circle", choices=["circle", "wedge"])
     p.add_argument(
         "--Np_1d",
         nargs="+",
@@ -259,6 +269,7 @@ if __name__ == "__main__":
 
     if args.csv is None:
         df = run_experiments(
+            instance=args.instance,
             Np_1d_list=args.Np_1d,
             nxy_list=args.nxy,
             nitsche_eta_list=args.nitsche_eta,
