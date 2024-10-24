@@ -4,13 +4,19 @@ import matplotlib.pyplot as plt
 import skfmm
 from scipy.interpolate import interpn
 import json
+import argparse
 
 
-def get_lsf_dof(nxy=128, plot=False):
-    image = io.imread("stanford_dragon.png", as_gray=True)
-    image = np.pad(
-        image, ((image.shape[1] - image.shape[0], 0), (0, 0)), constant_values=1.0
-    )
+def get_lsf_dof(nxy, imgfile, plot=True):
+    image0 = io.imread(imgfile, as_gray=True)
+
+    npx_h, npx_w = image0.shape
+
+    if npx_w > npx_h:
+        image = np.pad(image0, ((npx_w - npx_h, 0), (0, 0)), constant_values=1.0)
+    else:
+        image = np.pad(image0, ((0, 0), (npx_h - npx_w, 0)), constant_values=1.0)
+
     npx_1d = image.shape[0]
 
     # raw lsf
@@ -29,15 +35,35 @@ def get_lsf_dof(nxy=128, plot=False):
     ).reshape(nxy + 1, nxy + 1)
 
     if plot:
-        plt.imshow(lsf_dof)
+        fig, ax = plt.subplots(ncols=3, figsize=(15.0, 5.0))
+        for a in ax:
+            a.axis("off")
+
+        ax[0].imshow(image0)
+        ax[0].set_title("original image")
+
+        ax[1].imshow(phi_raw)
+        ax[1].set_title("thresholded image")
+
+        ax[2].imshow(lsf_dof)
+        ax[1].set_title("signed distance function")
+
         plt.show()
 
     return np.flip(lsf_dof, axis=0).flatten()
 
 
 if __name__ == "__main__":
-    nxy = 128
-    lsf_dof = get_lsf_dof(nxy=nxy)
+    p = argparse.ArgumentParser()
+
+    p.add_argument("--nxy", default=128)
+    p.add_argument("--image", default="./images/stanford_dragon.png")
+    p.add_argument("--plot", action="store_true")
+
+    args = p.parse_args()
+
+    nxy = args.nxy
+    lsf_dof = get_lsf_dof(nxy=nxy, imgfile=args.image, plot=args.plot)
 
     with open(f"lsf_dof_nxy_{nxy}.json", "w") as f:
         json.dump({"nxy": nxy, "lsf_dof": lsf_dof.tolist()}, f, indent=2)
