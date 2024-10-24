@@ -1,5 +1,4 @@
 import subprocess
-from niceplots.utils import adjust_spines
 import numpy as np
 from matplotlib import cm
 import matplotlib.patches as patches
@@ -51,7 +50,10 @@ def get_poisson_l2_error(prefix, cmd):
     with open(join(prefix, "sol.json")) as f:
         j = json.load(f)
 
-    return j["err_l2norm_bulk"], j["err_l2norm_bcs"]
+    return (
+        j["err_l2norm_bulk"],
+        j["err_l2norm_bcs"],
+    )
 
 
 def annotate_slope(
@@ -127,7 +129,7 @@ def run_experiments(instance, Np_1d_list, nxy_list, nitsche_eta_list):
     for Np_1d in Np_1d_list:
         for nxy in nxy_list:
             for nitsche_eta in nitsche_eta_list:
-                prefix = f"outputs_Np_{Np_1d}_nxy_{nxy}_nitsche_{nitsche_eta:.1e}"
+                prefix = f"outputs_instance_{instance}_Np_{Np_1d}_nxy_{nxy}_nitsche_{nitsche_eta:.1e}"
                 cmd = [
                     "./nitsche_accuracy",
                     f"--instance={instance}",
@@ -219,8 +221,8 @@ def plot(cases_df, xname):
         ax.set_xlabel(r"Nitsche parameter $\eta$")
 
     ax.set_ylabel(
-        "Normalized relative solution error\n"
-        + r"$|\dfrac{||u||_2^\text{CGD}}{||u||_2^\text{exact}} - 1|$"
+        "L2 norm of the solution error\n"
+        + r"$\int_\Omega (u_h - u_\text{exact})^2 d\Omega$"
     )
     ax.legend(frameon=False, loc="lower right")
     ax.spines["top"].set_visible(False)

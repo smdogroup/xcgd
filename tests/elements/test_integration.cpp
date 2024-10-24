@@ -6,50 +6,11 @@
 #include "elements/fe_quadrilateral.h"
 #include "elements/fe_tetrahedral.h"
 #include "elements/gd_vandermonde.h"
-#include "physics/physics_commons.h"
+#include "physics/volume.h"
 #include "test_commons.h"
 #include "utils/mesher.h"
 
 #define PI 3.141592653589793
-
-template <typename T, int spatial_dim>
-class BulkIntegration final : public PhysicsBase<T, spatial_dim, 0, 1> {
- public:
-  T energy(T weight, T _, A2D::Vec<T, spatial_dim>& __,
-           A2D::Vec<T, spatial_dim>& ___,
-           A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
-           A2D::Vec<T, spatial_dim>& ____) const {
-    T detJ;
-    A2D::MatDet(J, detJ);
-    return weight * detJ * val;
-  }
-};
-
-template <typename T, int spatial_dim>
-class SurfaceIntegration final : public PhysicsBase<T, spatial_dim, 0, 1> {
-  static_assert(spatial_dim == 2,
-                "This part is not yet implemented properly for 3D");
-
- public:
-  T energy(T weight, T _, A2D::Vec<T, spatial_dim>& __,
-           A2D::Vec<T, spatial_dim>& nrm_ref,
-           A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
-           A2D::Vec<T, spatial_dim>& ___) const {
-    T dt_val[spatial_dim] = {nrm_ref[1], -nrm_ref[0]};
-
-    A2D::Mat<T, spatial_dim, spatial_dim> JTJ;
-    A2D::Vec<T, spatial_dim> dt(dt_val);
-    A2D::Vec<T, spatial_dim> JTJdt;
-
-    T scale;
-    A2D::MatMatMult<A2D::MatOp::TRANSPOSE, A2D::MatOp::NORMAL>(J, J, JTJ);
-    A2D::MatVecMult(JTJ, dt, JTJdt);
-    A2D::VecDot(dt, JTJdt, scale);
-    scale = sqrt(scale);
-
-    return weight * scale * val;
-  }
-};
 
 template <typename T, class Quadrature, class Basis>
 T hypercircle_area(typename Basis::Mesh& mesh, Quadrature& quadrature,

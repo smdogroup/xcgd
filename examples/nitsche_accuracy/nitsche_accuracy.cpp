@@ -10,12 +10,52 @@
 #include "elements/gd_vandermonde.h"
 #include "physics/cut_bcs.h"
 #include "physics/poisson.h"
+#include "physics/volume.h"
 #include "sparse_utils/sparse_utils.h"
 #include "utils/argparser.h"
 #include "utils/json.h"
 #include "utils/loggers.h"
 #include "utils/misc.h"
 #include "utils/vtk.h"
+
+template <typename T, int spatial_dim>
+class L2normBulk final : public PhysicsBase<T, spatial_dim, 0, 1> {
+ public:
+  T energy(T weight, T _, A2D::Vec<T, spatial_dim>& __,
+           A2D::Vec<T, spatial_dim>& ___,
+           A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
+           A2D::Vec<T, spatial_dim>& ____) const {
+    T detJ;
+    A2D::MatDet(J, detJ);
+    return weight * detJ * val * val;
+  }
+};
+
+template <typename T, int spatial_dim>
+class L2normSurf final : public PhysicsBase<T, spatial_dim, 0, 1> {
+  static_assert(spatial_dim == 2,
+                "This part is not yet implemented properly for 3D");
+
+ public:
+  T energy(T weight, T _, A2D::Vec<T, spatial_dim>& __,
+           A2D::Vec<T, spatial_dim>& nrm_ref,
+           A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
+           A2D::Vec<T, spatial_dim>& ___) const {
+    T dt_val[spatial_dim] = {nrm_ref[1], -nrm_ref[0]};
+
+    A2D::Mat<T, spatial_dim, spatial_dim> JTJ;
+    A2D::Vec<T, spatial_dim> dt(dt_val);
+    A2D::Vec<T, spatial_dim> JTJdt;
+
+    T scale;
+    A2D::MatMatMult<A2D::MatOp::TRANSPOSE, A2D::MatOp::NORMAL>(J, J, JTJ);
+    A2D::MatVecMult(JTJ, dt, JTJdt);
+    A2D::VecDot(dt, JTJdt, scale);
+    scale = sqrt(scale);
+
+    return weight * scale * val * val;
+  }
+};
 
 #define PI 3.14159265358979323846
 
@@ -239,13 +279,27 @@ void solve_poisson_problem(std::string prefix, ProbInstance instance,
   }
 
   // Compute the L2 norm of the solution field (not vector)
-  std::vector<T> diff_squared(sol.size());
+  std::vector<T> diff(sol.size());
   for (int i = 0; i < sol.size(); i++) {
-    diff_squared[i] = (sol[i] - sol_exact[i]);
+    diff[i] = (sol[i] - sol_exact[i]);
   }
 
-  T err_l2norm_bulk = analysis_bulk.energy(nullptr, diff_squared.data());
-  T err_l2norm_bcs = analysis_bcs.energy(nullptr, diff_squared.data());
+  GalerkinAnalysis<T, Mesh, QuadratureBulk, Basis,
+                   L2normBulk<T, Basis::spatial_dim>>
+      integrator_bulk(*mesh, quadrature_bulk, basis, {});
+  GalerkinAnalysis<T, Mesh, QuadratureBCs, Basis,
+                   L2normSurf<T, Basis::spatial_dim>>
+      integrator_bcs(*mesh, quadrature_bcs, basis, {});
+
+  std::vector<T> ones(sol.size(), 1.0);
+  T area = integrator_bulk.energy(nullptr, ones.data());
+  T perimeter = integrator_bcs.energy(nullptr, ones.data());
+
+  T err_l2norm_bulk = integrator_bulk.energy(nullptr, diff.data());
+  T err_l2norm_bcs = integrator_bcs.energy(nullptr, diff.data());
+
+  T l2norm_bulk = integrator_bulk.energy(nullptr, sol_exact.data());
+  T l2norm_bcs = integrator_bcs.energy(nullptr, sol_exact.data());
 
   // Get numerical and exact solutions at quadrature points
   auto [xlocq_bulk, solq_bulk] = analysis_bulk.interpolate_dof(sol.data());
@@ -264,15 +318,19 @@ void solve_poisson_problem(std::string prefix, ProbInstance instance,
         exact_solution<T>(instance, &xlocq_bcs[Basis::spatial_dim * i]);
   }
 
-  json j = {{"sol", sol},
-            {"sol_exact", sol_exact},
-            {"lsf", mesh->get_lsf_nodes()},
-            {"solq_bulk", solq_bulk},
-            {"solq_bulk_exact", solq_bulk_exact},
-            {"solq_bcs", solq_bcs},
-            {"solq_bcs_exact", solq_bcs_exact},
+  json j = {// {"sol", sol},
+            // {"sol_exact", sol_exact},
+            // {"lsf", mesh->get_lsf_nodes()},
+            // {"solq_bulk", solq_bulk},
+            // {"solq_bulk_exact", solq_bulk_exact},
+            // {"solq_bcs", solq_bcs},
+            // {"solq_bcs_exact", solq_bcs_exact},
             {"err_l2norm_bulk", err_l2norm_bulk},
-            {"err_l2norm_bcs", err_l2norm_bcs}};
+            {"err_l2norm_bcs", err_l2norm_bcs},
+            {"l2norm_bulk", l2norm_bulk},
+            {"l2norm_bcs", l2norm_bcs},
+            {"area", area},
+            {"perimeter", perimeter}};
 
   char json_name[256];
   write_json(std::filesystem::path(prefix) / std::filesystem::path("sol.json"),
