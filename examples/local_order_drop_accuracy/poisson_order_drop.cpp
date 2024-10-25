@@ -205,14 +205,8 @@ void solve_poisson_problem(std::string prefix, int nxy, int Np_bc,
         freal(xloc[1]) > freal(ymax) - tol) {
       dof_bcs.push_back(i);
       dof_vals.push_back(exact_solution<T>(xloc));
-
-      // dof_vals.push_back(2.0 * (1.0 + xloc[1]) /
-      //                    ((3.0 + xloc[0]) * (3.0 + xloc[0]) +
-      //                     (1.0 + xloc[1]) * (1.0 + xloc[1])));
     }
     sol_exact[i] = exact_solution<T>(xloc);
-    // 2.0 * (1.0 + xloc[1]) /
-    // ((3.0 + xloc[0]) * (3.0 + xloc[0]) + (1.0 + xloc[1]) * (1.0 + xloc[1]));
   }
 
   // Solve
