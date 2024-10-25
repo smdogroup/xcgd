@@ -11,6 +11,21 @@
 #include "utils/misc.h"
 #include "utils/vtk.h"
 
+#define PI 3.14159265358979323846
+
+template <typename T, int spatial_dim>
+class L2normBulk final : public PhysicsBase<T, spatial_dim, 0, 1> {
+ public:
+  T energy(T weight, T _, A2D::Vec<T, spatial_dim>& __,
+           A2D::Vec<T, spatial_dim>& ___,
+           A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
+           A2D::Vec<T, spatial_dim>& ____) const {
+    T detJ;
+    A2D::MatDet(J, detJ);
+    return weight * detJ * val * val;
+  }
+};
+
 template <typename T, int Np_1d>
 class GridMeshDropOrder : public GridMesh<T, Np_1d> {
  private:
@@ -136,6 +151,18 @@ void write_vtk(std::string vtkpath, const Mesh& mesh, const std::vector<T>& sol,
   }
 }
 
+// Define the exact solution and source term using method of manufactured
+// solutions
+template <typename T, typename Vec>
+T exact_solution(Vec xloc) {
+  return sin(xloc[0] * 1.9 * PI) * sin(xloc[1] * 1.9 * PI);
+}
+template <typename T, typename Vec>
+T exact_source(Vec xloc) {
+  return 2.0 * 1.9 * 1.9 * PI * PI * sin(xloc[0] * 1.9 * PI) *
+         sin(xloc[1] * 1.9 * PI);
+}
+
 // Get the l2 error of the numerical Poisson solution
 template <int Np_1d>
 void solve_poisson_problem(std::string prefix, int nxy, int Np_bc,
@@ -147,7 +174,8 @@ void solve_poisson_problem(std::string prefix, int nxy, int Np_bc,
   using Basis = GDBasis2D<T, Mesh>;
 
   auto source_fun = [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
-    return T(0.0);
+    // return T(0.0);
+    return exact_source<T>(xloc);
   };
   using Poisson = PoissonApp<T, Mesh, Quadrature, Basis, typeof(source_fun)>;
 
@@ -176,17 +204,43 @@ void solve_poisson_problem(std::string prefix, int nxy, int Np_bc,
         freal(xloc[0]) > freal(xmax) - tol or
         freal(xloc[1]) > freal(ymax) - tol) {
       dof_bcs.push_back(i);
-      dof_vals.push_back(2.0 * (1.0 + xloc[1]) /
-                         ((3.0 + xloc[0]) * (3.0 + xloc[0]) +
-                          (1.0 + xloc[1]) * (1.0 + xloc[1])));
+      dof_vals.push_back(exact_solution<T>(xloc));
+
+      // dof_vals.push_back(2.0 * (1.0 + xloc[1]) /
+      //                    ((3.0 + xloc[0]) * (3.0 + xloc[0]) +
+      //                     (1.0 + xloc[1]) * (1.0 + xloc[1])));
     }
-    sol_exact[i] =
-        2.0 * (1.0 + xloc[1]) /
-        ((3.0 + xloc[0]) * (3.0 + xloc[0]) + (1.0 + xloc[1]) * (1.0 + xloc[1]));
+    sol_exact[i] = exact_solution<T>(xloc);
+    // 2.0 * (1.0 + xloc[1]) /
+    // ((3.0 + xloc[0]) * (3.0 + xloc[0]) + (1.0 + xloc[1]) * (1.0 + xloc[1]));
   }
 
+  // Solve
   std::vector<T> sol = poisson.solve(dof_bcs, dof_vals);
-  json j = {{"sol", sol}, {"sol_exact", sol_exact}};
+
+  // Compute the L2 norm of the solution field (not vector)
+  std::vector<T> diff(sol.size());
+  for (int i = 0; i < sol.size(); i++) {
+    diff[i] = (sol[i] - sol_exact[i]);
+  }
+
+  GalerkinAnalysis<T, Mesh, Quadrature, Basis,
+                   L2normBulk<T, Basis::spatial_dim>>
+      integrator(mesh, quadrature, basis, {});
+
+  std::vector<T> ones(sol.size(), 1.0);
+
+  T area = integrator.energy(nullptr, ones.data());
+
+  T err_l2norm = integrator.energy(nullptr, diff.data());
+
+  T l2norm = integrator.energy(nullptr, sol_exact.data());
+
+  json j = {// {"sol", sol},
+            // {"sol_exact", sol_exact},
+            {"err_l2norm", err_l2norm},
+            {"l2norm", l2norm},
+            {"area", area}};
 
   char json_name[256];
   write_json(std::filesystem::path(prefix) / std::filesystem::path("sol.json"),

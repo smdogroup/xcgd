@@ -57,9 +57,10 @@ class ArgParser {
     if (name.empty()) return;
 
     args[name] = default_val;
+    default_strings[name] = option_to_string(default_val);
     std::set<std::string> choice_strs;
     for (auto c : choices) {
-      choice_strs.insert(choice_to_string(c));
+      choice_strs.insert(option_to_string(c));
     }
     choice_strings[name] = choice_strs;
     keys.push_back(name);
@@ -154,7 +155,7 @@ class ArgParser {
         msg += "]";
         std::cout << msg;
       } else {
-        std::printf(" --%s=...", k.c_str());
+        std::cout << " --" << k << "=(default:" << default_strings[k] << ")";
       }
     }
     std::printf("\n");
@@ -167,13 +168,14 @@ class ArgParser {
   }
 
   template <class Type>
-  std::string choice_to_string(Type val) {
+  std::string option_to_string(Type val) {
     return std::to_string(val);
   }
 
-  std::string choice_to_string(std::string val) { return val; }
+  std::string option_to_string(std::string val) { return val; }
 
   std::map<std::string, arg_t> args;
+  std::map<std::string, std::string> default_strings;
   std::map<std::string, std::set<std::string>> choice_strings;
   std::vector<std::string> keys;
 };

@@ -9,9 +9,10 @@ import pandas as pd
 from os.path import join
 import argparse
 from time import time
+import sys
 
 
-def get_poisson_l2_error(prefix, cmd):
+def get_poisson_l2_error_deprecated(prefix, cmd):
     subprocess.run(cmd, capture_output=True)
 
     with open(join(prefix, "sol.json")) as f:
@@ -22,6 +23,24 @@ def get_poisson_l2_error(prefix, cmd):
         / np.linalg.norm(np.array(j["sol_exact"]), ord=2)
         - 1.0
     )
+
+
+def get_poisson_l2_error(prefix, cmd):
+    try:
+        subprocess.run(cmd, capture_output=True)
+    # except subprocess.CalledProcessError as e:
+    except Exception as e:
+        print("execution of the following command has failed:")
+        print(" ".join(cmd))
+        print("Below is the error info")
+        print(e)
+
+    with open(join(prefix, "sol.json")) as f:
+        j = json.load(f)
+
+    err_l2norm = j["err_l2norm"]
+    err_l2norm_nrmed = j["err_l2norm"] / j["l2norm"]
+    return err_l2norm, err_l2norm_nrmed
 
 
 def annotate_slope(
@@ -98,7 +117,8 @@ def run_experiments(
         "Np_bc": [],
         "nxy": [],
         "h": [],
-        "relerr": [],
+        "err_l2norm": [],
+        "err_l2norm_nrmed": [],
     }
 
     for Np_1d, Np_bc in order:
@@ -114,7 +134,7 @@ def run_experiments(
             ]
 
             t1 = time()
-            err = get_poisson_l2_error(prefix, cmd)
+            err_l2norm, err_l2norm_nrmed = get_poisson_l2_error(prefix, cmd)
             t2 = time()
 
             print(
@@ -125,7 +145,8 @@ def run_experiments(
             df_data["Np_bc"].append(Np_bc)
             df_data["nxy"].append(nxy)
             df_data["h"].append(2.0 / nxy)
-            df_data["relerr"].append(err)
+            df_data["err_l2norm"].append(err_l2norm)
+            df_data["err_l2norm_nrmed"].append(err_l2norm_nrmed)
 
     return pd.DataFrame(df_data)
 
@@ -148,7 +169,7 @@ def adjust_plot_lim(ax, left=0.0, right=0.2, bottom=0.3, up=0.0):
     return
 
 
-def plot(cases_df):
+def plot(cases_df, normalize):
     fig, ax = plt.subplots(
         ncols=1,
         nrows=1,
@@ -169,7 +190,10 @@ def plot(cases_df):
         for j, Np_bc in enumerate(Np_bc_list):
             x = df[df["Np_bc"] == Np_bc]["h"]
             # x = df[df["Np_bc"] == Np_bc]["nxy"]
-            y = df[df["Np_bc"] == Np_bc]["relerr"]
+            if normalize:
+                y = df[df["Np_bc"] == Np_bc]["err_l2norm_nrmed"]
+            else:
+                y = df[df["Np_bc"] == Np_bc]["err_l2norm"]
 
             # Get averaged slope
             slope, _ = np.polyfit(np.log10(x), np.log10(y), deg=1)
@@ -187,10 +211,17 @@ def plot(cases_df):
     ax.set_xlabel("Mesh size $h$")
     # ax.set_xlabel("number of elements in each dimension")
 
-    ax.set_ylabel(
-        "Normalized relative solution error\n"
-        + r"$|\dfrac{||u||_2^\text{CGD}}{||u||_2^\text{exact}} - 1|$"
-    )
+    if normalize:
+        ax.set_ylabel(
+            "Normalized L2 norm of the solution error\n"
+            + r"$\dfrac{\int_\Omega (u_h - u_\text{exact})^2 d\Omega}{\int_\Omega  u_\text{exact}^2 d\Omega}$"
+        )
+    else:
+        ax.set_ylabel(
+            "L2 norm of the solution error\n"
+            + r"$\int_\Omega (u_h - u_\text{exact})^2 d\Omega$"
+        )
+
     ax.legend(frameon=False, loc="lower right")
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
@@ -224,6 +255,7 @@ if __name__ == "__main__":
         type=int,
         help="list of number of mesh elements per dimension",
     )
+    p.add_argument("--normalize-l2error", action="store_true")
 
     args = p.parse_args()
 
@@ -233,7 +265,6 @@ if __name__ == "__main__":
             max_order_drop=args.max_order_drop,
             nxy_list=args.nxy,
         )
-        df.to_csv("cases_data.csv")
     else:
         df = pd.read_csv(args.csv)
         drop_column = "Unnamed: 0"
@@ -247,6 +278,13 @@ if __name__ == "__main__":
         #     print(df)
         #     exit()
 
-    fig, ax = plot(df)
-    fig.savefig("poisson_accuracy_study.pdf")
-    df.to_csv("poisson_accuracy_study.csv", index=False)
+    fig, ax = plot(df, args.normalize_l2error)
+    run_name = "precision_order_drop"
+    if args.normalize_l2error:
+        run_name += "_nrmed"
+
+    fig.savefig(f"{run_name}.pdf")
+    df.to_csv(f"{run_name}.csv", index=False)
+
+    with open(f"{run_name}.txt", "w") as f:
+        f.write("python " + " ".join(sys.argv))

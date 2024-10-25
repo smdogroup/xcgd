@@ -5,6 +5,7 @@ import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 import json
 import pandas as pd
+import os
 from os.path import join
 import argparse
 from time import time
@@ -120,7 +121,9 @@ def annotate_slope(
     return
 
 
-def run_experiments(instance, image_path, Np_1d_list, nxy_list, nitsche_eta_list):
+def run_experiments(
+    run_name, instance, image_path, Np_1d_list, nxy_list, nitsche_eta_list
+):
     df_data = {
         "Np_1d": [],
         "nxy": [],
@@ -137,7 +140,7 @@ def run_experiments(instance, image_path, Np_1d_list, nxy_list, nitsche_eta_list
         instance_name = instance
         if instance == "image":
             image_name = Path(image_path).stem
-            image_json_path = f"./image_lsf_{image_name}_nxy_{nxy}.json"
+            image_json_path = f".{run_name}/lsf_{image_name}_nxy_{nxy}.json"
             instance_name += f"_{image_name}"
 
             print(f"Extracting lsf from the image {image_name}...")
@@ -152,7 +155,7 @@ def run_experiments(instance, image_path, Np_1d_list, nxy_list, nitsche_eta_list
 
         for Np_1d in Np_1d_list:
             for nitsche_eta in nitsche_eta_list:
-                prefix = f"outputs_instance_{instance_name}_Np_{Np_1d}_nxy_{nxy}_nitsche_{nitsche_eta:.1e}"
+                prefix = f"{run_name}/outputs_instance_{instance_name}_Np_{Np_1d}_nxy_{nxy}_nitsche_{nitsche_eta:.1e}"
                 cmd = [
                     "./nitsche_accuracy",
                     f"--instance={instance}",
@@ -310,15 +313,26 @@ if __name__ == "__main__":
 
     args = p.parse_args()
 
+    # Set the name of the run
+    instance_name = args.instance
+    if args.instance == "image":
+        instance_name += f"_{Path(args.image).stem}"
+    run_name = f"precision_nitsche_instance_{instance_name}_x_{args.xname}"
+    if args.normalize_l2error:
+        run_name += "_nrmed"
+
+    if not os.path.isdir(run_name):
+        os.mkdir(run_name)
+
     if args.csv is None:
         df = run_experiments(
+            run_name=run_name,
             instance=args.instance,
             image_path=args.image,
             Np_1d_list=args.Np_1d,
             nxy_list=args.nxy,
             nitsche_eta_list=args.nitsche_eta,
         )
-        df.to_csv("cases_data.csv")
     else:
         df = pd.read_csv(args.csv)
         drop_column = "Unnamed: 0"
@@ -332,16 +346,9 @@ if __name__ == "__main__":
         #     print(df)
         #     exit()
 
-    instance_name = args.instance
-    if args.instance == "image":
-        instance_name += f"_{Path(args.image).stem}"
-    out_name = f"precision_nitsche_instance_{instance_name}_x_{args.xname}"
-    if args.normalize_l2error:
-        out_name += "_nrmed"
-
     fig, ax = plot(df, args.xname, normalize=args.normalize_l2error)
-    fig.savefig(f"{out_name}.pdf")
-    df.to_csv(f"{out_name}.csv", index=False)
+    fig.savefig(f"{run_name}.pdf")
+    df.to_csv(f"{run_name}.csv", index=False)
 
-    with open(f"{out_name}.txt", "w") as f:
+    with open(f"{run_name}.txt", "w") as f:
         f.write("python " + " ".join(sys.argv))

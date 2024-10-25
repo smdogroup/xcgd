@@ -3,6 +3,7 @@
 #include <exception>
 #include <memory>
 #include <set>
+#include <stdexcept>
 #include <string>
 
 #include "analysis.h"
@@ -17,6 +18,8 @@
 #include "utils/loggers.h"
 #include "utils/misc.h"
 #include "utils/vtk.h"
+
+#define PI 3.14159265358979323846
 
 template <typename T, int spatial_dim>
 class L2normBulk final : public PhysicsBase<T, spatial_dim, 0, 1> {
@@ -56,8 +59,6 @@ class L2normSurf final : public PhysicsBase<T, spatial_dim, 0, 1> {
     return weight * scale * val * val;
   }
 };
-
-#define PI 3.14159265358979323846
 
 double hard_max(std::vector<double> vals) {
   return *std::max_element(vals.begin(), vals.end());
@@ -120,15 +121,16 @@ void write_field_vtk(std::string field_vtkpath, const Mesh& mesh,
 
 enum class ProbInstance { Circle, Wedge, Image };
 
+// Define the exact solution and source term using method of manufactured
+// solutions
 template <typename T, typename Vec>
-T exact_solution(ProbInstance instance, Vec xloc) {
-  if (instance == ProbInstance::Circle) {
-    T r2 = xloc[0] * xloc[0] + xloc[1] * xloc[1];
-    T r = sqrt(r2);
-    return r2 * sin(r);
-  } else {  // Wedge and image
-    return sin(xloc[0] * 4.0 * PI) * sin(xloc[1] * 4.0 * PI);
-  }
+T exact_solution(Vec xloc) {
+  return sin(xloc[0] * 1.9 * PI) * sin(xloc[1] * 1.9 * PI);
+}
+template <typename T, typename Vec>
+T exact_source(Vec xloc) {
+  return 2.0 * 1.9 * 1.9 * PI * PI * sin(xloc[0] * 1.9 * PI) *
+         sin(xloc[1] * 1.9 * PI);
 }
 
 // Get the l2 error of the numerical Poisson solution
@@ -143,18 +145,12 @@ void solve_poisson_problem(std::string prefix, ProbInstance instance,
   using Mesh = CutMesh<T, Np_1d>;
   using Basis = GDBasis2D<T, Mesh>;
 
-  auto source_fun = [instance](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
-    if (instance == ProbInstance::Circle) {
-      T r2 = xloc[0] * xloc[0] + xloc[1] * xloc[1];
-      T r = sqrt(r2);
-      return -(4.0 - r2) * sin(r) - 5.0 * r * cos(r);
-    } else {  // Wedge and image
-      return 32.0 * PI * PI * sin(xloc[0] * 4.0 * PI) * sin(xloc[1] * 4.0 * PI);
-    }
+  auto source_fun = [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
+    return exact_source<T>(xloc);
   };
 
-  auto bc_fun = [instance](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
-    return exact_solution<T>(instance, xloc);
+  auto bc_fun = [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
+    return exact_solution<T>(xloc);
   };
 
   using PoissonBulk = PoissonPhysics<T, Basis::spatial_dim, typeof(source_fun)>;
@@ -172,51 +168,66 @@ void solve_poisson_problem(std::string prefix, ProbInstance instance,
 
   std::shared_ptr<Grid> grid;
   std::shared_ptr<Mesh> mesh;
-  if (instance == ProbInstance::Circle) {
-    int nxy[2] = {nxy_val, nxy_val};
-    double R = 2.0 * PI;
-    double lxy[2] = {3.0 * R, 3.0 * R};
-    double xy0[2] = {-1.5 * R, -1.5 * R};
-    grid = std::make_shared<Grid>(nxy, lxy, xy0);
-    mesh = std::make_shared<Mesh>(*grid, [R](double x[]) {
-      return x[0] * x[0] + x[1] * x[1] - R * R;  // <= 0
-    });
-  } else if (instance == ProbInstance::Wedge) {
-    int nxy[2] = {nxy_val, nxy_val};
-    double lxy[2] = {1.0, 1.0};
-    double angle = PI / 6.0;
-    grid = std::make_shared<Grid>(nxy, lxy);
-    mesh = std::make_shared<Mesh>(*grid, [angle](double x[]) {
-      T region1 = sin(angle) * (x[0] - 1.0) + cos(angle) * x[1];  // <= 0
-      T region2 = 1e-6 - x[0];
-      T region3 = 1e-6 - x[1];
-      return hard_max({region1, region2, region3});
-    });
-  } else {  // Image
-    json j;
-    try {
-      j = read_json(image_json);
-    } catch (const std::exception& e) {
-      std::cout << "failed to load the json file \"" + image_json +
-                       "\" with the following exception message:\n";
-      std::cout << std::string(e.what()) << "\n";
+
+  switch (instance) {
+    case ProbInstance::Circle: {
+      int nxy[2] = {nxy_val, nxy_val};
+      double R = 0.49;
+      double lxy[2] = {1.0, 1.0};
+      grid = std::make_shared<Grid>(nxy, lxy);
+      mesh = std::make_shared<Mesh>(*grid, [R](double x[]) {
+        return (x[0] - 0.5) * (x[0] - 0.5) + (x[1] - 0.5) * (x[1] - 0.5) -
+               R * R;  // <= 0
+      });
+      break;
     }
-    std::vector<double> lsf_dof = j["lsf_dof"];
-    int nxy[2] = {j["nxy"], j["nxy"]};
-    double lxy[2] = {1.0, 1.0};
-    grid = std::make_shared<Grid>(nxy, lxy);
-    mesh = std::make_shared<Mesh>(*grid);
-    if (mesh->get_lsf_dof().size() != lsf_dof.size()) {
-      std::string msg =
-          "Attempting to populate the LSF dof from input image, but the "
-          "dimensions don't match, the mesh has " +
-          std::to_string(mesh->get_lsf_dof().size()) +
-          " LSF nodes, but the input json has " +
-          std::to_string(lsf_dof.size()) + " entries.";
-      throw std::runtime_error(msg.c_str());
+
+    case ProbInstance::Wedge: {
+      int nxy[2] = {nxy_val, nxy_val};
+      double lxy[2] = {1.0, 1.0};
+      double angle = PI / 6.0;
+      grid = std::make_shared<Grid>(nxy, lxy);
+      mesh = std::make_shared<Mesh>(*grid, [angle](double x[]) {
+        T region1 = sin(angle) * (x[0] - 1.0) + cos(angle) * x[1];  // <= 0
+        T region2 = 1e-6 - x[0];
+        T region3 = 1e-6 - x[1];
+        return hard_max({region1, region2, region3});
+      });
+      break;
     }
-    mesh->get_lsf_dof() = lsf_dof;
-    mesh->update_mesh();
+
+    case ProbInstance::Image: {
+      json j;
+      try {
+        j = read_json(image_json);
+      } catch (const std::exception& e) {
+        std::cout << "failed to load the json file \"" + image_json +
+                         "\" with the following exception message:\n";
+        std::cout << std::string(e.what()) << "\n";
+      }
+      std::vector<double> lsf_dof = j["lsf_dof"];
+      int nxy[2] = {j["nxy"], j["nxy"]};
+      double lxy[2] = {1.0, 1.0};
+      grid = std::make_shared<Grid>(nxy, lxy);
+      mesh = std::make_shared<Mesh>(*grid);
+      if (mesh->get_lsf_dof().size() != lsf_dof.size()) {
+        std::string msg =
+            "Attempting to populate the LSF dof from input image, but the "
+            "dimensions don't match, the mesh has " +
+            std::to_string(mesh->get_lsf_dof().size()) +
+            " LSF nodes, but the input json has " +
+            std::to_string(lsf_dof.size()) + " entries.";
+        throw std::runtime_error(msg.c_str());
+      }
+      mesh->get_lsf_dof() = lsf_dof;
+      mesh->update_mesh();
+      break;
+    }
+
+    default: {
+      throw std::runtime_error("Unknown instance");
+      break;
+    }
   }
 
   QuadratureBulk quadrature_bulk(*mesh);
@@ -275,7 +286,7 @@ void solve_poisson_problem(std::string prefix, ProbInstance instance,
   for (int i = 0; i < ndof; i++) {
     T xloc[Basis::spatial_dim];
     mesh->get_node_xloc(i, xloc);
-    sol_exact[i] = exact_solution<T>(instance, xloc);
+    sol_exact[i] = exact_solution<T>(xloc);
   }
 
   // Compute the L2 norm of the solution field (not vector)
@@ -309,13 +320,11 @@ void solve_poisson_problem(std::string prefix, ProbInstance instance,
       solq_bcs_exact(solq_bcs.size());
 
   for (int i = 0; i < solq_bulk.size(); i++) {
-    solq_bulk_exact[i] =
-        exact_solution<T>(instance, &xlocq_bulk[Basis::spatial_dim * i]);
+    solq_bulk_exact[i] = exact_solution<T>(&xlocq_bulk[Basis::spatial_dim * i]);
   }
 
   for (int i = 0; i < solq_bcs.size(); i++) {
-    solq_bcs_exact[i] =
-        exact_solution<T>(instance, &xlocq_bcs[Basis::spatial_dim * i]);
+    solq_bcs_exact[i] = exact_solution<T>(&xlocq_bcs[Basis::spatial_dim * i]);
   }
 
   json j = {// {"sol", sol},
