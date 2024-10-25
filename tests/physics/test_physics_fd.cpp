@@ -172,4 +172,23 @@ void test_cut_dirichlet(
   test_physics_fd(tuple, physics, h, tol);
 }
 
+template <class Quadrature, class Basis>
+void test_vector_cut_dirichlet(
+    std::tuple<typename Basis::Mesh *, Quadrature *, Basis *> tuple,
+    double h = 1e-5, double tol = 1e-12) {
+  constexpr int dim = 4;
+  auto bc_fun = [](const A2D::Vec<T, Basis::spatial_dim> &xloc) {
+    std::vector<T> data = {xloc(0), xloc(1), xloc(0) * xloc(1),
+                           xloc(0) - xloc(1)};
+    return A2D::Vec<T, dim>(data.data());
+  };
+  using Physics = VectorCutDirichlet<T, Basis::spatial_dim, 4, typeof(bc_fun)>;
+  Physics physics(1.23, bc_fun);
+  test_physics_fd(tuple, physics, h, tol);
+}
+
 TEST(physics, CutDirichlet) { test_cut_dirichlet(create_gd_lsf_surf_basis()); }
+
+TEST(physics, VectorCutDirichlet) {
+  test_vector_cut_dirichlet(create_gd_lsf_surf_basis());
+}
