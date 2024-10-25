@@ -7,7 +7,7 @@ import json
 import argparse
 
 
-def get_lsf_dof(nxy, imgfile, plot=True):
+def extract_lsf_from_image(nxy, imgfile, plot=True, json_name=f"lsf_dof.json"):
     image0 = io.imread(imgfile, as_gray=True)
 
     npx_h, npx_w = image0.shape
@@ -50,20 +50,21 @@ def get_lsf_dof(nxy, imgfile, plot=True):
 
         plt.show()
 
-    return np.flip(lsf_dof, axis=0).flatten()
+    lsf_dof = np.flip(lsf_dof, axis=0).flatten()
+
+    with open(json_name, "w") as f:
+        json.dump({"nxy": nxy, "lsf_dof": lsf_dof.tolist()}, f, indent=2)
+
+    return
 
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
 
+    p.add_argument("image", help="path to the image")
     p.add_argument("--nxy", default=128)
-    p.add_argument("--image", default="./images/stanford_dragon.png")
     p.add_argument("--plot", action="store_true")
 
     args = p.parse_args()
 
-    nxy = args.nxy
-    lsf_dof = get_lsf_dof(nxy=nxy, imgfile=args.image, plot=args.plot)
-
-    with open(f"lsf_dof_nxy_{nxy}.json", "w") as f:
-        json.dump({"nxy": nxy, "lsf_dof": lsf_dof.tolist()}, f, indent=2)
+    extract_lsf_from_image(nxy=args.nxy, imgfile=args.image, plot=args.plot)

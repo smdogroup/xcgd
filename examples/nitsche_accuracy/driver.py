@@ -8,6 +8,9 @@ import pandas as pd
 from os.path import join
 import argparse
 from time import time
+import sys
+from lsf_creator import extract_lsf_from_image
+from pathlib import Path
 
 
 def get_poisson_l2_error_deprecated(prefix, cmd):
@@ -50,10 +53,11 @@ def get_poisson_l2_error(prefix, cmd):
     with open(join(prefix, "sol.json")) as f:
         j = json.load(f)
 
-    return (
-        j["err_l2norm_bulk"],
-        j["err_l2norm_bcs"],
-    )
+    err_l2norm_bulk = j["err_l2norm_bulk"]
+    err_l2norm_bcs = j["err_l2norm_bcs"]
+    err_l2norm_bulk_nrmed = j["err_l2norm_bulk"] / j["l2norm_bulk"]
+    err_l2norm_bcs_nrmed = j["err_l2norm_bcs"] / j["l2norm_bcs"]
+    return err_l2norm_bulk, err_l2norm_bcs, err_l2norm_bulk_nrmed, err_l2norm_bcs_nrmed
 
 
 def annotate_slope(
@@ -116,7 +120,7 @@ def annotate_slope(
     return
 
 
-def run_experiments(instance, Np_1d_list, nxy_list, nitsche_eta_list):
+def run_experiments(instance, image_path, Np_1d_list, nxy_list, nitsche_eta_list):
     df_data = {
         "Np_1d": [],
         "nxy": [],
@@ -124,12 +128,31 @@ def run_experiments(instance, Np_1d_list, nxy_list, nitsche_eta_list):
         "nitsche_eta": [],
         "err_l2norm_bulk": [],
         "err_l2norm_bcs": [],
+        "err_l2norm_bulk_nrmed": [],
+        "err_l2norm_bcs_nrmed": [],
     }
 
-    for Np_1d in Np_1d_list:
-        for nxy in nxy_list:
+    for nxy in nxy_list:
+        image_json_path = ""
+        instance_name = instance
+        if instance == "image":
+            image_name = Path(image_path).stem
+            image_json_path = f"./image_lsf_{image_name}_nxy_{nxy}.json"
+            instance_name += f"_{image_name}"
+
+            print(f"Extracting lsf from the image {image_name}...")
+            t1 = time()
+            extract_lsf_from_image(
+                nxy=nxy, imgfile=image_path, plot=False, json_name=image_json_path
+            )
+            t2 = time()
+            print(
+                f"Done extracting lsf from the image {image_name} ({t2 - t1:.2f} seconds)"
+            )
+
+        for Np_1d in Np_1d_list:
             for nitsche_eta in nitsche_eta_list:
-                prefix = f"outputs_instance_{instance}_Np_{Np_1d}_nxy_{nxy}_nitsche_{nitsche_eta:.1e}"
+                prefix = f"outputs_instance_{instance_name}_Np_{Np_1d}_nxy_{nxy}_nitsche_{nitsche_eta:.1e}"
                 cmd = [
                     "./nitsche_accuracy",
                     f"--instance={instance}",
@@ -137,6 +160,7 @@ def run_experiments(instance, Np_1d_list, nxy_list, nitsche_eta_list):
                     f"--Np_1d={Np_1d}",
                     f"--nxy={nxy}",
                     f"--prefix={prefix}",
+                    f"--image_json={image_json_path}",
                     f"--nitsche_eta={nitsche_eta}",
                 ]
 
@@ -144,6 +168,8 @@ def run_experiments(instance, Np_1d_list, nxy_list, nitsche_eta_list):
                 (
                     err_l2norm_bulk,
                     err_l2norm_bcs,
+                    err_l2norm_bulk_nrmed,
+                    err_l2norm_bcs_nrmed,
                 ) = get_poisson_l2_error(prefix, cmd)
 
                 t2 = time()
@@ -159,6 +185,8 @@ def run_experiments(instance, Np_1d_list, nxy_list, nitsche_eta_list):
 
                 df_data["err_l2norm_bulk"].append(err_l2norm_bulk)
                 df_data["err_l2norm_bcs"].append(err_l2norm_bcs)
+                df_data["err_l2norm_bulk_nrmed"].append(err_l2norm_bulk_nrmed)
+                df_data["err_l2norm_bcs_nrmed"].append(err_l2norm_bcs_nrmed)
 
     return pd.DataFrame(df_data)
 
@@ -181,7 +209,7 @@ def adjust_plot_lim(ax, left=0.0, right=0.2, bottom=0.3, up=0.0):
     return
 
 
-def plot(cases_df, xname):
+def plot(cases_df, xname, normalize):
     assert xname in ["h", "nitsche_eta"]
 
     fig, ax = plt.subplots(
@@ -195,9 +223,14 @@ def plot(cases_df, xname):
     colors = cm.tab10(range(10))
     linestyles = [i + j for j in ["o", "s", "<", ">"] for i in ["-"]]
 
+    if normalize:
+        errs = ["err_l2norm_bulk_nrmed", "err_l2norm_bcs_nrmed"]
+    else:
+        errs = ["err_l2norm_bulk", "err_l2norm_bcs"]
+
     # Cases for each Np
     for i, Np_1d in enumerate(Np_1d_list):
-        for j, err_type in enumerate(["err_l2norm_bulk", "err_l2norm_bcs"]):
+        for j, err_type in enumerate(errs):
             df = cases_df[cases_df["Np_1d"] == Np_1d]
 
             x = df[xname]
@@ -220,10 +253,16 @@ def plot(cases_df, xname):
     else:
         ax.set_xlabel(r"Nitsche parameter $\eta$")
 
-    ax.set_ylabel(
-        "L2 norm of the solution error\n"
-        + r"$\int_\Omega (u_h - u_\text{exact})^2 d\Omega$"
-    )
+    if normalize:
+        ax.set_ylabel(
+            "Normalized L2 norm of the solution error\n"
+            + r"$\dfrac{\int_\Omega (u_h - u_\text{exact})^2 d\Omega}{\int_\Omega  u_\text{exact}^2 d\Omega}$"
+        )
+    else:
+        ax.set_ylabel(
+            "L2 norm of the solution error\n"
+            + r"$\int_\Omega (u_h - u_\text{exact})^2 d\Omega$"
+        )
     ax.legend(frameon=False, loc="lower right")
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
@@ -237,7 +276,8 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(formatter_class=argparse.HelpFormatter)
 
     p.add_argument("--csv", type=str, default=None, help="case data csv")
-    p.add_argument("--instance", default="circle", choices=["circle", "wedge"])
+    p.add_argument("--instance", default="circle", choices=["circle", "wedge", "image"])
+    p.add_argument("--image", type=str, default="", help="the path to the image")
     p.add_argument(
         "--Np_1d",
         nargs="+",
@@ -255,7 +295,7 @@ if __name__ == "__main__":
     p.add_argument(
         "--nitsche_eta",
         nargs="+",
-        default=[1e1, 1e2, 1e3, 1e4, 1e5, 1e6],
+        default=[1e6],
         type=float,
         help="list of Nitsche parameter",
     )
@@ -266,12 +306,14 @@ if __name__ == "__main__":
         choices=["h", "nitsche_eta"],
         help="which quantity to use for x axis of the plot",
     )
+    p.add_argument("--normalize-l2error", action="store_true")
 
     args = p.parse_args()
 
     if args.csv is None:
         df = run_experiments(
             instance=args.instance,
+            image_path=args.image,
             Np_1d_list=args.Np_1d,
             nxy_list=args.nxy,
             nitsche_eta_list=args.nitsche_eta,
@@ -290,6 +332,16 @@ if __name__ == "__main__":
         #     print(df)
         #     exit()
 
-    fig, ax = plot(df, args.xname)
-    fig.savefig(f"nitsche_precision_x_{args.xname}.pdf")
-    df.to_csv(f"nitsche_precision_x_{args.xname}.csv", index=False)
+    instance_name = args.instance
+    if args.instance == "image":
+        instance_name += f"_{Path(args.image).stem}"
+    out_name = f"precision_nitsche_instance_{instance_name}_x_{args.xname}"
+    if args.normalize_l2error:
+        out_name += "_nrmed"
+
+    fig, ax = plot(df, args.xname, normalize=args.normalize_l2error)
+    fig.savefig(f"{out_name}.pdf")
+    df.to_csv(f"{out_name}.csv", index=False)
+
+    with open(f"{out_name}.txt", "w") as f:
+        f.write("python " + " ".join(sys.argv))
