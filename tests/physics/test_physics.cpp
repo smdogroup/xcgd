@@ -3,6 +3,7 @@
 #include <memory>
 #include <numeric>
 #include <string>
+#include <vector>
 
 #include "analysis.h"
 #include "elements/fe_quadrilateral.h"
@@ -188,7 +189,10 @@ void test_elasticity(
     std::tuple<typename Basis::Mesh *, Quadrature *, Basis *> tuple,
     double h = 1e-30, double tol = 1e-14) {
   T E = 30.0, nu = 0.3;
-  LinearElasticity<T, Basis::spatial_dim> physics(E, nu);
+
+  std::vector<T> vals = {1.2, -3.4, 5.6, 7.8};
+
+  LinearElasticity<T, Basis::spatial_dim> physics(E, nu, vals.data());
   test_physics(tuple, physics, h, tol);
 }
 

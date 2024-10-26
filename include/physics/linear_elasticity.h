@@ -14,35 +14,37 @@ class LinearElasticity final
   using PhysicsBase::dof_per_node;
   using PhysicsBase::spatial_dim;
 
-  LinearElasticity(T E, T nu) {
-    mu = 0.5 * E / (1.0 + nu);
-    lambda = E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu));
-  }
+  LinearElasticity(T E, T nu, A2D::Vec<T, dof_per_node> g = {})
+      : mu(0.5 * E / (1.0 + nu)),
+        lambda(E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu))),
+        g(g) {}
 
   T energy(T weight, T _, A2D::Vec<T, spatial_dim>& __,
            A2D::Vec<T, spatial_dim>& ___,
            A2D::Mat<T, spatial_dim, spatial_dim>& J,
-           A2D::Vec<T, dof_per_node>& ____,
+           A2D::Vec<T, dof_per_node>& u,
            A2D::Mat<T, dof_per_node, spatial_dim>& grad) const {
-    T detJ, energy;
+    T detJ, energy, potential;
     A2D::SymMat<T, spatial_dim> E, S;
 
     A2D::MatDet(J, detJ);
     A2D::MatGreenStrain<A2D::GreenStrainType::LINEAR>(grad, E);
     A2D::SymIsotropic(mu, lambda, E, S);
     A2D::SymMatMultTrace(E, S, energy);
-    T output = 0.5 * weight * detJ * energy;
+    A2D::VecDot(g, u, potential);
+    T output = weight * detJ * (0.5 * energy + potential);
     return output;
   }
 
   void residual(T weight, T _, A2D::Vec<T, spatial_dim>& __,
                 A2D::Vec<T, spatial_dim>& ___,
                 A2D::Mat<T, spatial_dim, spatial_dim>& J,
-                A2D::Vec<T, dof_per_node>& vals,
+                A2D::Vec<T, dof_per_node>& u,
                 A2D::Mat<T, dof_per_node, spatial_dim>& grad,
-                A2D::Vec<T, dof_per_node>& ____,
+                A2D::Vec<T, dof_per_node>& coef_u,
                 A2D::Mat<T, dof_per_node, spatial_dim>& coef_grad) const {
-    A2D::ADObj<T> detJ_obj, energy_obj, output_obj;
+    A2D::ADObj<T> detJ_obj, energy_obj, potential_obj, output_obj;
+    A2D::ADObj<A2D::Vec<T, dof_per_node>&> u_obj(u, coef_u);
     A2D::ADObj<A2D::SymMat<T, spatial_dim>> E_obj, S_obj;
     A2D::ADObj<A2D::Mat<T, dof_per_node, spatial_dim>> J_obj(J);
     A2D::ADObj<A2D::Mat<T, dof_per_node, spatial_dim>&> grad_obj(grad,
@@ -53,7 +55,9 @@ class LinearElasticity final
         A2D::MatGreenStrain<A2D::GreenStrainType::LINEAR>(grad_obj, E_obj),
         A2D::SymIsotropic(mu, lambda, E_obj, S_obj),
         A2D::SymMatMultTrace(E_obj, S_obj, energy_obj),
-        A2D::Eval(0.5 * weight * detJ_obj * energy_obj, output_obj));
+        A2D::VecDot(g, u_obj, potential_obj),
+        A2D::Eval(weight * detJ_obj * (0.5 * energy_obj + potential_obj),
+                  output_obj));
 
     output_obj.bvalue() = 1.0;
     stack.reverse();
@@ -114,7 +118,8 @@ class LinearElasticity final
   }
 
  private:
-  T mu, lambda;  // Lame parameters
+  T mu, lambda;                 // Lame parameters
+  A2D::Vec<T, dof_per_node> g;  // Gravitational acceleration
 };
 
 #endif  // XCGD_LINEAR_ELASTICITY_H

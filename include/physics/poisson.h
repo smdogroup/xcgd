@@ -17,7 +17,7 @@ class PoissonPhysics final : public PhysicsBase<T, spatial_dim, 0, 1> {
    * @param source_fun [in] the source term callable that takes in
    * const A2D::Vec<T, spatial_dim>& and returns T
    */
-  PoissonPhysics(SourceFunc source_fun) : source_fun(source_fun) {}
+  PoissonPhysics(const SourceFunc& source_fun) : source_fun(source_fun) {}
 
   T energy(T weight, T _, A2D::Vec<T, spatial_dim>& xloc,
            A2D::Vec<T, spatial_dim>& __,
@@ -100,7 +100,7 @@ class PoissonPhysics final : public PhysicsBase<T, spatial_dim, 0, 1> {
   }
 
  private:
-  SourceFunc source_fun;
+  const SourceFunc& source_fun;
 };
 
 #endif  // XCGD_POISSON_H
