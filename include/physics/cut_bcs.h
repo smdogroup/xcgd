@@ -398,7 +398,6 @@ class VectorCutDirichlet final : public PhysicsBase<T, spatial_dim, 0, dim> {
     // Extract the Hessian w.r.t. u
     stack.hextract(up, uh, jac_u);
 
-    stack.reverse();
     for (int i = 0; i < dof_per_node; i++) {
       up.zero();
       hgrad.zero();
