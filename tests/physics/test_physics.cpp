@@ -190,10 +190,17 @@ void test_elasticity(
     double h = 1e-30, double tol = 1e-14) {
   T E = 30.0, nu = 0.3;
 
-  std::vector<T> vals = {1.2, -3.4, 5.6, 7.8};
-
-  LinearElasticity<T, Basis::spatial_dim> physics(E, nu, vals.data());
-  test_physics(tuple, physics, h, tol);
+  if constexpr (Basis::spatial_dim == 2) {
+    LinearElasticity<T, Basis::spatial_dim> physics(E, nu, {1.2, -4.5});
+    test_physics(tuple, physics, h, tol);
+  } else if (Basis::spatial_dim == 3) {
+    LinearElasticity<T, Basis::spatial_dim> physics(E, nu, {1.2, -4.5, 7.8});
+    test_physics(tuple, physics, h, tol);
+  } else {
+    throw std::runtime_error(
+        ("unknown Basis::spatial_dim: " + std::to_string(Basis::spatial_dim))
+            .c_str());
+  }
 }
 
 template <class Quadrature, class Basis>

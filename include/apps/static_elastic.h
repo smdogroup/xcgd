@@ -1,3 +1,5 @@
+#include <array>
+
 #include "analysis.h"
 #include "physics/linear_elasticity.h"
 #include "sparse_utils/sparse_utils.h"
@@ -16,11 +18,12 @@ class StaticElastic final {
   using CSCMat = SparseUtils::CSCMat<T>;
 
  public:
-  StaticElastic(T E, T nu, Mesh& mesh, Quadrature& quadrature, Basis& basis)
+  StaticElastic(T E, T nu, Mesh& mesh, Quadrature& quadrature, Basis& basis,
+                std::array<T, Physics::dof_per_node> g = {})
       : mesh(mesh),
         quadrature(quadrature),
         basis(basis),
-        physics(E, nu),
+        physics(E, nu, g),
         analysis(mesh, quadrature, basis, physics) {}
 
   ~StaticElastic() = default;
@@ -67,7 +70,13 @@ class StaticElastic final {
     jac_csc->zero_columns(bc_dof.size(), bc_dof.data());
 
     // Set right hand side
-    std::vector<T> rhs(ndof, 0.0);
+    std::vector<T> rhs(ndof, 0.0), t1(ndof, 0.0);
+
+    analysis.residual(nullptr, t1.data(), rhs.data());
+    for (int i = 0; i < rhs.size(); i++) {
+      rhs[i] *= -1.0;
+    }
+
     for (int i = 0; i < load_dof.size(); i++) {
       rhs[load_dof[i]] = load_vals[i];
     }

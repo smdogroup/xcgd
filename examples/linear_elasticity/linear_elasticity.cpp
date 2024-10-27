@@ -3,9 +3,13 @@
 #include <string>
 #include <vector>
 
+#include "a2dcore.h"
 #include "analysis.h"
+#include "apps/static_elastic.h"
+#include "elements/element_commons.h"
 #include "elements/fe_quadrilateral.h"
 #include "elements/gd_vandermonde.h"
+#include "physics/cut_bcs.h"
 #include "sparse_utils/sparse_utils.h"
 #include "utils/mesher.h"
 #include "utils/vtk.h"
@@ -125,7 +129,7 @@ class Circle {
   double sign = 1.0;
 };
 
-void solve_linear_elasticity_gd() {
+void solve_linear_elasticity_cut_gd() {
   using T = double;
   int constexpr Np_1d = 4;
   using Grid = StructuredGrid2D<T>;
@@ -147,7 +151,131 @@ void solve_linear_elasticity_gd() {
   Quadrature quadrature(mesh);
 
   T E = 30.0, nu = 0.3;
-  solve_linear_elasticity(E, nu, mesh, quadrature, basis, "gd");
+  solve_linear_elasticity(E, nu, mesh, quadrature, basis, "cut_gd");
 }
 
-int main() { solve_linear_elasticity_gd(); }
+void solve_linear_elasticity_gd() {
+  using T = double;
+  int constexpr Np_1d = 4;
+  using Grid = StructuredGrid2D<T>;
+  using Quadrature = GDGaussQuadrature2D<T, Np_1d>;
+  using Mesh = GridMesh<T, Np_1d>;
+  using Basis = GDBasis2D<T, Mesh>;
+  int nxy[2] = {96, 16};
+  T lxy[2] = {6.0, 1.0};
+
+  Grid grid(nxy, lxy);
+  Mesh mesh(grid);
+  Basis basis(mesh);
+  Quadrature quadrature(mesh);
+
+  T E = 30.0, nu = 0.3;
+  StaticElastic elastic(E, nu, mesh, quadrature, basis, {0.0, -1.0});
+
+  // Set boundary conditions
+  std::vector<int> bc_nodes = mesh.get_left_boundary_nodes();
+  std::vector<int> bc_dof;
+  bc_dof.reserve(Basis::spatial_dim * bc_nodes.size());
+  for (int node : bc_nodes) {
+    for (int d = 0; d < Basis::spatial_dim; d++) {
+      bc_dof.push_back(Basis::spatial_dim * node + d);
+    }
+  }
+
+  std::vector<T> sol = elastic.solve(bc_dof, {}, {});
+
+  ToVTK<T, Mesh> vtk(mesh, "gravity.vtk");
+  vtk.write_mesh();
+  vtk.write_vec("u", sol.data());
+}
+
+void solve_linear_elasticity_nitsche() {
+  using T = double;
+  int constexpr Np_1d = 4;
+  using Grid = StructuredGrid2D<T>;
+  using QuadratureBulk = GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER>;
+  using QuadratureBCs = GDLSFQuadrature2D<T, Np_1d, QuadPtType::SURFACE>;
+  using Mesh = CutMesh<T, Np_1d>;
+  using Basis = GDBasis2D<T, Mesh>;
+
+  using PhysicsBulk = LinearElasticity<T, Basis::spatial_dim>;
+  auto bc_fun = [](const A2D::Vec<T, Basis::spatial_dim> &xloc) {
+    return A2D::Vec<T, PhysicsBulk::dof_per_node>{};
+  };
+
+  using PhysicsBCs =
+      VectorCutDirichlet<T, Basis::spatial_dim, PhysicsBulk::dof_per_node,
+                         typeof(bc_fun)>;
+
+  using AnalysisBulk =
+      GalerkinAnalysis<T, Mesh, QuadratureBulk, Basis, PhysicsBulk>;
+  using AnalysisBCs =
+      GalerkinAnalysis<T, Mesh, QuadratureBCs, Basis, PhysicsBCs>;
+
+  using BSRMat = GalerkinBSRMat<T, PhysicsBulk::dof_per_node>;
+  using CSCMat = SparseUtils::CSCMat<T>;
+
+  int nxy[2] = {32, 32};
+  T lxy[2] = {1.0, 1.0};
+  T R = 0.49;
+  Grid grid(nxy, lxy);
+  Mesh mesh(grid, [R](T *x) {
+    return (x[0] - 0.5) * (x[0] - 0.5) + (x[1] - 0.5) * (x[1] - 0.5) -
+           R * R;  // <= 0
+  });
+
+  Basis basis(mesh);
+  QuadratureBulk quadrature_bulk(mesh);
+  QuadratureBCs quadrature_bcs(mesh);
+
+  PhysicsBulk physics_bulk(30.0, 0.3, {0.0, -1.0});
+  PhysicsBCs physics_bcs(1e6, bc_fun);
+
+  AnalysisBulk analysis_bulk(mesh, quadrature_bulk, basis, physics_bulk);
+  AnalysisBCs analysis_bcs(mesh, quadrature_bcs, basis, physics_bcs);
+
+  int ndof = PhysicsBulk::dof_per_node * mesh.get_num_nodes();
+
+  // Set up Jacobian matrix
+  int *rowp = nullptr, *cols = nullptr;
+  SparseUtils::CSRFromConnectivityFunctor(
+      mesh.get_num_nodes(), mesh.get_num_elements(),
+      mesh.max_nnodes_per_element,
+      [&mesh](int elem, int *nodes) -> int {
+        return mesh.get_elem_dof_nodes(elem, nodes);
+      },
+      &rowp, &cols);
+  int nnz = rowp[mesh.get_num_nodes()];
+  BSRMat *jac_bsr = new BSRMat(mesh.get_num_nodes(), nnz, rowp, cols);
+  std::vector<T> zeros(ndof, 0.0);
+  analysis_bulk.jacobian(nullptr, zeros.data(), jac_bsr);
+  analysis_bcs.jacobian(nullptr, zeros.data(), jac_bsr, false);
+  CSCMat *jac_csc = SparseUtils::bsr_to_csc(jac_bsr);
+
+  // Set up the right hand side
+  std::vector<T> rhs(ndof, 0.0);
+  analysis_bulk.residual(nullptr, zeros.data(), rhs.data());
+  analysis_bcs.residual(nullptr, zeros.data(), rhs.data());
+  for (int i = 0; i < ndof; i++) {
+    rhs[i] *= -1.0;
+  }
+
+  // Solve
+  SparseUtils::CholOrderingType order = SparseUtils::CholOrderingType::ND;
+  SparseUtils::SparseCholesky<T> *chol =
+      new SparseUtils::SparseCholesky<T>(jac_csc);
+  chol->factor();
+  std::vector<T> sol = rhs;
+  chol->solve(sol.data());
+
+  ToVTK<T, Mesh> vtk(mesh, "nitsche_gravity.vtk");
+  vtk.write_mesh();
+  vtk.write_vec("u", sol.data());
+  vtk.write_sol("lsf", mesh.get_lsf_nodes().data());
+}
+
+int main() {
+  // solve_linear_elasticity_cut_gd();
+  // solve_linear_elasticity_gd();
+  solve_linear_elasticity_nitsche();
+}

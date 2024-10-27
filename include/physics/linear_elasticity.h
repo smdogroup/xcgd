@@ -14,10 +14,10 @@ class LinearElasticity final
   using PhysicsBase::dof_per_node;
   using PhysicsBase::spatial_dim;
 
-  LinearElasticity(T E, T nu, A2D::Vec<T, dof_per_node> g = {})
+  LinearElasticity(T E, T nu, std::array<T, dof_per_node> garray = {})
       : mu(0.5 * E / (1.0 + nu)),
         lambda(E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu))),
-        g(g) {}
+        g(garray.data()) {}
 
   T energy(T weight, T _, A2D::Vec<T, spatial_dim>& __,
            A2D::Vec<T, spatial_dim>& ___,
@@ -32,7 +32,7 @@ class LinearElasticity final
     A2D::SymIsotropic(mu, lambda, E, S);
     A2D::SymMatMultTrace(E, S, energy);
     A2D::VecDot(g, u, potential);
-    T output = weight * detJ * (0.5 * energy + potential);
+    T output = weight * detJ * (0.5 * energy - potential);
     return output;
   }
 
@@ -56,7 +56,7 @@ class LinearElasticity final
         A2D::SymIsotropic(mu, lambda, E_obj, S_obj),
         A2D::SymMatMultTrace(E_obj, S_obj, energy_obj),
         A2D::VecDot(g, u_obj, potential_obj),
-        A2D::Eval(weight * detJ_obj * (0.5 * energy_obj + potential_obj),
+        A2D::Eval(weight * detJ_obj * (0.5 * energy_obj - potential_obj),
                   output_obj));
 
     output_obj.bvalue() = 1.0;
