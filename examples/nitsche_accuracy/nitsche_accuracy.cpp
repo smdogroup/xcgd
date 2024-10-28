@@ -133,38 +133,27 @@ T exact_source(Vec xloc) {
          sin(xloc[1] * 1.9 * PI);
 }
 
-// Get the l2 error of the numerical Poisson solution
-template <int Np_1d>
-void solve_poisson_problem(std::string prefix, ProbInstance instance,
-                           std::string image_json, int nxy_val,
-                           bool save_stencils, double nitsche_eta) {
-  using T = double;
+// Solve the physical problem using Galerkin difference method with Nitsche's
+// method
+template <typename T, int Np_1d, class PhysicsBulk, class PhysicsBCs>
+void solve_gd_nitsche_problem(std::string prefix,
+                              const PhysicsBulk& physics_bulk,
+                              const PhysicsBCs& physics_bcs,
+                              ProbInstance instance, std::string image_json,
+                              int nxy_val, bool save_stencils) {
   using Grid = StructuredGrid2D<T>;
   using QuadratureBulk = GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER>;
   using QuadratureBCs = GDLSFQuadrature2D<T, Np_1d, QuadPtType::SURFACE>;
   using Mesh = CutMesh<T, Np_1d>;
   using Basis = GDBasis2D<T, Mesh>;
 
-  auto source_fun = [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
-    return exact_source<T>(xloc);
-  };
-
-  auto bc_fun = [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
-    return exact_solution<T>(xloc);
-  };
-
-  using PoissonBulk = PoissonPhysics<T, Basis::spatial_dim, typeof(source_fun)>;
-  using PoissonBCs = CutDirichlet<T, Basis::spatial_dim, typeof(bc_fun)>;
-
   using AnalysisBulk =
-      GalerkinAnalysis<T, Mesh, QuadratureBulk, Basis, PoissonBulk>;
+      GalerkinAnalysis<T, Mesh, QuadratureBulk, Basis, PhysicsBulk>;
   using AnalysisBCs =
-      GalerkinAnalysis<T, Mesh, QuadratureBCs, Basis, PoissonBCs>;
+      GalerkinAnalysis<T, Mesh, QuadratureBCs, Basis, PhysicsBCs>;
 
-  using BSRMat = GalerkinBSRMat<T, PoissonBulk::dof_per_node>;
+  using BSRMat = GalerkinBSRMat<T, PhysicsBulk::dof_per_node>;
   using CSCMat = SparseUtils::CSCMat<T>;
-
-  DegenerateStencilLogger::enable();
 
   std::shared_ptr<Grid> grid;
   std::shared_ptr<Mesh> mesh;
@@ -234,11 +223,8 @@ void solve_poisson_problem(std::string prefix, ProbInstance instance,
   QuadratureBCs quadrature_bcs(*mesh);
   Basis basis(*mesh);
 
-  PoissonBulk poisson_bulk(source_fun);
-  PoissonBCs poisson_bcs(nitsche_eta, bc_fun);
-
-  AnalysisBulk analysis_bulk(*mesh, quadrature_bulk, basis, poisson_bulk);
-  AnalysisBCs analysis_bcs(*mesh, quadrature_bcs, basis, poisson_bcs);
+  AnalysisBulk analysis_bulk(*mesh, quadrature_bulk, basis, physics_bulk);
+  AnalysisBCs analysis_bcs(*mesh, quadrature_bcs, basis, physics_bcs);
 
   int ndof = mesh->get_num_nodes();
 
@@ -357,13 +343,53 @@ void solve_poisson_problem(std::string prefix, ProbInstance instance,
                      *mesh, analysis_bcs, sol);
 }
 
+enum class PhysicsType { Poisson, LinearElasticity };
+
+template <int Np_1d>
+void execute_accuracy_study(std::string prefix, PhysicsType physics_type,
+                            ProbInstance instance, std::string image_json,
+                            int nxy_val, bool save_stencils,
+                            double nitsche_eta) {
+  using T = double;
+  int constexpr spatial_dim = 2;
+
+  switch (physics_type) {
+    case PhysicsType::Poisson: {
+      auto source_fun = [](const A2D::Vec<T, spatial_dim>& xloc) {
+        return exact_source<T>(xloc);
+      };
+
+      auto bc_fun = [](const A2D::Vec<T, spatial_dim>& xloc) {
+        return exact_solution<T>(xloc);
+      };
+
+      PoissonPhysics<T, spatial_dim, typeof(source_fun)> physics_bulk(
+          source_fun);
+      CutDirichlet<T, spatial_dim, typeof(bc_fun)> physics_bcs(nitsche_eta,
+                                                               bc_fun);
+
+      solve_gd_nitsche_problem<T, Np_1d>(prefix, physics_bulk, physics_bcs,
+                                         instance, image_json, nxy_val,
+                                         save_stencils);
+      break;
+    }
+    case PhysicsType::LinearElasticity: {
+      break;
+    }
+  }
+}
+
 int main(int argc, char* argv[]) {
+  DegenerateStencilLogger::enable();
+
   ArgParser p;
   p.add_argument<int>("--save-degenerate-stencils", 0);
   p.add_argument<int>("--Np_1d", 2);
   p.add_argument<int>("--nxy", 64);
   p.add_argument<double>("--nitsche_eta", 1e6);
   p.add_argument<std::string>("--prefix", {});
+  p.add_argument<std::string>("--physics_type", "poisson",
+                              {"poisson", "linear_elasticity"});
   p.add_argument<std::string>("--instance", "circle",
                               {"circle", "wedge", "image"});
   p.add_argument<std::string>("--image_json", "image.json");
@@ -382,31 +408,39 @@ int main(int argc, char* argv[]) {
   int Np_1d = p.get<int>("Np_1d");
   int nxy_val = p.get<int>("nxy");
   double nitsche_eta = p.get<double>("nitsche_eta");
+  PhysicsType physics_type =
+      std::map<std::string, PhysicsType>{
+          {"poisson", PhysicsType::Poisson},
+          {"linear_elasticity", PhysicsType::LinearElasticity}}
+          .at(p.get<std::string>("physics_type"));
+
   ProbInstance instance = std::map<std::string, ProbInstance>{
       {"circle", ProbInstance::Circle},
       {"wedge", ProbInstance::Wedge},
-      {"image", ProbInstance::Image}}[p.get<std::string>("instance")];
+      {"image",
+       ProbInstance::Image}}.at(p.get<std::string>("instance"));
   std::string image_json = p.get<std::string>("image_json");
+
   switch (Np_1d) {
     case 2:
-      solve_poisson_problem<2>(prefix, instance, image_json, nxy_val,
-                               save_stencils, nitsche_eta);
+      execute_accuracy_study<2>(prefix, physics_type, instance, image_json,
+                                nxy_val, save_stencils, nitsche_eta);
       break;
     case 4:
-      solve_poisson_problem<4>(prefix, instance, image_json, nxy_val,
-                               save_stencils, nitsche_eta);
+      execute_accuracy_study<4>(prefix, physics_type, instance, image_json,
+                                nxy_val, save_stencils, nitsche_eta);
       break;
     case 6:
-      solve_poisson_problem<6>(prefix, instance, image_json, nxy_val,
-                               save_stencils, nitsche_eta);
+      execute_accuracy_study<6>(prefix, physics_type, instance, image_json,
+                                nxy_val, save_stencils, nitsche_eta);
       break;
     case 8:
-      solve_poisson_problem<8>(prefix, instance, image_json, nxy_val,
-                               save_stencils, nitsche_eta);
+      execute_accuracy_study<8>(prefix, physics_type, instance, image_json,
+                                nxy_val, save_stencils, nitsche_eta);
       break;
     case 10:
-      solve_poisson_problem<10>(prefix, instance, image_json, nxy_val,
-                                save_stencils, nitsche_eta);
+      execute_accuracy_study<10>(prefix, physics_type, instance, image_json,
+                                 nxy_val, save_stencils, nitsche_eta);
       break;
     default:
       printf("Unsupported Np_1d (%d), exiting...\n", Np_1d);
