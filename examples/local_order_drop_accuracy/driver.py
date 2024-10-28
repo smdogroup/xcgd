@@ -44,7 +44,7 @@ def get_poisson_l2_error(prefix, cmd):
 
 
 def annotate_slope(
-    ax, pt0, pt1, slide=0.25, scale=0.5, hoffset=0.0, voffset=-0.1, voffset_text=-0.35
+    ax, pt0, pt1, slide=0.15, scale=0.7, hoffset=0.0, voffset=-0.1, voffset_text=-0.35
 ):
     """
     Annotate the slope on a log-log plot
@@ -169,7 +169,7 @@ def adjust_plot_lim(ax, left=0.0, right=0.2, bottom=0.3, up=0.0):
     return
 
 
-def plot(cases_df, normalize):
+def plot(cases_df, normalize, voffset, voffset_text):
     fig, ax = plt.subplots(
         ncols=1,
         nrows=1,
@@ -206,7 +206,9 @@ def plot(cases_df, normalize):
             if j == 0:
                 x0, x1 = x.iloc[-2:]
                 y0, y1 = y.iloc[-2:]
-                annotate_slope(ax, (x0, y0), (x1, y1))
+                annotate_slope(
+                    ax, (x0, y0), (x1, y1), voffset=voffset, voffset_text=voffset_text
+                )
 
     ax.set_xlabel("Mesh size $h$")
     # ax.set_xlabel("number of elements in each dimension")
@@ -256,6 +258,8 @@ if __name__ == "__main__":
         help="list of number of mesh elements per dimension",
     )
     p.add_argument("--normalize-l2error", action="store_true")
+    p.add_argument("--voffset", default=-0.1, type=float)
+    p.add_argument("--voffset_text", default=-0.1, type=float)
 
     args = p.parse_args()
 
@@ -278,7 +282,7 @@ if __name__ == "__main__":
         #     print(df)
         #     exit()
 
-    fig, ax = plot(df, args.normalize_l2error)
+    fig, ax = plot(df, args.normalize_l2error, args.voffset, args.voffset_text)
     run_name = "precision_order_drop"
     if args.normalize_l2error:
         run_name += "_nrmed"
