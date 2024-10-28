@@ -3,7 +3,8 @@
 
 #include "physics_commons.h"
 
-template <typename T, int spatial_dim>
+// IntFunc: type of the internal (body) force functor
+template <typename T, int spatial_dim, class IntFunc>
 class LinearElasticity final
     : public PhysicsBase<T, spatial_dim, 1, spatial_dim> {
  private:
@@ -14,18 +15,19 @@ class LinearElasticity final
   using PhysicsBase::dof_per_node;
   using PhysicsBase::spatial_dim;
 
-  LinearElasticity(T E, T nu, std::array<T, dof_per_node> garray = {})
+  LinearElasticity(T E, T nu, const IntFunc& int_func)
       : mu(0.5 * E / (1.0 + nu)),
         lambda(E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu))),
-        g(garray.data()) {}
+        int_func(int_func) {}
 
   T energy(T weight, T _, A2D::Vec<T, spatial_dim>& __,
-           A2D::Vec<T, spatial_dim>& ___,
+           A2D::Vec<T, spatial_dim>& xloc,
            A2D::Mat<T, spatial_dim, spatial_dim>& J,
            A2D::Vec<T, dof_per_node>& u,
            A2D::Mat<T, dof_per_node, spatial_dim>& grad) const {
     T detJ, energy, potential;
     A2D::SymMat<T, spatial_dim> E, S;
+    A2D::Vec<T, dof_per_node> g = int_func(xloc);
 
     A2D::MatDet(J, detJ);
     A2D::MatGreenStrain<A2D::GreenStrainType::LINEAR>(grad, E);
@@ -37,12 +39,13 @@ class LinearElasticity final
   }
 
   void residual(T weight, T _, A2D::Vec<T, spatial_dim>& __,
-                A2D::Vec<T, spatial_dim>& ___,
+                A2D::Vec<T, spatial_dim>& xloc,
                 A2D::Mat<T, spatial_dim, spatial_dim>& J,
                 A2D::Vec<T, dof_per_node>& u,
                 A2D::Mat<T, dof_per_node, spatial_dim>& grad,
                 A2D::Vec<T, dof_per_node>& coef_u,
                 A2D::Mat<T, dof_per_node, spatial_dim>& coef_grad) const {
+    A2D::Vec<T, dof_per_node> g = int_func(xloc);
     A2D::ADObj<T> detJ_obj, energy_obj, potential_obj, output_obj;
     A2D::ADObj<A2D::Vec<T, dof_per_node>&> u_obj(u, coef_u);
     A2D::ADObj<A2D::SymMat<T, spatial_dim>> E_obj, S_obj;
@@ -118,8 +121,8 @@ class LinearElasticity final
   }
 
  private:
-  T mu, lambda;                 // Lame parameters
-  A2D::Vec<T, dof_per_node> g;  // Gravitational acceleration
+  T mu, lambda;  // Lame parameters
+  const IntFunc& int_func;
 };
 
 #endif  // XCGD_LINEAR_ELASTICITY_H

@@ -21,12 +21,12 @@
 using fspath = std::filesystem::path;
 
 template <typename T, int Np_1d_filter, class Mesh, class Quadrature,
-          class Basis>
+          class Basis, class IntFunc>
 class TopoAnalysis {
  private:
   using Grid = StructuredGrid2D<T>;
   using Filter = HelmholtzFilter<T, Np_1d_filter>;
-  using StaticElastic = StaticElastic<T, Mesh, Quadrature, Basis>;
+  using StaticElastic = StaticElastic<T, Mesh, Quadrature, Basis, IntFunc>;
   using Volume = VolumePhysics<T, Basis::spatial_dim>;
   using Penalization = GradPenalization<T, Basis::spatial_dim>;
   using VolAnalysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Volume>;
@@ -37,11 +37,12 @@ class TopoAnalysis {
   int constexpr static spatial_dim = Grid::spatial_dim;
 
  public:
-  TopoAnalysis(T r0, T E, T nu, T penalty, bool use_robust_projection,
-               double proj_beta, double proj_eta, Grid& grid, Mesh& mesh,
-               Quadrature& quadrature, Basis& basis, std::string prefix)
+  TopoAnalysis(T r0, T E, T nu, const IntFunc& int_func, T penalty,
+               bool use_robust_projection, double proj_beta, double proj_eta,
+               Grid& grid, Mesh& mesh, Quadrature& quadrature, Basis& basis,
+               std::string prefix)
       : filter(r0, grid, use_robust_projection, proj_beta, proj_eta),
-        elastic(E, nu, mesh, quadrature, basis),
+        elastic(E, nu, mesh, quadrature, basis, int_func),
         vol_analysis(mesh, quadrature, basis, vol),
         pen(penalty),
         pen_analysis(filter.get_mesh(), filter.get_quadrature(),
@@ -518,7 +519,12 @@ void execute(int argc, char* argv[]) {
   using Mesh = CutMesh<T, Np_1d>;
   using Basis = GDBasis2D<T, Mesh>;
 
-  using TopoAnalysis = TopoAnalysis<T, Np_1d_filter, Mesh, Quadrature, Basis>;
+  auto int_func = [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
+    return A2D::Vec<T, Basis::spatial_dim>{};
+  };
+
+  using TopoAnalysis =
+      TopoAnalysis<T, Np_1d_filter, Mesh, Quadrature, Basis, typeof(int_func)>;
 
   bool smoke_test = false;
   if (argc > 2 and "--smoke" == std::string(argv[2])) {
@@ -570,8 +576,9 @@ void execute(int argc, char* argv[]) {
   double robust_proj_beta = parser.get_double_option("robust_proj_beta");
   double robust_proj_eta = parser.get_double_option("robust_proj_eta");
   T penalty = parser.get_double_option("grad_penalty_coeff");
-  TopoAnalysis topo(r0, E, nu, penalty, use_robust_projection, robust_proj_beta,
-                    robust_proj_eta, grid, mesh, quadrature, basis, prefix);
+  TopoAnalysis topo(r0, E, nu, int_func, penalty, use_robust_projection,
+                    robust_proj_beta, robust_proj_eta, grid, mesh, quadrature,
+                    basis, prefix);
 
   double domain_area = lxy[0] * lxy[1];
   double area_frac = parser.get_double_option("area_frac");

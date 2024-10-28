@@ -60,7 +60,11 @@ TEST(adjoint, determinantGrad) {
   using LSF = Line;
   using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
 
-  using Physics = LinearElasticity<T, Basis::spatial_dim>;
+  auto int_func = [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
+    return A2D::Vec<T, Basis::spatial_dim>{};
+  };
+
+  using Physics = LinearElasticity<T, Basis::spatial_dim, typeof(int_func)>;
 
   int nxy[2] = {5, 5};
   T lxy[2] = {1.0, 1.0};
@@ -95,7 +99,7 @@ TEST(adjoint, determinantGrad) {
   }
 
   T E = 30.0, nu = 0.3;
-  Physics physics(E, nu);
+  Physics physics(E, nu, int_func);
 
   int i = 16;
 
@@ -227,7 +231,12 @@ TEST(adjoint, JacPsiProductElasticity) {
   using Basis = GDBasis2D<T, Mesh>;
   using LSF = Line;
   using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
-  using Physics = LinearElasticity<T, Basis::spatial_dim>;
+
+  auto int_func = [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
+    return A2D::Vec<T, Basis::spatial_dim>{};
+  };
+
+  using Physics = LinearElasticity<T, Basis::spatial_dim, typeof(int_func)>;
 
   int nxy[2] = {5, 5};
   T lxy[2] = {1.0, 1.0};
@@ -239,7 +248,7 @@ TEST(adjoint, JacPsiProductElasticity) {
   Quadrature quadrature(mesh);
 
   T E = 30.0, nu = 0.3;
-  Physics physics(E, nu);
+  Physics physics(E, nu, int_func);
 
   test_jac_psi_product<T>(basis, mesh, quadrature, physics);
 }
@@ -295,7 +304,12 @@ TEST(adjoint, JacPsiProductElasticityPeriodic) {
   using Mesh = CutMesh<T, Np_1d>;
   using Basis = GDBasis2D<T, Mesh>;
   using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
-  using Physics = LinearElasticity<T, Basis::spatial_dim>;
+
+  auto int_func = [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
+    return A2D::Vec<T, Basis::spatial_dim>{};
+  };
+
+  using Physics = LinearElasticity<T, Basis::spatial_dim, typeof(int_func)>;
   using Filter = HelmholtzFilter<T, Np_1d>;
 
   int nxy[2] = {32, 16};
@@ -307,7 +321,7 @@ TEST(adjoint, JacPsiProductElasticityPeriodic) {
   Quadrature quadrature(mesh);
 
   T E = 1e2, nu = 0.3;
-  Physics physics(E, nu);
+  Physics physics(E, nu, int_func);
 
   T r0 = 0.05;
   Filter filter(r0, grid);

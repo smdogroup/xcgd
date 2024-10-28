@@ -7,10 +7,10 @@
 #ifndef XCGD_STATIC_ELASTIC_H
 #define XCGD_STATIC_ELASTIC_H
 
-template <typename T, class Mesh, class Quadrature, class Basis>
+template <typename T, class Mesh, class Quadrature, class Basis, class IntFunc>
 class StaticElastic final {
  public:
-  using Physics = LinearElasticity<T, Basis::spatial_dim>;
+  using Physics = LinearElasticity<T, Basis::spatial_dim, IntFunc>;
 
  private:
   using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
@@ -19,11 +19,11 @@ class StaticElastic final {
 
  public:
   StaticElastic(T E, T nu, Mesh& mesh, Quadrature& quadrature, Basis& basis,
-                std::array<T, Physics::dof_per_node> g = {})
+                const IntFunc& int_func)
       : mesh(mesh),
         quadrature(quadrature),
         basis(basis),
-        physics(E, nu, g),
+        physics(E, nu, int_func),
         analysis(mesh, quadrature, basis, physics) {}
 
   ~StaticElastic() = default;

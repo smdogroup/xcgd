@@ -1,5 +1,6 @@
 #include "physics/linear_elasticity.h"
 
+#include <array>
 #include <string>
 #include <vector>
 
@@ -17,12 +18,15 @@
 template <typename T, class Mesh, class Quadrature, class Basis>
 void solve_linear_elasticity(T E, T nu, Mesh &mesh, Quadrature &quadrature,
                              Basis &basis, std::string name) {
-  using Physics = LinearElasticity<T, Basis::spatial_dim>;
+  auto int_func = [](const A2D::Vec<T, Basis::spatial_dim> &xloc) {
+    return A2D::Vec<T, Basis::spatial_dim>{};
+  };
+  using Physics = LinearElasticity<T, Basis::spatial_dim, typeof(int_func)>;
   using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
   using BSRMat = GalerkinBSRMat<T, Physics::dof_per_node>;
   using CSCMat = SparseUtils::CSCMat<T>;
 
-  Physics physics(E, nu);
+  Physics physics(E, nu, int_func);
   Analysis analysis(mesh, quadrature, basis, physics);
 
   int ndof = Physics::dof_per_node * mesh.get_num_nodes();
@@ -170,7 +174,11 @@ void solve_linear_elasticity_gd() {
   Quadrature quadrature(mesh);
 
   T E = 30.0, nu = 0.3;
-  StaticElastic elastic(E, nu, mesh, quadrature, basis, {0.0, -1.0});
+  auto int_func = [](const A2D::Vec<T, Basis::spatial_dim> &xloc) {
+    return A2D::Vec<T, Basis::spatial_dim>{
+        std::array<T, Basis::spatial_dim>{0.0, -1.0}.data()};
+  };
+  StaticElastic elastic(E, nu, mesh, quadrature, basis, int_func);
 
   // Set boundary conditions
   std::vector<int> bc_nodes = mesh.get_left_boundary_nodes();
@@ -198,7 +206,12 @@ void solve_linear_elasticity_nitsche() {
   using Mesh = CutMesh<T, Np_1d>;
   using Basis = GDBasis2D<T, Mesh>;
 
-  using PhysicsBulk = LinearElasticity<T, Basis::spatial_dim>;
+  auto int_func = [](const A2D::Vec<T, Basis::spatial_dim> &xloc) {
+    return A2D::Vec<T, Basis::spatial_dim>{
+        std::array<T, Basis::spatial_dim>{0.0, -1.0}.data()};
+  };
+
+  using PhysicsBulk = LinearElasticity<T, Basis::spatial_dim, typeof(int_func)>;
   auto bc_fun = [](const A2D::Vec<T, Basis::spatial_dim> &xloc) {
     return A2D::Vec<T, PhysicsBulk::dof_per_node>{};
   };
@@ -228,7 +241,7 @@ void solve_linear_elasticity_nitsche() {
   QuadratureBulk quadrature_bulk(mesh);
   QuadratureBCs quadrature_bcs(mesh);
 
-  PhysicsBulk physics_bulk(30.0, 0.3, {0.0, -1.0});
+  PhysicsBulk physics_bulk(30.0, 0.3, int_func);
   PhysicsBCs physics_bcs(1e6, bc_fun);
 
   AnalysisBulk analysis_bulk(mesh, quadrature_bulk, basis, physics_bulk);

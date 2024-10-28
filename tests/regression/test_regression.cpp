@@ -81,7 +81,11 @@ void test_regression_static(json j) {
   using Mesh = CutMesh<T, Np_1d>;
   using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
   using Basis = GDBasis2D<T, Mesh>;
-  using StaticElastic = StaticElastic<T, Mesh, Quadrature, Basis>;
+  auto int_func = [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
+    return A2D::Vec<T, Basis::spatial_dim>{};
+  };
+  using StaticElastic =
+      StaticElastic<T, Mesh, Quadrature, Basis, typeof(int_func)>;
 
   DegenerateStencilLogger::enable();
   VandermondeCondLogger::enable();
@@ -92,7 +96,7 @@ void test_regression_static(json j) {
   Mesh mesh(grid);
   Quadrature quadrature(mesh);
   Basis basis(mesh);
-  StaticElastic elastic(j["E"], j["nu"], mesh, quadrature, basis);
+  StaticElastic elastic(j["E"], j["nu"], mesh, quadrature, basis, int_func);
 
   std::vector<T> lsf_dof = j["lsf_dof"];
   EXPECT_EQ(lsf_dof.size(), mesh.get_lsf_dof().size());

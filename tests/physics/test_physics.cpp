@@ -191,10 +191,26 @@ void test_elasticity(
   T E = 30.0, nu = 0.3;
 
   if constexpr (Basis::spatial_dim == 2) {
-    LinearElasticity<T, Basis::spatial_dim> physics(E, nu, {1.2, -4.5});
+    auto int_func = [](const A2D::Vec<T, 2> xloc) {
+      A2D::Vec<T, 2> ret;
+      ret(0) = -1.2 * xloc(0);
+      ret(1) = 3.4 * xloc(1);
+      return ret;
+    };
+
+    LinearElasticity<T, Basis::spatial_dim, typeof(int_func)> physics(E, nu,
+                                                                      int_func);
     test_physics(tuple, physics, h, tol);
   } else if (Basis::spatial_dim == 3) {
-    LinearElasticity<T, Basis::spatial_dim> physics(E, nu, {1.2, -4.5, 7.8});
+    auto int_func = [](const A2D::Vec<T, 3> xloc) {
+      A2D::Vec<T, 3> ret;
+      ret(0) = -1.2 * xloc(0);
+      ret(1) = 3.4 * xloc(1);
+      ret(2) = 7.8 * xloc(2);
+      return ret;
+    };
+    LinearElasticity<T, Basis::spatial_dim, typeof(int_func)> physics(E, nu,
+                                                                      int_func);
     test_physics(tuple, physics, h, tol);
   } else {
     throw std::runtime_error(

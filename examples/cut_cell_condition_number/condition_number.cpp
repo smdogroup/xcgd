@@ -16,7 +16,10 @@ void generate_stiffness_matrix(int n, int l, double x0, double y0, double r,
   using Mesh = CutMesh<T, Np_1d>;
   using Basis = GDBasis2D<T, Mesh>;
   using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
-  using Elastic = StaticElastic<T, Mesh, Quadrature, Basis>;
+  auto int_func = [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
+    return A2D::Vec<T, Basis::spatial_dim>{};
+  };
+  using Elastic = StaticElastic<T, Mesh, Quadrature, Basis, typeof(int_func)>;
   using BSRMat = GalerkinBSRMat<T, Elastic::Physics::dof_per_node>;
   using CSCMat = SparseUtils::CSCMat<T>;
   using Interpolator = Interpolator<T, Quadrature, Basis>;
@@ -39,7 +42,7 @@ void generate_stiffness_matrix(int n, int l, double x0, double y0, double r,
   Basis basis(mesh);
 
   T E = 1.0, nu = 0.3;
-  Elastic elastic(E, nu, mesh, quadrature, basis);
+  Elastic elastic(E, nu, mesh, quadrature, basis, int_func);
   // Apply bcs
   std::vector<int> bc_nodes = mesh.get_left_boundary_nodes();
   std::vector<int> bc_dof;
