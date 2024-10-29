@@ -150,7 +150,7 @@ T exact_solution(Vec xloc) {
 }
 template <typename T, typename Vec>
 T exact_source(Vec xloc) {
-  return 2.0 * 1.9 * 1.9 * PI * PI * sin(xloc[0] * 1.9 * PI) *
+  return -2.0 * 1.9 * 1.9 * PI * PI * sin(xloc[0] * 1.9 * PI) *
          sin(xloc[1] * 1.9 * PI);
 }
 

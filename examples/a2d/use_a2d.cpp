@@ -1,96 +1,243 @@
 #include <a2dcore.h>
 
-template <typename T, int spatial_dim, int dof_per_node, class BCFunc>
-void test_jacobian(
-    T weight, T _, A2D::Vec<T, spatial_dim>& xloc,
-    A2D::Vec<T, spatial_dim>& nrm_ref, A2D::Mat<T, spatial_dim, spatial_dim>& J,
-    A2D::Vec<T, dof_per_node>& u, A2D::Mat<T, dof_per_node, spatial_dim>& grad,
-    A2D::Mat<T, dof_per_node, dof_per_node>& jac_u,
-    A2D::Mat<T, dof_per_node, dof_per_node * spatial_dim>& jac_mixed,
-    A2D::Mat<T, dof_per_node * spatial_dim, dof_per_node * spatial_dim>&
-        jac_grad,
-    const BCFunc& bc_func) {
-  // Prepare quantities
-  A2D::Vec<T, spatial_dim> tan_ref, nrm, g(bc_func(xloc));
-  A2D::Mat<T, spatial_dim, spatial_dim> rot;
-  rot(0, 1) = -1.0;
-  rot(1, 0) = 1.0;
-  A2D::MatVecMult(rot, nrm_ref, tan_ref);
-  A2D::MatVecMult(J, nrm_ref, nrm);
+#include <complex>
 
-  // Create quantites
-  A2D::Vec<T, dof_per_node> ub, up, uh;
-  A2D::Mat<T, dof_per_node, spatial_dim> bgrad, pgrad, hgrad;
-  A2D::A2DObj<T> scale_obj, output_obj, ngradu_obj, uu_obj, ngradg_obj, ug_obj;
-  A2D::A2DObj<A2D::Vec<T, dof_per_node>> ngrad_obj;
-  A2D::A2DObj<A2D::Mat<T, spatial_dim, spatial_dim>> J_obj(J), JTJ_obj;
-  A2D::A2DObj<A2D::Vec<T, spatial_dim>> JTJdt_obj;
+#include "ad/a2dgreenstrain.h"
+#include "ad/a2disotropic.h"
 
-  A2D::A2DObj<A2D::Vec<T, dof_per_node>&> u_obj(u, ub, up, uh);
-  A2D::A2DObj<A2D::Mat<T, dof_per_node, spatial_dim>&> grad_obj(grad, bgrad,
-                                                                pgrad, hgrad);
-  T eta = 1.3;
+#define PI 3.14159265358979323846
 
-  // Compute
-  auto stack = A2D::MakeStack(
-      A2D::MatMatMult<A2D::MatOp::TRANSPOSE, A2D::MatOp::NORMAL>(J_obj, J_obj,
-                                                                 JTJ_obj),
-      A2D::MatVecMult(JTJ_obj, tan_ref, JTJdt_obj),
-      A2D::VecDot(tan_ref, JTJdt_obj, scale_obj),
-      A2D::MatVecMult(grad_obj, nrm, ngrad_obj),
-      A2D::VecDot(ngrad_obj, u_obj, ngradu_obj),
-      A2D::VecDot(u_obj, u_obj, uu_obj), A2D::VecDot(ngrad_obj, g, ngradg_obj),
-      A2D::VecDot(u_obj, g, ug_obj),
-      A2D::Eval(weight * sqrt(scale_obj) *
-                    (-ngradu_obj + ngradg_obj + eta * (0.5 * uu_obj - ug_obj)),
-                output_obj));
-  output_obj.bvalue() = 1.0;
+template <typename T, int dof_per_node, int spatial_dim>
+T stress_component(T E, T nu, A2D::Mat<T, dof_per_node, spatial_dim>& grad,
+                   int I, int J) {
+  static_assert(dof_per_node == spatial_dim);
+  T mu = 0.5 * E / (1.0 + nu);
+  T lambda = E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu));
 
-  // Note: Extract Hessian w.r.t. ∇u: ∂2e/∂(∇_x)uq2 is zero
-  // stack.hextract(pgrad, hgrad, jac_grad);
-  //
-  // Extract the Hessian w.r.t. u
-  stack.hextract(up, uh, jac_u);
+  A2D::SymMat<T, spatial_dim> strain, stress;
+  A2D::Vec<T, spatial_dim> t;
 
-  for (int i = 0; i < dof_per_node; i++) {
-    up.zero();
-    hgrad.zero();
-    stack.hzero();
+  A2D::MatGreenStrain<A2D::GreenStrainType::LINEAR>(grad, strain);
+  A2D::SymIsotropic(mu, lambda, strain, stress);
 
-    up[i] = 1.0;
-
-    stack.hforward();
-    stack.hreverse();
-
-    // Extract the mixed Hessian w.r.t. u and ∇u:
-    for (int j = 0; j < dof_per_node; j++) {
-      for (int k = 0; k < spatial_dim; k++) {
-        jac_mixed(i, j * spatial_dim + k) = hgrad(j, k);
-      }
-    }
-  }
+  return stress(I, J);
 }
 
-int main() {
-  using T = double;
-  int constexpr spatial_dim = 2;
-  int constexpr dof_per_node = 2;
+template <int dof_per_node, int spatial_dim>
+A2D::Mat<double, dof_per_node, spatial_dim> stress_component_grad(
+    double E, double nu, A2D::Mat<double, dof_per_node, spatial_dim>& grad,
+    int I, int J) {
+  double mu = 0.5 * E / (1.0 + nu);
+  double lambda = E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu));
 
-  auto bc_fun = [](const A2D::Vec<T, spatial_dim>& xloc) {
-    return A2D::Vec<T, spatial_dim>{};
+  A2D::ADObj<double> output;
+  A2D::ADObj<A2D::Vec<double, spatial_dim>> t_obj;
+  A2D::ADObj<A2D::Mat<double, dof_per_node, spatial_dim>> grad_obj(grad);
+  A2D::ADObj<A2D::SymMat<double, spatial_dim>> strain_obj, stress_obj;
+
+  auto stack = A2D::MakeStack(
+      A2D::MatGreenStrain<A2D::GreenStrainType::LINEAR>(grad_obj, strain_obj),
+      A2D::SymIsotropic(mu, lambda, strain_obj, stress_obj));
+
+  stress_obj.bvalue()(I, J) = 1.0;
+  stack.reverse();
+
+  return grad_obj.bvalue();
+}
+
+template <int dof_per_node, int spatial_dim>
+A2D::Mat<double, dof_per_node, spatial_dim> stress_component_grad_cs(
+    double E, double nu, A2D::Mat<double, dof_per_node, spatial_dim>& grad,
+    int I, int J) {
+  using T = std::complex<double>;
+
+  double h = 1e-30;
+  A2D::Mat<T, dof_per_node, spatial_dim> gradc;
+  A2D::Vec<T, spatial_dim> phic, psic;
+
+  for (int j = 0; j < spatial_dim; j++) {
+    for (int i = 0; i < dof_per_node; i++) {
+      gradc(i, j) = T(grad(i, j));
+    }
+  }
+
+  A2D::Mat<double, dof_per_node, spatial_dim> outgrad;
+  for (int i = 0; i < dof_per_node; i++) {
+    for (int j = 0; j < spatial_dim; j++) {
+      gradc(i, j) += T(0.0, h);
+      T stress =
+          stress_component<T, dof_per_node, spatial_dim>(E, nu, gradc, I, J);
+      outgrad(i, j) = stress.imag() / h;
+      gradc(i, j) -= T(0.0, h);
+    }
+  }
+  return outgrad;
+}
+
+template <typename T, int dof_per_node, int spatial_dim>
+A2D::SymMat<T, spatial_dim> compute_stress(T E, T nu,
+                                           A2D::Vec<T, spatial_dim>& xloc) {
+  A2D::Vec<T, spatial_dim> u;
+
+  T k = 1.9 * PI;
+  T mu = 0.5 * E / (1.0 + nu);
+  T lambda = E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu));
+
+  u(0) = sin(k * xloc(0)) * sin(k * xloc(1));
+  u(1) = cos(k * xloc(0)) * cos(k * xloc(1));
+
+  A2D::Mat<T, dof_per_node, spatial_dim> grad;
+  T ux = k * cos(k * xloc(0)) * sin(k * xloc(1));
+  T uy = k * sin(k * xloc(0)) * cos(k * xloc(1));
+  T vx = -k * sin(k * xloc(0)) * cos(k * xloc(1));
+  T vy = -k * cos(k * xloc(0)) * sin(k * xloc(1));
+
+  grad(0, 0) = ux;
+  grad(0, 1) = uy;
+  grad(1, 0) = vx;
+  grad(1, 1) = vy;
+
+  A2D::SymMat<T, spatial_dim> strain, stress;
+  A2D::Vec<T, spatial_dim> t;
+
+  A2D::MatGreenStrain<A2D::GreenStrainType::LINEAR>(grad, strain);
+  A2D::SymIsotropic(mu, lambda, strain, stress);
+
+  return stress;
+}
+
+template <typename T, int spatial_dim>
+A2D::Vec<T, spatial_dim> compute_intf_cs(T E, T nu,
+                                         A2D::Vec<T, spatial_dim>& xloc) {
+  constexpr int dof_per_node = spatial_dim;
+
+  using T2 = std::complex<T>;
+  double h = 1e-30;
+
+  A2D::Vec<T2, spatial_dim> xlocc;
+  for (int i = 0; i < spatial_dim; i++) {
+    xlocc(i) = xloc(i);
+  }
+
+  A2D::Vec<double, spatial_dim> intf;
+  for (int i = 0; i < spatial_dim; i++) {
+    for (int j = 0; j < spatial_dim; j++) {
+      xlocc(j) += T2(0.0, h);
+      A2D::SymMat<T2, spatial_dim> stress =
+          compute_stress<T2, dof_per_node, spatial_dim>(E, nu, xlocc);
+      xlocc(j) -= T2(0.0, h);
+      intf(i) -= stress(i, j).imag() / h;
+    }
+  }
+  return intf;
+}
+
+int test_stress_ad(int argc, char* argv[]) {
+  double E = 100.0, nu = 0.3;
+  constexpr int dof_per_node = 2;
+  constexpr int spatial_dim = 2;
+
+  A2D::Mat<double, dof_per_node, spatial_dim> grad, outgrad_exact, outgrad_cs;
+  grad(0, 0) = 2.5;
+  grad(0, 1) = 3.6;
+  grad(1, 0) = 0.1;
+  grad(1, 1) = -0.2;
+
+  int I = std::atoi(argv[1]), J = std::atoi(argv[2]);
+  outgrad_exact = stress_component_grad(E, nu, grad, I, J);
+  outgrad_cs = stress_component_grad_cs(E, nu, grad, I, J);
+
+  for (int i = 0; i < dof_per_node; i++) {
+    for (int j = 0; j < dof_per_node; j++) {
+      std::printf("stress(%d, %d): exact: %20.10f, cs: %20.10f\n", i, j,
+                  outgrad_exact(i, j), outgrad_cs(i, j));
+    }
+  }
+  return 0;
+}
+
+int main(int argc, char* argv[]) {
+  // test_stress_ad(argc, argv);
+
+  double E = 100.0, nu = 0.3;
+
+  constexpr int dof_per_node = 2;
+  constexpr int spatial_dim = 2;
+  using T = double;
+
+  auto elasticity_int_fun = [E, nu](const A2D::Vec<T, spatial_dim>& xloc) {
+    T mu = 0.5 * E / (1.0 + nu);
+    T lambda = E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu));
+
+    double k = 1.9 * PI;
+    double k2 = k * k;
+
+    A2D::Mat<T, dof_per_node, spatial_dim> grad;
+    T ux = k * cos(k * xloc(0)) * sin(k * xloc(1));
+    T uy = k * sin(k * xloc(0)) * cos(k * xloc(1));
+    T vx = -k * sin(k * xloc(0)) * cos(k * xloc(1));
+    T vy = -k * cos(k * xloc(0)) * sin(k * xloc(1));
+
+    grad(0, 0) = ux;
+    grad(0, 1) = uy;
+    grad(1, 0) = vx;
+    grad(1, 1) = vy;
+
+    T uxx = -k2 * sin(k * xloc(0)) * sin(k * xloc(1));
+    T uxy = k2 * cos(k * xloc(0)) * cos(k * xloc(1));
+    T uyx = k2 * cos(k * xloc(0)) * cos(k * xloc(1));
+    T uyy = -k2 * sin(k * xloc(0)) * sin(k * xloc(1));
+    T vxx = -k2 * cos(k * xloc(0)) * cos(k * xloc(1));
+    T vxy = k2 * sin(k * xloc(0)) * sin(k * xloc(1));
+    T vyx = k2 * sin(k * xloc(0)) * sin(k * xloc(1));
+    T vyy = -k2 * cos(k * xloc(0)) * cos(k * xloc(1));
+
+    A2D::ADObj<A2D::Mat<T, dof_per_node, spatial_dim>> grad_obj(grad);
+    A2D::ADObj<A2D::SymMat<T, spatial_dim>> E_obj, S_obj;
+
+    auto stack = A2D::MakeStack(
+        A2D::MatGreenStrain<A2D::GreenStrainType::LINEAR>(grad_obj, E_obj),
+        A2D::SymIsotropic(mu, lambda, E_obj, S_obj));
+
+    // Spartials(i, j) = ∂S(i, j)/∂x(j)
+    A2D::Mat<T, dof_per_node, spatial_dim> Spartials;
+
+    for (int i = 0; i < spatial_dim; i++) {
+      for (int j = 0; j < spatial_dim; j++) {
+        grad_obj.bvalue().zero();
+        E_obj.bvalue().zero();
+        S_obj.bvalue().zero();
+        S_obj.bvalue()(i, j) = 1.0;
+
+        stack.reverse();
+
+        // ∂S(i, j)/∂x(j) = ∂S(i, j)/∂grad * ∂grad/∂x(j)
+        auto& bgrad = grad_obj.bvalue();
+
+        if (j == 0) {
+          Spartials(i, j) = bgrad(0, 0) * uxx + bgrad(0, 1) * uyx +
+                            bgrad(1, 0) * vxx + bgrad(1, 1) * vyx;
+        } else {
+          Spartials(i, j) = bgrad(0, 0) * uxy + bgrad(0, 1) * uyy +
+                            bgrad(1, 0) * vxy + bgrad(1, 1) * vyy;
+        }
+      }
+    }
+
+    A2D::Vec<T, dof_per_node> intf;
+    intf(0) = -(Spartials(0, 0) + Spartials(0, 1));
+    intf(1) = -(Spartials(1, 0) + Spartials(1, 1));
+    return intf;
   };
 
-  T weight = 1.2;
-  T x = 3.4;
-  A2D::Vec<T, spatial_dim> xloc;
-  A2D::Vec<T, spatial_dim> nrm_ref;
-  A2D::Mat<T, spatial_dim, spatial_dim> J;
-  A2D::Vec<T, dof_per_node> u;
-  A2D::Mat<T, dof_per_node, spatial_dim> grad;
-  A2D::Mat<T, dof_per_node, dof_per_node> jac_u;
-  A2D::Mat<T, dof_per_node, dof_per_node * spatial_dim> jac_mixed;
-  A2D::Mat<T, dof_per_node * spatial_dim, dof_per_node * spatial_dim> jac_grad;
+  A2D::Vec<double, spatial_dim> xloc;
+  xloc(0) = 0.1;
+  xloc(1) = 0.3;
+  auto intf = elasticity_int_fun(xloc);
+  auto intf_cs = compute_intf_cs<double>(E, nu, xloc);
 
-  test_jacobian<T, spatial_dim, dof_per_node, typeof(bc_fun)>(
-      weight, x, xloc, nrm_ref, J, u, grad, jac_u, jac_mixed, jac_grad, bc_fun);
+  for (int i = 0; i < spatial_dim; i++) {
+    std::printf("intf(%d): exact: %20.10f, cs: %20.10f\n", i, intf(i),
+                intf_cs(i));
+  }
 }

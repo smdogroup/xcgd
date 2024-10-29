@@ -194,56 +194,97 @@ void execute_accuracy_study(std::string prefix, ProbInstance instance,
                 "only 2-dimensional problem is implemented");
 
   // Construct exact solution using the method of manufactured solutions
+  // Strong form of the poisson equation takes the form of
+  // Δu = f
   auto poisson_bc_fun = [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
-    return sin(xloc(0) * 1.9 * PI) * sin(xloc(1) * 1.9 * PI);
+    double k = 1.9 * PI;
+    return sin(k * xloc(0)) * sin(k * xloc(1));
   };
 
   auto poisson_source_fun = [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
-    return 2.0 * 1.9 * 1.9 * PI * PI * sin(xloc(0) * 1.9 * PI) *
-           sin(xloc(1) * 1.9 * PI);
+    double k = 1.9 * PI;
+    double k2 = k * k;
+    return -2.0 * k2 * sin(k * xloc(0)) * sin(k * xloc(1));
   };
 
+  // Strong form of the linear elasticity equation takes the form of
+  // σij,j + fi = 0
   auto elasticity_bc_fun = [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
-    // T data[Basis::spatial_dim];
-    // data[0] = sin(xloc(0) * 1.9 * PI) * sin(xloc(1) * 1.9 * PI);
-    // data[1] = cos(xloc(0) * 1.9 * PI) * cos(xloc(1) * 1.9 * PI);
-    // return A2D::Vec<T, Basis::spatial_dim>(data);
-    return A2D::Vec<T, Basis::spatial_dim>{};
+    A2D::Vec<T, Basis::spatial_dim> u;
+    double k = 1.9 * PI;
+    u(0) = sin(k * xloc(0)) * sin(k * xloc(1));
+    u(1) = cos(k * xloc(0)) * cos(k * xloc(1));
+    return u;
   };
 
   T E = 100.0, nu = 0.3;
   auto elasticity_int_fun = [E,
                              nu](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
+    constexpr int spatial_dim = Basis::spatial_dim;
+    constexpr int dof_per_node = Basis::spatial_dim;
+
     T mu = 0.5 * E / (1.0 + nu);
     T lambda = E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu));
-    // T u = sin(xloc(0) * 1.9 * PI) * sin(xloc(1) * 1.9 * PI);
-    // T v = cos(xloc(0) * 1.9 * PI) * cos(xloc(1) * 1.9 * PI);
-    //
-    // T ux = 1.9 * PI * cos(xloc(0) * 1.9 * PI) * sin(xloc(1) * 1.9 * PI);
-    // T uy = 1.9 * PI * sin(xloc(0) * 1.9 * PI) * cos(xloc(1) * 1.9 * PI);
-    // T vx = -1.9 * PI * sin(xloc(0) * 1.9 * PI) * cos(xloc(1) * 1.9 * PI);
-    // T vy = -1.9 * PI * cos(xloc(0) * 1.9 * PI) * sin(xloc(1) * 1.9 * PI);
 
-    // constexpr int dof_per_node = Basis::spatial_dim;
-    // constexpr int spatial_dim = Basis::spatial_dim;
-    //
-    // A2D::ADObj<A2D::Mat<T, dof_per_node, spatial_dim>> grad_obj;
-    // A2D::ADObj<A2D::SymMat<T, spatial_dim>> E_obj, S_obj;
-    //
-    // auto stack = A2D::MakeStack(
-    //     A2D::MatGreenStrain<A2D::GreenStrainType::LINEAR>(grad_obj, E_obj),
-    //     A2D::SymIsotropic(mu, lambda, E_obj, S_obj));
-    //
-    // A2D::Mat<T, dof_per_node, spatial_dim> grad;
-    //
-    // for (int i = 0; i < spatial_dim; i++) {
-    //   for (int j = 0; j < spatial_dim; j++) {
-    //     S_obj.bvalue().zero();
-    //     S_obj.bvalue()(i, j) = 1.0;
-    //     stack.reverse();
-    //   }
-    // }
-    return A2D::Vec<T, Basis::spatial_dim>{std::vector<T>{0.0, -1.0}.data()};
+    double k = 1.9 * PI;
+    double k2 = k * k;
+
+    A2D::Mat<T, dof_per_node, spatial_dim> grad;
+    T ux = k * cos(k * xloc(0)) * sin(k * xloc(1));
+    T uy = k * sin(k * xloc(0)) * cos(k * xloc(1));
+    T vx = -k * sin(k * xloc(0)) * cos(k * xloc(1));
+    T vy = -k * cos(k * xloc(0)) * sin(k * xloc(1));
+
+    grad(0, 0) = ux;
+    grad(0, 1) = uy;
+    grad(1, 0) = vx;
+    grad(1, 1) = vy;
+
+    T uxx = -k2 * sin(k * xloc(0)) * sin(k * xloc(1));
+    T uxy = k2 * cos(k * xloc(0)) * cos(k * xloc(1));
+    T uyx = k2 * cos(k * xloc(0)) * cos(k * xloc(1));
+    T uyy = -k2 * sin(k * xloc(0)) * sin(k * xloc(1));
+    T vxx = -k2 * cos(k * xloc(0)) * cos(k * xloc(1));
+    T vxy = k2 * sin(k * xloc(0)) * sin(k * xloc(1));
+    T vyx = k2 * sin(k * xloc(0)) * sin(k * xloc(1));
+    T vyy = -k2 * cos(k * xloc(0)) * cos(k * xloc(1));
+
+    A2D::ADObj<A2D::Mat<T, dof_per_node, spatial_dim>> grad_obj(grad);
+    A2D::ADObj<A2D::SymMat<T, spatial_dim>> E_obj, S_obj;
+
+    auto stack = A2D::MakeStack(
+        A2D::MatGreenStrain<A2D::GreenStrainType::LINEAR>(grad_obj, E_obj),
+        A2D::SymIsotropic(mu, lambda, E_obj, S_obj));
+
+    // Spartials(i, j) = ∂S(i, j)/∂x(j)
+    A2D::Mat<T, dof_per_node, spatial_dim> Spartials;
+
+    for (int i = 0; i < spatial_dim; i++) {
+      for (int j = 0; j < spatial_dim; j++) {
+        grad_obj.bvalue().zero();
+        E_obj.bvalue().zero();
+        S_obj.bvalue().zero();
+        S_obj.bvalue()(i, j) = 1.0;
+
+        stack.reverse();
+
+        // ∂S(i, j)/∂x(j) = ∂S(i, j)/∂grad * ∂grad/∂x(j)
+        auto& bgrad = grad_obj.bvalue();
+
+        if (j == 0) {
+          Spartials(i, j) = bgrad(0, 0) * uxx + bgrad(0, 1) * uyx +
+                            bgrad(1, 0) * vxx + bgrad(1, 1) * vyx;
+        } else {
+          Spartials(i, j) = bgrad(0, 0) * uxy + bgrad(0, 1) * uyy +
+                            bgrad(1, 0) * vxy + bgrad(1, 1) * vyy;
+        }
+      }
+    }
+
+    A2D::Vec<T, dof_per_node> intf;
+    intf(0) = -(Spartials(0, 0) + Spartials(0, 1));
+    intf(1) = -(Spartials(1, 0) + Spartials(1, 1));
+    return intf;
   };
 
   using PhysicsBulk = typename std::conditional<

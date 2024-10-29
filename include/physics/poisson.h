@@ -3,6 +3,7 @@
 
 #include "physics_commons.h"
 
+// Poisson's equation:  Δu = f
 template <typename T, int spatial_dim, class SourceFunc>
 class PoissonPhysics final : public PhysicsBase<T, spatial_dim, 0, 1> {
  private:
@@ -26,7 +27,7 @@ class PoissonPhysics final : public PhysicsBase<T, spatial_dim, 0, 1> {
     T detJ, output, dot, u = val;
     A2D::MatDet(J, detJ);
     A2D::VecDot(grad, grad, dot);
-    return weight * detJ * (0.5 * dot - source_fun(xloc) * u);
+    return weight * detJ * (0.5 * dot + source_fun(xloc) * u);
   }
 
   void residual(T weight, T _, A2D::Vec<T, spatial_dim>& xloc,
@@ -42,7 +43,7 @@ class PoissonPhysics final : public PhysicsBase<T, spatial_dim, 0, 1> {
     auto stack = A2D::MakeStack(
         A2D::MatDet(J_obj, detJ_obj), A2D::VecDot(grad_obj, grad_obj, dot_obj),
         A2D::Eval(
-            weight * detJ_obj * (0.5 * dot_obj - source_fun(xloc) * u_obj),
+            weight * detJ_obj * (0.5 * dot_obj + source_fun(xloc) * u_obj),
             output_obj));
 
     output_obj.bvalue() = 1.0;
@@ -67,7 +68,7 @@ class PoissonPhysics final : public PhysicsBase<T, spatial_dim, 0, 1> {
     auto stack = A2D::MakeStack(
         A2D::MatDet(J_obj, detJ_obj), A2D::VecDot(grad_obj, grad_obj, dot_obj),
         A2D::Eval(
-            weight * detJ_obj * (0.5 * dot_obj - source_fun(xloc) * u_obj),
+            weight * detJ_obj * (0.5 * dot_obj + source_fun(xloc) * u_obj),
             output_obj));
 
     output_obj.bvalue() = 1.0;
@@ -92,7 +93,7 @@ class PoissonPhysics final : public PhysicsBase<T, spatial_dim, 0, 1> {
     auto stack = A2D::MakeStack(
         A2D::MatDet(J_obj, detJ_obj), A2D::VecDot(grad_obj, grad_obj, dot_obj),
         A2D::Eval(
-            weight * detJ_obj * (0.5 * dot_obj - source_fun(xloc) * u_obj),
+            weight * detJ_obj * (0.5 * dot_obj + source_fun(xloc) * u_obj),
             output_obj));
 
     output_obj.bvalue() = 1.0;

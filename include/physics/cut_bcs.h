@@ -223,7 +223,8 @@ class VectorCutDirichlet final : public PhysicsBase<T, spatial_dim, 0, dim> {
            A2D::Mat<T, spatial_dim, spatial_dim>& J,
            A2D::Vec<T, dof_per_node>& u,
            A2D::Mat<T, dof_per_node, spatial_dim>& grad) const {
-    A2D::Vec<T, spatial_dim> tan_ref, nrm, g(bc_func(xloc));
+    A2D::Vec<T, spatial_dim> tan_ref, nrm;
+    A2D::Vec<T, dim> g(bc_func(xloc));
 
     A2D::Mat<T, spatial_dim, spatial_dim> rot;
     rot(0, 1) = -1.0;
@@ -260,7 +261,8 @@ class VectorCutDirichlet final : public PhysicsBase<T, spatial_dim, 0, dim> {
                 A2D::Vec<T, dof_per_node>& coef_u,
                 A2D::Mat<T, dof_per_node, spatial_dim>& coef_grad) const {
     // Prepare quantities
-    A2D::Vec<T, spatial_dim> tan_ref, nrm, g(bc_func(xloc));
+    A2D::Vec<T, spatial_dim> tan_ref, nrm;
+    A2D::Vec<T, dim> g(bc_func(xloc));
     A2D::Mat<T, spatial_dim, spatial_dim> rot;
     rot(0, 1) = -1.0;
     rot(1, 0) = 1.0;
@@ -305,7 +307,8 @@ class VectorCutDirichlet final : public PhysicsBase<T, spatial_dim, 0, dim> {
       A2D::Vec<T, dof_per_node>& coef_u,
       A2D::Mat<T, dof_per_node, spatial_dim>& coef_grad) const {
     // Prepare quantities
-    A2D::Vec<T, spatial_dim> tan_ref, nrm, g(bc_func(xloc));
+    A2D::Vec<T, spatial_dim> tan_ref, nrm;
+    A2D::Vec<T, dim> g(bc_func(xloc));
     A2D::Mat<T, spatial_dim, spatial_dim> rot;
     rot(0, 1) = -1.0;
     rot(1, 0) = 1.0;
@@ -353,7 +356,8 @@ class VectorCutDirichlet final : public PhysicsBase<T, spatial_dim, 0, dim> {
       A2D::Mat<T, dof_per_node * spatial_dim, dof_per_node * spatial_dim>&
           jac_grad) const {
     // Prepare quantities
-    A2D::Vec<T, spatial_dim> tan_ref, nrm, g(bc_func(xloc));
+    A2D::Vec<T, spatial_dim> tan_ref, nrm;
+    A2D::Vec<T, dim> g(bc_func(xloc));
     A2D::Mat<T, spatial_dim, spatial_dim> rot;
     rot(0, 1) = -1.0;
     rot(1, 0) = 1.0;
