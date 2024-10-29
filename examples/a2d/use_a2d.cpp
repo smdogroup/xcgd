@@ -11,7 +11,7 @@ void test_jacobian(
         jac_grad,
     const BCFunc& bc_func) {
   // Prepare quantities
-  A2D::Vec<T, spatial_dim> tan_ref, nrm;
+  A2D::Vec<T, spatial_dim> tan_ref, nrm, g(bc_func(xloc));
   A2D::Mat<T, spatial_dim, spatial_dim> rot;
   rot(0, 1) = -1.0;
   rot(1, 0) = 1.0;
@@ -39,9 +39,8 @@ void test_jacobian(
       A2D::VecDot(tan_ref, JTJdt_obj, scale_obj),
       A2D::MatVecMult(grad_obj, nrm, ngrad_obj),
       A2D::VecDot(ngrad_obj, u_obj, ngradu_obj),
-      A2D::VecDot(u_obj, u_obj, uu_obj),
-      A2D::VecDot(ngrad_obj, bc_func(xloc), ngradg_obj),
-      A2D::VecDot(u_obj, bc_func(xloc), ug_obj),
+      A2D::VecDot(u_obj, u_obj, uu_obj), A2D::VecDot(ngrad_obj, g, ngradg_obj),
+      A2D::VecDot(u_obj, g, ug_obj),
       A2D::Eval(weight * sqrt(scale_obj) *
                     (-ngradu_obj + ngradg_obj + eta * (0.5 * uu_obj - ug_obj)),
                 output_obj));
