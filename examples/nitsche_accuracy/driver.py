@@ -140,7 +140,7 @@ def run_experiments(
         instance_name = instance
         if instance == "image":
             image_name = Path(image_path).stem
-            image_json_path = f".{run_name}/lsf_{image_name}_nxy_{nxy}.json"
+            image_json_path = f"./{run_name}/lsf_{image_name}_nxy_{nxy}.json"
             instance_name += f"_{image_name}"
 
             print(f"Extracting lsf from the image {image_name}...")
@@ -212,7 +212,7 @@ def adjust_plot_lim(ax, left=0.0, right=0.2, bottom=0.3, up=0.0):
     return
 
 
-def plot(cases_df, xname, normalize):
+def plot(cases_df, xname, normalize, voffset, voffset_text):
     assert xname in ["h", "nitsche_eta"]
 
     fig, ax = plt.subplots(
@@ -230,6 +230,7 @@ def plot(cases_df, xname, normalize):
         errs = ["err_l2norm_bulk_nrmed", "err_l2norm_bcs_nrmed"]
     else:
         errs = ["err_l2norm_bulk", "err_l2norm_bcs"]
+    err_labels = ["bulk", "bcs"]
 
     # Cases for each Np
     for i, Np_1d in enumerate(Np_1d_list):
@@ -242,14 +243,17 @@ def plot(cases_df, xname, normalize):
             # Get averaged slope
             slope, _ = np.polyfit(np.log10(x), np.log10(y), deg=1)
 
-            label = f"$p={Np_1d - 1}, \Delta:{slope:.2f}$, {err_type}"
+            label = f"$p={Np_1d - 1}, \Delta:{slope:.2f}$, {err_labels[j]}"
             ax.loglog(x, y, linestyles[j], color=colors[i], clip_on=False, label=label)
 
             print(label)
 
-            # x0, x1 = x.iloc[-2:]
-            # y0, y1 = y.iloc[-2:]
-            # annotate_slope(ax, (x0, y0), (x1, y1))
+            if j == 0:
+                x0, x1 = x.iloc[-2:]
+                y0, y1 = y.iloc[-2:]
+                annotate_slope(
+                    ax, (x0, y0), (x1, y1), voffset=voffset, voffset_text=voffset_text
+                )
 
     if xname == "h":
         ax.set_xlabel("Mesh size $h$")
@@ -270,7 +274,7 @@ def plot(cases_df, xname, normalize):
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
 
-    adjust_plot_lim(ax)
+    adjust_plot_lim(ax, left=0.0, right=0.0, bottom=0.0, up=0.0)
 
     return fig, ax
 
@@ -310,6 +314,8 @@ if __name__ == "__main__":
         help="which quantity to use for x axis of the plot",
     )
     p.add_argument("--normalize-l2error", action="store_true")
+    p.add_argument("--voffset", default=-0.1, type=float)
+    p.add_argument("--voffset_text", default=-0.1, type=float)
 
     args = p.parse_args()
 
@@ -346,7 +352,13 @@ if __name__ == "__main__":
         #     print(df)
         #     exit()
 
-    fig, ax = plot(df, args.xname, normalize=args.normalize_l2error)
+    fig, ax = plot(
+        df,
+        args.xname,
+        normalize=args.normalize_l2error,
+        voffset=args.voffset,
+        voffset_text=args.voffset_text,
+    )
     fig.savefig(f"{run_name}.pdf")
     df.to_csv(f"{run_name}.csv", index=False)
 

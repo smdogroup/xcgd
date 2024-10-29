@@ -62,7 +62,7 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser()
 
     p.add_argument("image", help="path to the image")
-    p.add_argument("--nxy", default=128)
+    p.add_argument("--nxy", default=128, type=int)
     p.add_argument("--plot", action="store_true")
 
     args = p.parse_args()

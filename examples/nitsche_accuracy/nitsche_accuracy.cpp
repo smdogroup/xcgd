@@ -10,8 +10,8 @@
 #include "elements/gd_mesh.h"
 #include "elements/gd_vandermonde.h"
 #include "physics/cut_bcs.h"
+#include "physics/linear_elasticity.h"
 #include "physics/poisson.h"
-#include "physics/volume.h"
 #include "sparse_utils/sparse_utils.h"
 #include "utils/argparser.h"
 #include "utils/json.h"
@@ -31,6 +31,20 @@ class L2normBulk final : public PhysicsBase<T, spatial_dim, 0, 1> {
     T detJ;
     A2D::MatDet(J, detJ);
     return weight * detJ * val * val;
+  }
+};
+
+template <typename T, int spatial_dim, int dim>
+class VecL2normBulk final : public PhysicsBase<T, spatial_dim, 0, dim> {
+ public:
+  T energy(T weight, T _, A2D::Vec<T, spatial_dim>& __,
+           A2D::Vec<T, spatial_dim>& ___,
+           A2D::Mat<T, spatial_dim, spatial_dim>& J, A2D::Vec<T, dim>& u,
+           A2D::Mat<T, dim, spatial_dim>& ____) const {
+    T detJ, dot;
+    A2D::MatDet(J, detJ);
+    A2D::VecDot(u, u, dot);
+    return weight * detJ * dot;
   }
 };
 
@@ -60,6 +74,33 @@ class L2normSurf final : public PhysicsBase<T, spatial_dim, 0, 1> {
   }
 };
 
+template <typename T, int spatial_dim, int dim>
+class VecL2normSurf final : public PhysicsBase<T, spatial_dim, 0, dim> {
+  static_assert(spatial_dim == 2,
+                "This part is not yet implemented properly for 3D");
+
+ public:
+  T energy(T weight, T _, A2D::Vec<T, spatial_dim>& __,
+           A2D::Vec<T, spatial_dim>& nrm_ref,
+           A2D::Mat<T, spatial_dim, spatial_dim>& J, A2D::Vec<T, dim>& u,
+           A2D::Mat<T, dim, spatial_dim>& ____) const {
+    T dt_val[spatial_dim] = {nrm_ref[1], -nrm_ref[0]};
+
+    A2D::Mat<T, spatial_dim, spatial_dim> JTJ;
+    A2D::Vec<T, spatial_dim> dt(dt_val);
+    A2D::Vec<T, spatial_dim> JTJdt;
+
+    T scale, dot;
+    A2D::MatMatMult<A2D::MatOp::TRANSPOSE, A2D::MatOp::NORMAL>(J, J, JTJ);
+    A2D::MatVecMult(JTJ, dt, JTJdt);
+    A2D::VecDot(dt, JTJdt, scale);
+    A2D::VecDot(u, u, dot);
+    scale = sqrt(scale);
+
+    return weight * scale * dot;
+  }
+};
+
 double hard_max(std::vector<double> vals) {
   return *std::max_element(vals.begin(), vals.end());
 }
@@ -72,9 +113,12 @@ double ks_max(std::vector<double> vals, double ksrho = 50.0) {
   return log(std::accumulate(eta.begin(), eta.end(), 0.0)) / ksrho + umax;
 }
 
+enum class PhysicsType { Poisson, LinearElasticity };
+
 template <typename T, class Mesh>
-void write_vtk(std::string vtkpath, const Mesh& mesh, const std::vector<T>& sol,
-               const std::vector<T>& exact_sol, bool save_stencils) {
+void write_vtk(std::string vtkpath, PhysicsType physics_type, const Mesh& mesh,
+               const std::vector<T>& sol, const std::vector<T>& exact_sol,
+               bool save_stencils) {
   ToVTK<T, Mesh> vtk(mesh, vtkpath);
   vtk.write_mesh();
 
@@ -86,9 +130,15 @@ void write_vtk(std::string vtkpath, const Mesh& mesh, const std::vector<T>& sol,
     nstencils[elem] = e.second.size();
   }
   vtk.write_cell_sol("nstencils", nstencils.data());
-  vtk.write_sol("u", sol.data());
-  vtk.write_sol("u_exact", exact_sol.data());
   vtk.write_sol("lsf", mesh.get_lsf_nodes().data());
+
+  if (physics_type == PhysicsType::Poisson) {
+    vtk.write_sol("u", sol.data());
+    vtk.write_sol("u_exact", exact_sol.data());
+  } else {
+    vtk.write_vec("u", sol.data());
+    vtk.write_vec("u_exact", exact_sol.data());
+  }
 
   if (save_stencils) {
     for (auto e : degenerate_stencils) {
@@ -106,46 +156,106 @@ void write_vtk(std::string vtkpath, const Mesh& mesh, const std::vector<T>& sol,
 }
 
 template <typename T, class Mesh, class Analysis>
-void write_field_vtk(std::string field_vtkpath, const Mesh& mesh,
-                     const Analysis& analysis, const std::vector<T>& sol) {
+void write_field_vtk(std::string field_vtkpath, PhysicsType physics_type,
+                     const Mesh& mesh, const Analysis& analysis,
+                     const std::vector<T>& sol) {
   FieldToVTKNew<T, Mesh::spatial_dim> field_vtk(field_vtkpath);
 
   auto [xloc_q, dof_q] = analysis.interpolate_dof(sol.data());
 
   field_vtk.add_mesh(xloc_q);
-  field_vtk.add_sol("sol", dof_q);
-
   field_vtk.write_mesh();
-  field_vtk.write_sol("sol");
+
+  if (physics_type == PhysicsType::Poisson) {
+    field_vtk.add_sol("sol", dof_q);
+    field_vtk.write_sol("sol");
+  } else {
+    field_vtk.add_vec("sol", dof_q);
+    field_vtk.write_vec("sol");
+  }
 }
 
 enum class ProbInstance { Circle, Wedge, Image };
 
-// Define the exact solution and source term using method of manufactured
-// solutions
-template <typename T, typename Vec>
-T exact_solution(Vec xloc) {
-  return sin(xloc[0] * 1.9 * PI) * sin(xloc[1] * 1.9 * PI);
-}
-template <typename T, typename Vec>
-T exact_source(Vec xloc) {
-  return 2.0 * 1.9 * 1.9 * PI * PI * sin(xloc[0] * 1.9 * PI) *
-         sin(xloc[1] * 1.9 * PI);
-}
-
 // Solve the physical problem using Galerkin difference method with Nitsche's
 // method
-template <typename T, int Np_1d, class PhysicsBulk, class PhysicsBCs>
-void solve_gd_nitsche_problem(std::string prefix,
-                              const PhysicsBulk& physics_bulk,
-                              const PhysicsBCs& physics_bcs,
-                              ProbInstance instance, std::string image_json,
-                              int nxy_val, bool save_stencils) {
+template <int Np_1d, PhysicsType physics_type>
+void execute_accuracy_study(std::string prefix, ProbInstance instance,
+                            std::string image_json, int nxy_val,
+                            bool save_stencils, double nitsche_eta) {
+  using T = double;
   using Grid = StructuredGrid2D<T>;
   using QuadratureBulk = GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER>;
   using QuadratureBCs = GDLSFQuadrature2D<T, Np_1d, QuadPtType::SURFACE>;
   using Mesh = CutMesh<T, Np_1d>;
   using Basis = GDBasis2D<T, Mesh>;
+
+  static_assert(Basis::spatial_dim == 2,
+                "only 2-dimensional problem is implemented");
+
+  // Construct exact solution using the method of manufactured solutions
+  auto poisson_bc_fun = [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
+    return sin(xloc(0) * 1.9 * PI) * sin(xloc(1) * 1.9 * PI);
+  };
+
+  auto poisson_source_fun = [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
+    return 2.0 * 1.9 * 1.9 * PI * PI * sin(xloc(0) * 1.9 * PI) *
+           sin(xloc(1) * 1.9 * PI);
+  };
+
+  auto elasticity_bc_fun = [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
+    // T data[Basis::spatial_dim];
+    // data[0] = sin(xloc(0) * 1.9 * PI) * sin(xloc(1) * 1.9 * PI);
+    // data[1] = cos(xloc(0) * 1.9 * PI) * cos(xloc(1) * 1.9 * PI);
+    // return A2D::Vec<T, Basis::spatial_dim>(data);
+    return A2D::Vec<T, Basis::spatial_dim>{};
+  };
+
+  T E = 100.0, nu = 0.3;
+  auto elasticity_int_fun = [E,
+                             nu](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
+    T mu = 0.5 * E / (1.0 + nu);
+    T lambda = E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu));
+    // T u = sin(xloc(0) * 1.9 * PI) * sin(xloc(1) * 1.9 * PI);
+    // T v = cos(xloc(0) * 1.9 * PI) * cos(xloc(1) * 1.9 * PI);
+    //
+    // T ux = 1.9 * PI * cos(xloc(0) * 1.9 * PI) * sin(xloc(1) * 1.9 * PI);
+    // T uy = 1.9 * PI * sin(xloc(0) * 1.9 * PI) * cos(xloc(1) * 1.9 * PI);
+    // T vx = -1.9 * PI * sin(xloc(0) * 1.9 * PI) * cos(xloc(1) * 1.9 * PI);
+    // T vy = -1.9 * PI * cos(xloc(0) * 1.9 * PI) * sin(xloc(1) * 1.9 * PI);
+
+    // constexpr int dof_per_node = Basis::spatial_dim;
+    // constexpr int spatial_dim = Basis::spatial_dim;
+    //
+    // A2D::ADObj<A2D::Mat<T, dof_per_node, spatial_dim>> grad_obj;
+    // A2D::ADObj<A2D::SymMat<T, spatial_dim>> E_obj, S_obj;
+    //
+    // auto stack = A2D::MakeStack(
+    //     A2D::MatGreenStrain<A2D::GreenStrainType::LINEAR>(grad_obj, E_obj),
+    //     A2D::SymIsotropic(mu, lambda, E_obj, S_obj));
+    //
+    // A2D::Mat<T, dof_per_node, spatial_dim> grad;
+    //
+    // for (int i = 0; i < spatial_dim; i++) {
+    //   for (int j = 0; j < spatial_dim; j++) {
+    //     S_obj.bvalue().zero();
+    //     S_obj.bvalue()(i, j) = 1.0;
+    //     stack.reverse();
+    //   }
+    // }
+    return A2D::Vec<T, Basis::spatial_dim>{std::vector<T>{0.0, -1.0}.data()};
+  };
+
+  using PhysicsBulk = typename std::conditional<
+      physics_type == PhysicsType::Poisson,
+      PoissonPhysics<T, Basis::spatial_dim, typeof(poisson_source_fun)>,
+      LinearElasticity<T, Basis::spatial_dim,
+                       typeof(elasticity_int_fun)>>::type;
+  using PhysicsBCs = typename std::conditional<
+      physics_type == PhysicsType::Poisson,
+      CutDirichlet<T, Basis::spatial_dim, typeof(poisson_bc_fun)>,
+      VectorCutDirichlet<T, Basis::spatial_dim, Basis::spatial_dim,
+                         typeof(elasticity_bc_fun)>>::type;
 
   using AnalysisBulk =
       GalerkinAnalysis<T, Mesh, QuadratureBulk, Basis, PhysicsBulk>;
@@ -219,14 +329,26 @@ void solve_gd_nitsche_problem(std::string prefix,
     }
   }
 
+  std::shared_ptr<PhysicsBulk> physics_bulk;
+  std::shared_ptr<PhysicsBCs> physics_bcs;
+
+  if constexpr (physics_type == PhysicsType::Poisson) {
+    physics_bulk = std::make_shared<PhysicsBulk>(poisson_source_fun);
+    physics_bcs = std::make_shared<PhysicsBCs>(nitsche_eta, poisson_bc_fun);
+  } else {
+    physics_bulk = std::make_shared<PhysicsBulk>(E, nu, elasticity_int_fun);
+    physics_bcs = std::make_shared<PhysicsBCs>(nitsche_eta, elasticity_bc_fun);
+  }
+
   QuadratureBulk quadrature_bulk(*mesh);
   QuadratureBCs quadrature_bcs(*mesh);
   Basis basis(*mesh);
 
-  AnalysisBulk analysis_bulk(*mesh, quadrature_bulk, basis, physics_bulk);
-  AnalysisBCs analysis_bcs(*mesh, quadrature_bcs, basis, physics_bcs);
+  AnalysisBulk analysis_bulk(*mesh, quadrature_bulk, basis, *physics_bulk);
+  AnalysisBCs analysis_bcs(*mesh, quadrature_bcs, basis, *physics_bcs);
 
-  int ndof = mesh->get_num_nodes();
+  int nnodes = mesh->get_num_nodes();
+  int ndof = nnodes * PhysicsBulk::dof_per_node;
 
   // Set up the Jacobian matrix for Poisson's problem with Nitsche's boundary
   // conditions
@@ -239,7 +361,7 @@ void solve_gd_nitsche_problem(std::string prefix,
       },
       &rowp, &cols);
   int nnz = rowp[mesh->get_num_nodes()];
-  BSRMat* jac_bsr = new BSRMat(ndof, nnz, rowp, cols);
+  BSRMat* jac_bsr = new BSRMat(nnodes, nnz, rowp, cols);
   std::vector<T> zeros(ndof, 0.0);
   analysis_bulk.jacobian(nullptr, zeros.data(), jac_bsr);
   jac_bsr->write_mtx(std::filesystem::path(prefix) /
@@ -269,10 +391,18 @@ void solve_gd_nitsche_problem(std::string prefix,
 
   // Get exact solution
   std::vector<T> sol_exact(ndof, 0.0);
-  for (int i = 0; i < ndof; i++) {
+  for (int i = 0; i < nnodes; i++) {
     T xloc[Basis::spatial_dim];
     mesh->get_node_xloc(i, xloc);
-    sol_exact[i] = exact_solution<T>(xloc);
+
+    if constexpr (physics_type == PhysicsType::Poisson) {
+      sol_exact[i] = poisson_bc_fun(A2D::Vec<T, Basis::spatial_dim>(xloc));
+    } else {
+      auto s = elasticity_bc_fun(A2D::Vec<T, Basis::spatial_dim>(xloc));
+      for (int d = 0; d < Basis::spatial_dim; d++) {
+        sol_exact[i * Basis::spatial_dim + d] = s(d);
+      }
+    }
   }
 
   // Compute the L2 norm of the solution field (not vector)
@@ -281,11 +411,19 @@ void solve_gd_nitsche_problem(std::string prefix,
     diff[i] = (sol[i] - sol_exact[i]);
   }
 
-  GalerkinAnalysis<T, Mesh, QuadratureBulk, Basis,
-                   L2normBulk<T, Basis::spatial_dim>>
+  GalerkinAnalysis<
+      T, Mesh, QuadratureBulk, Basis,
+      typename std::conditional<
+          physics_type == PhysicsType::Poisson,
+          L2normBulk<T, Basis::spatial_dim>,
+          VecL2normBulk<T, Basis::spatial_dim, Basis::spatial_dim>>::type>
       integrator_bulk(*mesh, quadrature_bulk, basis, {});
-  GalerkinAnalysis<T, Mesh, QuadratureBCs, Basis,
-                   L2normSurf<T, Basis::spatial_dim>>
+  GalerkinAnalysis<
+      T, Mesh, QuadratureBCs, Basis,
+      typename std::conditional<
+          physics_type == PhysicsType::Poisson,
+          L2normBulk<T, Basis::spatial_dim>,
+          VecL2normBulk<T, Basis::spatial_dim, Basis::spatial_dim>>::type>
       integrator_bcs(*mesh, quadrature_bcs, basis, {});
 
   std::vector<T> ones(sol.size(), 1.0);
@@ -298,28 +436,9 @@ void solve_gd_nitsche_problem(std::string prefix,
   T l2norm_bulk = integrator_bulk.energy(nullptr, sol_exact.data());
   T l2norm_bcs = integrator_bcs.energy(nullptr, sol_exact.data());
 
-  // Get numerical and exact solutions at quadrature points
-  auto [xlocq_bulk, solq_bulk] = analysis_bulk.interpolate_dof(sol.data());
-  auto [xlocq_bcs, solq_bcs] = analysis_bcs.interpolate_dof(sol.data());
-
-  std::vector<T> solq_bulk_exact(solq_bulk.size()),
-      solq_bcs_exact(solq_bcs.size());
-
-  for (int i = 0; i < solq_bulk.size(); i++) {
-    solq_bulk_exact[i] = exact_solution<T>(&xlocq_bulk[Basis::spatial_dim * i]);
-  }
-
-  for (int i = 0; i < solq_bcs.size(); i++) {
-    solq_bcs_exact[i] = exact_solution<T>(&xlocq_bcs[Basis::spatial_dim * i]);
-  }
-
   json j = {// {"sol", sol},
             // {"sol_exact", sol_exact},
             // {"lsf", mesh->get_lsf_nodes()},
-            // {"solq_bulk", solq_bulk},
-            // {"solq_bulk_exact", solq_bulk_exact},
-            // {"solq_bcs", solq_bcs},
-            // {"solq_bcs_exact", solq_bcs_exact},
             {"err_l2norm_bulk", err_l2norm_bulk},
             {"err_l2norm_bcs", err_l2norm_bcs},
             {"l2norm_bulk", l2norm_bulk},
@@ -330,53 +449,18 @@ void solve_gd_nitsche_problem(std::string prefix,
   char json_name[256];
   write_json(std::filesystem::path(prefix) / std::filesystem::path("sol.json"),
              j);
+
   write_vtk<T>(
-      std::filesystem::path(prefix) / std::filesystem::path("poisson.vtk"),
-      *mesh, sol, sol_exact, save_stencils);
+      std::filesystem::path(prefix) / std::filesystem::path("solution.vtk"),
+      physics_type, *mesh, sol, sol_exact, save_stencils);
 
-  write_field_vtk<T>(std::filesystem::path(prefix) /
-                         std::filesystem::path("field_poisson_bulk.vtk"),
-                     *mesh, analysis_bulk, sol);
-
-  write_field_vtk<T>(std::filesystem::path(prefix) /
-                         std::filesystem::path("field_poisson_bcs.vtk"),
-                     *mesh, analysis_bcs, sol);
-}
-
-enum class PhysicsType { Poisson, LinearElasticity };
-
-template <int Np_1d>
-void execute_accuracy_study(std::string prefix, PhysicsType physics_type,
-                            ProbInstance instance, std::string image_json,
-                            int nxy_val, bool save_stencils,
-                            double nitsche_eta) {
-  using T = double;
-  int constexpr spatial_dim = 2;
-
-  switch (physics_type) {
-    case PhysicsType::Poisson: {
-      auto source_fun = [](const A2D::Vec<T, spatial_dim>& xloc) {
-        return exact_source<T>(xloc);
-      };
-
-      auto bc_fun = [](const A2D::Vec<T, spatial_dim>& xloc) {
-        return exact_solution<T>(xloc);
-      };
-
-      PoissonPhysics<T, spatial_dim, typeof(source_fun)> physics_bulk(
-          source_fun);
-      CutDirichlet<T, spatial_dim, typeof(bc_fun)> physics_bcs(nitsche_eta,
-                                                               bc_fun);
-
-      solve_gd_nitsche_problem<T, Np_1d>(prefix, physics_bulk, physics_bcs,
-                                         instance, image_json, nxy_val,
-                                         save_stencils);
-      break;
-    }
-    case PhysicsType::LinearElasticity: {
-      break;
-    }
-  }
+  // write_field_vtk<T>(std::filesystem::path(prefix) /
+  //                        std::filesystem::path("field_solution_bulk.vtk"),
+  //                    physics_type, *mesh, analysis_bulk, sol);
+  //
+  // write_field_vtk<T>(std::filesystem::path(prefix) /
+  //                        std::filesystem::path("field_solution_bcs.vtk"),
+  //                    physics_type, *mesh, analysis_bcs, sol);
 }
 
 int main(int argc, char* argv[]) {
@@ -421,31 +505,64 @@ int main(int argc, char* argv[]) {
        ProbInstance::Image}}.at(p.get<std::string>("instance"));
   std::string image_json = p.get<std::string>("image_json");
 
-  switch (Np_1d) {
-    case 2:
-      execute_accuracy_study<2>(prefix, physics_type, instance, image_json,
-                                nxy_val, save_stencils, nitsche_eta);
-      break;
-    case 4:
-      execute_accuracy_study<4>(prefix, physics_type, instance, image_json,
-                                nxy_val, save_stencils, nitsche_eta);
-      break;
-    case 6:
-      execute_accuracy_study<6>(prefix, physics_type, instance, image_json,
-                                nxy_val, save_stencils, nitsche_eta);
-      break;
-    case 8:
-      execute_accuracy_study<8>(prefix, physics_type, instance, image_json,
-                                nxy_val, save_stencils, nitsche_eta);
-      break;
-    case 10:
-      execute_accuracy_study<10>(prefix, physics_type, instance, image_json,
-                                 nxy_val, save_stencils, nitsche_eta);
-      break;
-    default:
-      printf("Unsupported Np_1d (%d), exiting...\n", Np_1d);
-      exit(-1);
-      break;
+  if (physics_type == PhysicsType::Poisson) {
+    switch (Np_1d) {
+      case 2:
+        execute_accuracy_study<2, PhysicsType::Poisson>(
+            prefix, instance, image_json, nxy_val, save_stencils, nitsche_eta);
+        break;
+      case 4:
+        execute_accuracy_study<4, PhysicsType::Poisson>(
+            prefix, instance, image_json, nxy_val, save_stencils, nitsche_eta);
+        break;
+      case 6:
+        execute_accuracy_study<6, PhysicsType::Poisson>(
+            prefix, instance, image_json, nxy_val, save_stencils, nitsche_eta);
+        break;
+      case 8:
+        execute_accuracy_study<8, PhysicsType::Poisson>(
+            prefix, instance, image_json, nxy_val, save_stencils, nitsche_eta);
+        break;
+      case 10:
+        execute_accuracy_study<10, PhysicsType::Poisson>(
+            prefix, instance, image_json, nxy_val, save_stencils, nitsche_eta);
+        break;
+      default:
+        printf("Unsupported Np_1d (%d), exiting...\n", Np_1d);
+        exit(-1);
+        break;
+    }
+  } else {  // Elasticity
+    switch (Np_1d) {
+      case 2:
+        execute_accuracy_study<2, PhysicsType::LinearElasticity>(
+            prefix, instance, image_json, nxy_val, save_stencils, nitsche_eta);
+        break;
+        // case 4:
+        //   execute_accuracy_study<4, PhysicsType::LinearElasticity>(
+        //       prefix, instance, image_json, nxy_val, save_stencils,
+        //       nitsche_eta);
+        //   break;
+        // case 6:
+        //   execute_accuracy_study<6, PhysicsType::LinearElasticity>(
+        //       prefix, instance, image_json, nxy_val, save_stencils,
+        //       nitsche_eta);
+        //   break;
+        // case 8:
+        //   execute_accuracy_study<8, PhysicsType::LinearElasticity>(
+        //       prefix, instance, image_json, nxy_val, save_stencils,
+        //       nitsche_eta);
+        //   break;
+        // case 10:
+        //   execute_accuracy_study<10, PhysicsType::LinearElasticity>(
+        //       prefix, instance, image_json, nxy_val, save_stencils,
+        //       nitsche_eta);
+        //   break;
+        // default:
+        //   printf("Unsupported Np_1d (%d), exiting...\n", Np_1d);
+        //   exit(-1);
+        //   break;
+    }
   }
 
   return 0;

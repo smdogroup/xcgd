@@ -228,7 +228,7 @@ def plot(cases_df, normalize, voffset, voffset_text):
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
 
-    adjust_plot_lim(ax)
+    adjust_plot_lim(ax, left=0.0, right=0.0, bottom=0.0, up=0.0)
 
     return fig, ax
 
