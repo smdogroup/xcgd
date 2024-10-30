@@ -433,6 +433,7 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
     elem_cells.clear();
     dir_cells.clear();
     is_cut_elem_vals.clear();
+    is_regular_stencil_elem_vals.clear();
 
     // LSF values are always associated with the ground grid verts, unlike the
     // dof values which might only be associated with part of the ground grid
@@ -528,6 +529,22 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
       }
     }
 
+    // Identify all the elements with regular stencils
+    is_regular_stencil_elem_vals = std::vector<bool>(num_elements, false);
+    for (int i = 0; i < num_elements; i++) {
+      int verts[max_nnodes_per_element];
+      if (this->get_cell_ground_stencil(get_elem_cell(i), verts)) {
+        bool is_regular_stencil = true;
+        for (int j = 0; j < max_nnodes_per_element; j++) {
+          if (vert_nodes.count(verts[j]) == 0) {
+            is_regular_stencil = false;
+            break;
+          }
+        }
+        is_regular_stencil_elem_vals[i] = is_regular_stencil;
+      }
+    }
+
 #ifdef XCGD_DEBUG_MODE
     std::printf("[Debug]Updated mesh, nnodes: %d -> %d, nelems: %d -> %d\n",
                 num_nodes_old, num_nodes, num_elems_old, num_elements);
@@ -535,23 +552,26 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
   }
 
   // Helper function
-  bool is_irregular_stencil(int elem) {
-    int cell = elem_cells.at(elem);
-    int verts[max_nnodes_per_element];
-    this->get_cell_ground_stencil(cell, verts);
-    for (int index = 0; index < max_nnodes_per_element; index++) {
-      if (vert_nodes.count(verts[index]) == 0) {
-        return true;
-      }
-    }
-    return false;
-  }
+  // bool is_irregular_stencil(int elem) {
+  //   int cell = elem_cells.at(elem);
+  //   int verts[max_nnodes_per_element];
+  //   this->get_cell_ground_stencil(cell, verts);
+  //   for (int index = 0; index < max_nnodes_per_element; index++) {
+  //     if (vert_nodes.count(verts[index]) == 0) {
+  //       return true;
+  //     }
+  //   }
+  //   return false;
+  // }
 
   inline const std::unordered_map<int, int>& get_vert_nodes() const {
     return vert_nodes;
   }
 
   inline bool is_cut_elem(int elem) const { return is_cut_elem_vals.at(elem); }
+  inline bool is_regular_stencil_elem(int elem) const {
+    return is_regular_stencil_elem_vals.at(elem);
+  }
 
  private:
   // Given the lsf dof, interpolate the gradient of the lsf at the centroid
@@ -632,6 +652,10 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
 
   // Whether the element is cut element or interior element
   std::vector<bool> is_cut_elem_vals;
+
+  // Whether the element has the regular stencil
+  // elements far from the boundaries usually have regular stencils
+  std::vector<bool> is_regular_stencil_elem_vals;
 };
 
 /**

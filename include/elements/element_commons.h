@@ -103,17 +103,24 @@ class GDMeshBase : public MeshBase<T, 2, Np_1d_ * Np_1d_, 4> {
   /**
    * @brief For a GD element, get the stencil associated to the ground grid,
    * regardless the optional boundary defined by the level set function
+   *
+   * @param cell [in] cell index
+   * @param verts [out] stencil vertices
+   * @return bool whether the stensil is regular (i.e. not a boundary stencil)
    */
-  void get_cell_ground_stencil(int cell, int* verts) const {
+  bool get_cell_ground_stencil(int cell, int* verts) const {
+    bool is_stencil_regular = true;
     constexpr int q = Np_1d / 2;
     int eij[spatial_dim];
     grid.get_cell_coords(cell, eij);
     const int* nxy = grid.get_nxy();
     for (int d = 0; d < spatial_dim; d++) {
       if (eij[d] < q - 1) {
+        is_stencil_regular = false;
         eij[d] = q - 1;
       } else if (eij[d] > nxy[d] - q) {
         eij[d] = nxy[d] - q;
+        is_stencil_regular = false;
       }
     }
 
@@ -124,6 +131,7 @@ class GDMeshBase : public MeshBase<T, 2, Np_1d_ * Np_1d_, 4> {
             grid.get_coords_vert(eij[0] - q + 1 + i, eij[1] - q + 1 + j);
       }
     }
+    return is_stencil_regular;
   };
 
   const Grid& grid;

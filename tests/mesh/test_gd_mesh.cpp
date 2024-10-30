@@ -98,13 +98,18 @@ void generate_lsf_mesh(bool flip = false) {
     vtk.write_sol(name, dof.data());
   }
 
-  std::vector<T> cut_elem(mesh.get_num_elements(), 0.0);
+  std::vector<T> cut_elem(mesh.get_num_elements(), 0.0),
+      regular_stencil_elem(mesh.get_num_elements(), 0.0);
   for (int elem = 0; elem < mesh.get_num_elements(); elem++) {
     if (mesh.is_cut_elem(elem)) {
       cut_elem[elem] = 1.0;
     }
+    if (mesh.is_regular_stencil_elem(elem)) {
+      regular_stencil_elem[elem] = 1.0;
+    }
   }
   vtk.write_cell_sol("is_elem_cut", cut_elem.data());
+  vtk.write_cell_sol("regular_stencil_elem", regular_stencil_elem.data());
 
   for (int elem = 0; elem < mesh.get_num_elements(); elem++) {
     if (cut_elem_cells.count(mesh.get_elem_cell(elem))) {
