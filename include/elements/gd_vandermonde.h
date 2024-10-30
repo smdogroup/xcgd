@@ -187,7 +187,7 @@ class VandermondeEvaluator {
       T xloc[spatial_dim];
       mesh.get_node_xloc(nodes[i], xloc);
 
-      // make x, y in the Vandermonde framew, i.e. [-1, 1]^d
+      // make x, y in the Vandermonde frame, i.e. [-1, 1]^d
       T x = -1.0 + 2.0 * (xloc[0] - xloc_min[0]) / (xloc_max[0] - xloc_min[0]);
       T y = -1.0 + 2.0 * (xloc[1] - xloc_min[1]) / (xloc_max[1] - xloc_min[1]);
 

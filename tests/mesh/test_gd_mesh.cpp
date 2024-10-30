@@ -64,6 +64,11 @@ void generate_lsf_mesh(bool flip = false) {
   using Mesh = CutMesh<T, Np_1d>;
 
   int nxy[2] = {21, 21};
+  std::set<int> cut_elem_cells = {
+      112, 113, 114, 115, 116, 117, 118, 132, 133, 139, 140, 152, 153, 161,
+      162, 173, 183, 194, 204, 215, 225, 236, 246, 257, 267, 278, 279, 287,
+      288, 300, 301, 307, 308, 322, 323, 324, 325, 326, 327, 328};
+
   T lxy[2] = {2.0, 2.0};
   T xy0[2] = {-1.0, -1.0};
 
@@ -79,6 +84,7 @@ void generate_lsf_mesh(bool flip = false) {
   std::snprintf(vtkname, 256, "mesh_gd%s.vtk", flip ? "_flip" : "");
   ToVTK<T, Mesh> vtk(mesh, vtkname);
   vtk.write_mesh();
+  vtk.write_sol("lsf", mesh.get_lsf_nodes().data());
 
   for (int elem = 0; elem < mesh.get_num_elements(); elem++) {
     std::vector<T> dof(mesh.get_num_nodes(), 0.0);
@@ -90,6 +96,22 @@ void generate_lsf_mesh(bool flip = false) {
     char name[256];
     std::snprintf(name, 256, "elem_%05d", elem);
     vtk.write_sol(name, dof.data());
+  }
+
+  std::vector<T> cut_elem(mesh.get_num_elements(), 0.0);
+  for (int elem = 0; elem < mesh.get_num_elements(); elem++) {
+    if (mesh.is_cut_elem(elem)) {
+      cut_elem[elem] = 1.0;
+    }
+  }
+  vtk.write_cell_sol("is_elem_cut", cut_elem.data());
+
+  for (int elem = 0; elem < mesh.get_num_elements(); elem++) {
+    if (cut_elem_cells.count(mesh.get_elem_cell(elem))) {
+      EXPECT_EQ(mesh.is_cut_elem(elem), true);
+    } else {
+      EXPECT_EQ(mesh.is_cut_elem(elem), false);
+    }
   }
 }
 

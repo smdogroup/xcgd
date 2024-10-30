@@ -432,6 +432,7 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
     vert_nodes.clear();
     elem_cells.clear();
     dir_cells.clear();
+    is_cut_elem_vals.clear();
 
     // LSF values are always associated with the ground grid verts, unlike the
     // dof values which might only be associated with part of the ground grid
@@ -511,8 +512,24 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
     num_nodes = node_verts.size();
     num_elements = elem_cells.size();
 
+    // Identify all cut elements
+    is_cut_elem_vals = std::vector<bool>(num_elements, false);
+    for (int i = 0; i < num_elements; i++) {
+      int verts[Grid::nverts_per_cell];
+      T lsf_vals[Grid::nverts_per_cell];
+      this->grid.get_cell_verts(get_elem_cell(i), verts);
+      for (int j = 0; j < Grid::nverts_per_cell; j++) {
+        lsf_vals[j] = lsf_dof[verts[j]];
+      }
+
+      std::sort(lsf_vals, lsf_vals + Grid::nverts_per_cell);
+      if (lsf_vals[0] * lsf_vals[Grid::nverts_per_cell - 1] <= 0.0) {
+        is_cut_elem_vals[i] = true;
+      }
+    }
+
 #ifdef XCGD_DEBUG_MODE
-    std::printf("[Debug]Updating mesh, nnodes: %d -> %d, nelems: %d -> %d\n",
+    std::printf("[Debug]Updated mesh, nnodes: %d -> %d, nelems: %d -> %d\n",
                 num_nodes_old, num_nodes, num_elems_old, num_elements);
 #endif
   }
@@ -533,6 +550,8 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
   inline const std::unordered_map<int, int>& get_vert_nodes() const {
     return vert_nodes;
   }
+
+  inline bool is_cut_elem(int elem) const { return is_cut_elem_vals.at(elem); }
 
  private:
   // Given the lsf dof, interpolate the gradient of the lsf at the centroid
@@ -610,6 +629,9 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
 
   // push direction for each cell
   std::vector<int> dir_cells;
+
+  // Whether the element is cut element or interior element
+  std::vector<bool> is_cut_elem_vals;
 };
 
 /**
