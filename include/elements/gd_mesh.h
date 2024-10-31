@@ -432,8 +432,8 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
     vert_nodes.clear();
     elem_cells.clear();
     dir_cells.clear();
-    is_cut_elem_vals.clear();
-    is_regular_stencil_elem_vals.clear();
+    cut_elems.clear();
+    regular_stencil_elems.clear();
 
     // LSF values are always associated with the ground grid verts, unlike the
     // dof values which might only be associated with part of the ground grid
@@ -514,7 +514,6 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
     num_elements = elem_cells.size();
 
     // Identify all cut elements
-    is_cut_elem_vals = std::vector<bool>(num_elements, false);
     for (int i = 0; i < num_elements; i++) {
       int verts[Grid::nverts_per_cell];
       T lsf_vals[Grid::nverts_per_cell];
@@ -525,12 +524,11 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
 
       std::sort(lsf_vals, lsf_vals + Grid::nverts_per_cell);
       if (lsf_vals[0] * lsf_vals[Grid::nverts_per_cell - 1] <= 0.0) {
-        is_cut_elem_vals[i] = true;
+        cut_elems.insert(i);
       }
     }
 
     // Identify all the elements with regular stencils
-    is_regular_stencil_elem_vals = std::vector<bool>(num_elements, false);
     for (int i = 0; i < num_elements; i++) {
       int verts[max_nnodes_per_element];
       if (this->get_cell_ground_stencil(get_elem_cell(i), verts)) {
@@ -541,7 +539,9 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
             break;
           }
         }
-        is_regular_stencil_elem_vals[i] = is_regular_stencil;
+        if (is_regular_stencil) {
+          regular_stencil_elems.insert(i);
+        }
       }
     }
 
@@ -568,9 +568,16 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
     return vert_nodes;
   }
 
-  inline bool is_cut_elem(int elem) const { return is_cut_elem_vals.at(elem); }
+  inline bool is_cut_elem(int elem) const {
+    return static_cast<bool>(cut_elems.count(elem));
+  }
   inline bool is_regular_stencil_elem(int elem) const {
-    return is_regular_stencil_elem_vals.at(elem);
+    return static_cast<bool>(regular_stencil_elems.count(elem));
+  }
+
+  const inline std::set<int>& get_cut_elems() const { return cut_elems; }
+  const inline std::set<int>& get_regular_stencil_elems() const {
+    return regular_stencil_elems;
   }
 
  private:
@@ -651,11 +658,11 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
   std::vector<int> dir_cells;
 
   // Whether the element is cut element or interior element
-  std::vector<bool> is_cut_elem_vals;
+  std::set<int> cut_elems;
 
   // Whether the element has the regular stencil
   // elements far from the boundaries usually have regular stencils
-  std::vector<bool> is_regular_stencil_elem_vals;
+  std::set<int> regular_stencil_elems;
 };
 
 /**
