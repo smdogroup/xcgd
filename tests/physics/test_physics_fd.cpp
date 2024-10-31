@@ -187,7 +187,9 @@ void test_vector_cut_dirichlet(
   test_physics_fd(tuple, physics, h, tol);
 }
 
-TEST(physics, CutDirichlet) { test_cut_dirichlet(create_gd_lsf_surf_basis()); }
+TEST(physics, CutDirichlet) {
+  test_cut_dirichlet(create_gd_lsf_surf_basis(), 1e-5, 1e-10);
+}
 
 TEST(physics, VectorCutDirichlet) {
   test_vector_cut_dirichlet(create_gd_lsf_surf_basis());

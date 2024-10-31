@@ -198,7 +198,15 @@ class GridMesh : public GDMeshBase<T, Np_1d> {
   GridMesh(const Grid& grid)
       : MeshBase(grid),
         num_nodes(grid.get_num_verts()),
-        num_elements(grid.get_num_cells()) {}
+        num_elements(grid.get_num_cells()) {
+    // Identify all the elements with regular stencils
+    for (int i = 0; i < num_elements; i++) {
+      int _[max_nnodes_per_element];
+      if (this->get_cell_ground_stencil(i, _)) {
+        regular_stencil_elems.insert(i);
+      }
+    }
+  }
 
   inline int get_num_nodes() const { return num_nodes; }
   inline int get_num_elements() const { return num_elements; }
@@ -260,9 +268,22 @@ class GridMesh : public GDMeshBase<T, Np_1d> {
     return nodes;
   }
 
+  inline bool is_regular_stencil_elem(int elem) const {
+    return static_cast<bool>(regular_stencil_elems.count(elem));
+  }
+  const inline std::set<int>& get_regular_stencil_elems() const {
+    return regular_stencil_elems;
+  }
+
+  inline int get_node_vert(int node) const { return node; }
+
  private:
   int num_nodes = -1;
   int num_elements = -1;
+
+  // Whether the element has the regular stencil
+  // elements far from the boundaries usually have regular stencils
+  std::set<int> regular_stencil_elems;
 };
 
 /**
@@ -424,7 +445,8 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
   inline const std::vector<T>& get_lsf_dof() const { return lsf_dof; }
   inline std::vector<T>& get_lsf_dof() { return lsf_dof; }
 
-  inline int get_elem_cell(int elem) const { return elem_cells[elem]; }
+  inline int get_elem_cell(int elem) const { return elem_cells.at(elem); }
+  inline int get_node_vert(int node) const { return node_verts.at(node); }
 
   // Update the mesh when the lsf_dof is updated
   void update_mesh() {

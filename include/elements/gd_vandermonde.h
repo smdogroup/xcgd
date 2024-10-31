@@ -8,6 +8,7 @@
 #include <functional>
 #include <iostream>
 #include <limits>
+#include <numeric>
 #include <vector>
 
 #include "dual.hpp"
@@ -137,10 +138,39 @@ class VandermondeEvaluator {
   static constexpr int p = Np_1d - 1;
 
  public:
-  VandermondeEvaluator(const Mesh& mesh, int elem) {
+  /**
+   * @param mesh mesh object
+   * @param elem element index
+   * @param reorder_by_vert if true, reorder the nodes by the vertex index
+   */
+  VandermondeEvaluator(const Mesh& mesh, int elem,
+                       bool reorder_by_vert = true) {
     int nodes[Np_1d * Np_1d];
     std::vector<std::vector<bool>> pstencil;
     nnodes = mesh.get_elem_dof_nodes(elem, nodes, &pstencil);
+
+    // Construct the permutation of nodes, if reorder_by_vert is true, we
+    // contruct the Vandermonde matrix V and its inverse matrix C using the
+    // permuated ordering of nodes.
+    // This is useful when we share one instance of VandermondeEvaluator for
+    // multiple elements that share the same stencil pattern but with
+    // potentially different local ordering of the stencil nodes.
+    perm.resize(nnodes);
+    std::iota(perm.begin(), perm.end(),
+              0);  // set values0 , 1, 2, ...
+    if (reorder_by_vert) {
+      std::sort(perm.begin(), perm.end(), [&mesh, &nodes](int p1, int p2) {
+        return mesh.get_node_vert(nodes[p1]) < mesh.get_node_vert(nodes[p2]);
+      });
+    }
+
+    // iperm is the inverted permutation that maps back from internal ordering
+    // to external ordering of nodes
+    iperm.resize(nnodes);
+    for (int i = 0; i < nnodes; i++) {
+      iperm[perm[i]] = i;
+    }
+
     Ck.resize(nnodes * nnodes);
 
     // Create the index sequence for polynomial terms, for example, for p=3,
@@ -185,7 +215,7 @@ class VandermondeEvaluator {
 
     for (int i = 0; i < nnodes; i++) {
       T xloc[spatial_dim];
-      mesh.get_node_xloc(nodes[i], xloc);
+      mesh.get_node_xloc(nodes[perm[i]], xloc);
 
       // make x, y in the Vandermonde frame, i.e. [-1, 1]^d
       T x = -1.0 + 2.0 * (xloc[0] - xloc_min[0]) / (xloc_max[0] - xloc_min[0]);
@@ -226,21 +256,19 @@ class VandermondeEvaluator {
     std::vector<T2> xpows(Np_1d), ypows(Np_1d), dxpows(Np_1d), dypows(Np_1d),
         dx2pows(Np_1d), dy2pows(Np_1d);
 
+    T2 xi = pt[0] * xi_h[0] + xi_min[0];
+    T2 eta = pt[1] * xi_h[1] + xi_min[1];
     for (int ii = 0; ii < Np_1d; ii++) {
-      xpows[ii] = pow(pt[0] * xi_h[0] + xi_min[0], ii);
-      ypows[ii] = pow(pt[1] * xi_h[1] + xi_min[1], ii);
-      dxpows[ii] =
-          ii > 0 ? T(ii) * xi_h[0] * pow(pt[0] * xi_h[0] + xi_min[0], ii - 1)
+      xpows[ii] = pow(xi, ii);
+      ypows[ii] = pow(eta, ii);
+      dxpows[ii] = ii > 0 ? T(ii) * xi_h[0] * pow(xi, ii - 1) : T(0.0);
+      dypows[ii] = ii > 0 ? T(ii) * xi_h[1] * pow(eta, ii - 1) : T(0.0);
+      dx2pows[ii] =
+          ii > 1 ? T(ii) * T(ii - 1) * xi_h[0] * xi_h[0] * pow(xi, ii - 2)
                  : T(0.0);
-      dypows[ii] =
-          ii > 0 ? T(ii) * xi_h[1] * pow(pt[1] * xi_h[1] + xi_min[1], ii - 1)
+      dy2pows[ii] =
+          ii > 1 ? T(ii) * T(ii - 1) * xi_h[1] * xi_h[1] * pow(eta, ii - 2)
                  : T(0.0);
-      dx2pows[ii] = ii > 1 ? T(ii) * T(ii - 1) * xi_h[0] * xi_h[0] *
-                                 pow(pt[0] * xi_h[0] + xi_min[0], ii - 2)
-                           : T(0.0);
-      dy2pows[ii] = ii > 1 ? T(ii) * T(ii - 1) * xi_h[1] * xi_h[1] *
-                                 pow(pt[1] * xi_h[1] + xi_min[1], ii - 2)
-                           : T(0.0);
     }
 
     if (N) {
@@ -257,26 +285,26 @@ class VandermondeEvaluator {
 
     for (int i = 0; i < nnodes; i++) {
       for (int row = 0; row < nnodes; row++) {
-        auto indices = pterms[row];
-        int j = indices.first;
-        int k = indices.second;
+        auto [j, k] = pterms[row];
+        int index = row + nnodes * iperm[i];
         if (N) {
-          N[i] += Ck[row + nnodes * i] * xpows[j] * ypows[k];
+          // N = C^T v
+          // Ni = C[j, i] v[j]
+          N[i] += Ck[index] * xpows[j] * ypows[k];  // (row, i) entry
         }
         if (Nxi) {
-          Nxi[spatial_dim * i] += Ck[row + nnodes * i] * dxpows[j] * ypows[k];
-          Nxi[spatial_dim * i + 1] +=
-              Ck[row + nnodes * i] * xpows[j] * dypows[k];
+          Nxi[spatial_dim * i] += Ck[index] * dxpows[j] * ypows[k];
+          Nxi[spatial_dim * i + 1] += Ck[index] * xpows[j] * dypows[k];
         }
         if (Nxixi) {
           Nxixi[spatial_dim * spatial_dim * i] +=
-              Ck[row + nnodes * i] * dx2pows[j] * ypows[k];
+              Ck[index] * dx2pows[j] * ypows[k];
           Nxixi[spatial_dim * spatial_dim * i + 1] +=
-              Ck[row + nnodes * i] * dxpows[j] * dypows[k];
+              Ck[index] * dxpows[j] * dypows[k];
           Nxixi[spatial_dim * spatial_dim * i + 2] +=
-              Ck[row + nnodes * i] * dxpows[j] * dypows[k];
+              Ck[index] * dxpows[j] * dypows[k];
           Nxixi[spatial_dim * spatial_dim * i + 3] +=
-              Ck[row + nnodes * i] * xpows[j] * dy2pows[k];
+              Ck[index] * xpows[j] * dy2pows[k];
         }
       }
     }
@@ -287,6 +315,11 @@ class VandermondeEvaluator {
   std::vector<T> Ck;
   std::vector<std::pair<int, int>> pterms;
   T xi_min[spatial_dim], xi_h[spatial_dim];
+
+  std::vector<int>
+      perm;  // j = perm[i]: i-th node externally is j-th node internally
+  std::vector<int>
+      iperm;  // i = iperm[j]: j-th node internally is i-th node extrnally
 };
 
 template <typename T, int Np_1d>
@@ -578,7 +611,10 @@ class GDBasis2D final : public BasisBase<T, Mesh_> {
   using Mesh = Mesh_;
 
  public:
-  GDBasis2D(Mesh& mesh) : mesh(mesh) {}
+  GDBasis2D(Mesh& mesh)
+      : mesh(mesh),
+        regular_eval(std::make_shared<VandermondeEvaluator<T, Mesh>>(
+            mesh, *(mesh.get_regular_stencil_elems().begin()))) {}
 
   /**
    * @brief Given all quadrature points, evaluate the shape function values,
@@ -597,12 +633,19 @@ class GDBasis2D final : public BasisBase<T, Mesh_> {
     N.resize(max_nnodes_per_element * num_quad_pts);
     Nxi.resize(max_nnodes_per_element * num_quad_pts * spatial_dim);
 
-    VandermondeEvaluator<T, Mesh> eval(mesh, elem);
+    std::shared_ptr<VandermondeEvaluator<T, Mesh>> eval;
+    if (mesh.is_regular_stencil_elem(elem)) {
+      eval = std::make_shared<VandermondeEvaluator<T, Mesh>>(mesh, elem);
+    } else {
+      eval = std::make_shared<VandermondeEvaluator<T, Mesh>>(mesh, elem);
+      // eval = regular_eval;
+    }
 
     for (int q = 0; q < num_quad_pts; q++) {
       int offset_n = q * max_nnodes_per_element;
       int offset_nxi = q * max_nnodes_per_element * spatial_dim;
-      eval(&pts[spatial_dim * q], N.data() + offset_n, Nxi.data() + offset_nxi);
+      (*eval)(&pts[spatial_dim * q], N.data() + offset_n,
+              Nxi.data() + offset_nxi);
     }
   }
   void eval_basis_grad(int elem, const std::vector<T>& pts, std::vector<T>& N,
@@ -613,18 +656,27 @@ class GDBasis2D final : public BasisBase<T, Mesh_> {
     Nxixi.resize(max_nnodes_per_element * num_quad_pts * spatial_dim *
                  spatial_dim);
 
-    VandermondeEvaluator<T, Mesh> eval(mesh, elem);
+    std::shared_ptr<VandermondeEvaluator<T, Mesh>> eval;
+    if (mesh.is_regular_stencil_elem(elem)) {
+      eval = std::make_shared<VandermondeEvaluator<T, Mesh>>(mesh, elem);
+    } else {
+      eval = std::make_shared<VandermondeEvaluator<T, Mesh>>(mesh, elem);
+      // eval = regular_eval;
+    }
 
     for (int q = 0; q < num_quad_pts; q++) {
       int offset_n = q * max_nnodes_per_element;
       int offset_nxi = q * max_nnodes_per_element * spatial_dim;
       int offset_nxixi = q * max_nnodes_per_element * spatial_dim * spatial_dim;
-      eval(&pts[spatial_dim * q], N.data() + offset_n, Nxi.data() + offset_nxi,
-           Nxixi.data() + offset_nxixi);
+      (*eval)(&pts[spatial_dim * q], N.data() + offset_n,
+              Nxi.data() + offset_nxi, Nxixi.data() + offset_nxixi);
     }
   }
 
+ private:
   const Mesh& mesh;
+  std::shared_ptr<VandermondeEvaluator<T, Mesh>>
+      regular_eval;  // evaluator for regular stencil
 };
 
 #endif  // XCGD_GALERKIN_DIFFERENCE_H
