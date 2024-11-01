@@ -118,7 +118,7 @@ enum class PhysicsType { Poisson, LinearElasticity };
 template <typename T, class Mesh>
 void write_vtk(std::string vtkpath, PhysicsType physics_type, const Mesh& mesh,
                const std::vector<T>& sol, const std::vector<T>& exact_sol,
-               bool save_stencils) {
+               const std::vector<T>& source, bool save_stencils) {
   ToVTK<T, Mesh> vtk(mesh, vtkpath);
   vtk.write_mesh();
 
@@ -135,9 +135,11 @@ void write_vtk(std::string vtkpath, PhysicsType physics_type, const Mesh& mesh,
   if (physics_type == PhysicsType::Poisson) {
     vtk.write_sol("u", sol.data());
     vtk.write_sol("u_exact", exact_sol.data());
+    vtk.write_sol("source", source.data());
   } else {
     vtk.write_vec("u", sol.data());
     vtk.write_vec("u_exact", exact_sol.data());
+    vtk.write_vec("internal_force", source.data());
   }
 
   if (save_stencils) {
@@ -430,18 +432,21 @@ void execute_accuracy_study(std::string prefix, ProbInstance instance,
   std::vector<T> sol = rhs;
   chol->solve(sol.data());
 
-  // Get exact solution
-  std::vector<T> sol_exact(ndof, 0.0);
+  // Get exact solution and source
+  std::vector<T> sol_exact(ndof, 0.0), source(ndof, 0.0);
   for (int i = 0; i < nnodes; i++) {
     T xloc[Basis::spatial_dim];
     mesh->get_node_xloc(i, xloc);
 
     if constexpr (physics_type == PhysicsType::Poisson) {
       sol_exact[i] = poisson_bc_fun(A2D::Vec<T, Basis::spatial_dim>(xloc));
+      source[i] = poisson_source_fun(A2D::Vec<T, Basis::spatial_dim>(xloc));
     } else {
-      auto s = elasticity_bc_fun(A2D::Vec<T, Basis::spatial_dim>(xloc));
+      auto bc = elasticity_bc_fun(A2D::Vec<T, Basis::spatial_dim>(xloc));
+      auto s = elasticity_int_fun(A2D::Vec<T, Basis::spatial_dim>(xloc));
       for (int d = 0; d < Basis::spatial_dim; d++) {
-        sol_exact[i * Basis::spatial_dim + d] = s(d);
+        sol_exact[i * Basis::spatial_dim + d] = bc(d);
+        source[i * Basis::spatial_dim + d] = s(d);
       }
     }
   }
@@ -493,7 +498,7 @@ void execute_accuracy_study(std::string prefix, ProbInstance instance,
 
   write_vtk<T>(
       std::filesystem::path(prefix) / std::filesystem::path("solution.vtk"),
-      physics_type, *mesh, sol, sol_exact, save_stencils);
+      physics_type, *mesh, sol, sol_exact, source, save_stencils);
 
   // write_field_vtk<T>(std::filesystem::path(prefix) /
   //                        std::filesystem::path("field_solution_bulk.vtk"),
