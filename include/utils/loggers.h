@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <map>
+#include <numeric>
 #include <stdexcept>
 #include <vector>
 
@@ -49,6 +50,14 @@ class VandermondeCondLogger {
     conds.clear();
   }
 
+  // Get condition number of elem, if elem does not exist, quitely return NaN
+  static double get(int elem) {
+    try {
+      return conds.at(elem);
+    } catch (const std::out_of_range& e) {
+      return std::numeric_limits<double>::quiet_NaN();
+    }
+  }
   const static std::map<int, double>& get_conds() { return conds; }
 
  private:

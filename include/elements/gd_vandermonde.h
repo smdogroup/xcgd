@@ -141,34 +141,17 @@ class VandermondeEvaluator {
   /**
    * @param mesh mesh object
    * @param elem element index
-   * @param reorder_by_vert if true, reorder the nodes by the vertex index
+   * @param reorder_nodes if true, reorder the nodes by the vertex index
    */
-  VandermondeEvaluator(const Mesh& mesh, int elem,
-                       bool reorder_by_vert = true) {
+  VandermondeEvaluator(const Mesh& mesh, int elem, bool reorder_nodes = false)
+      : mesh(mesh), reorder_nodes(reorder_nodes) {
     int nodes[Np_1d * Np_1d];
     std::vector<std::vector<bool>> pstencil;
     nnodes = mesh.get_elem_dof_nodes(elem, nodes, &pstencil);
 
-    // Construct the permutation of nodes, if reorder_by_vert is true, we
-    // contruct the Vandermonde matrix V and its inverse matrix C using the
-    // permuated ordering of nodes.
-    // This is useful when we share one instance of VandermondeEvaluator for
-    // multiple elements that share the same stencil pattern but with
-    // potentially different local ordering of the stencil nodes.
-    perm.resize(nnodes);
-    std::iota(perm.begin(), perm.end(),
-              0);  // set values0 , 1, 2, ...
-    if (reorder_by_vert) {
-      std::sort(perm.begin(), perm.end(), [&mesh, &nodes](int p1, int p2) {
-        return mesh.get_node_vert(nodes[p1]) < mesh.get_node_vert(nodes[p2]);
-      });
-    }
-
-    // iperm is the inverted permutation that maps back from internal ordering
-    // to external ordering of nodes
-    iperm.resize(nnodes);
-    for (int i = 0; i < nnodes; i++) {
-      iperm[perm[i]] = i;
+    std::vector<int> perm, _;
+    if (reorder_nodes) {
+      construct_permutation(nodes, perm, _);
     }
 
     Ck.resize(nnodes * nnodes);
@@ -215,7 +198,12 @@ class VandermondeEvaluator {
 
     for (int i = 0; i < nnodes; i++) {
       T xloc[spatial_dim];
-      mesh.get_node_xloc(nodes[perm[i]], xloc);
+
+      if (perm.size()) {
+        mesh.get_node_xloc(nodes[perm[i]], xloc);
+      } else {
+        mesh.get_node_xloc(nodes[i], xloc);
+      }
 
       // make x, y in the Vandermonde frame, i.e. [-1, 1]^d
       T x = -1.0 + 2.0 * (xloc[0] - xloc_min[0]) / (xloc_max[0] - xloc_min[0]);
@@ -243,15 +231,33 @@ class VandermondeEvaluator {
    * @brief Evaluate the shape function and derivatives given a quadrature point
    *
    * @tparam T2 numeric type
+   * @param elem [in] element index, only used if reorder_nodes is specified
    * @param pt [in] quadrature points in the reference frame, i.e. [0, 1]^d
    * @param N [out] shape function evaluations for each dof
    * @param Nxi [out] shape function derivatives for each dof
    * @param Nxixi [out] shape function Hessians for each dof, optional
    */
   template <typename T2>
-  void operator()(const T2* pt, T2* N, T2* Nxi,
+  void operator()(int elem, const T2* pt, T2* N, T2* Nxi,
                   T2* Nxixi = (T2*)nullptr) const {
     static constexpr int max_nnodes_per_element = Mesh::max_nnodes_per_element;
+
+    std::vector<int> _, iperm;
+    if (reorder_nodes) {
+      int nodes[Np_1d * Np_1d];
+      int nnodes_this = mesh.get_elem_dof_nodes(elem, nodes);
+      if (nnodes != nnodes_this) {
+        throw std::runtime_error(
+            "Attempting to reuse the VandermondeEvaluator on an element that "
+            "is "
+            "different from the element that constructed the evaluator, but "
+            "the "
+            "number of nodes does not match (get " +
+            std::to_string(nnodes_this) + ", expect " + std::to_string(nnodes) +
+            ")");
+      }
+      construct_permutation(nodes, _, iperm);
+    }
 
     std::vector<T2> xpows(Np_1d), ypows(Np_1d), dxpows(Np_1d), dypows(Np_1d),
         dx2pows(Np_1d), dy2pows(Np_1d);
@@ -286,7 +292,7 @@ class VandermondeEvaluator {
     for (int i = 0; i < nnodes; i++) {
       for (int row = 0; row < nnodes; row++) {
         auto [j, k] = pterms[row];
-        int index = row + nnodes * iperm[i];
+        int index = iperm.size() ? row + nnodes * iperm[i] : row + nnodes * i;
         if (N) {
           // N = C^T v
           // Ni = C[j, i] v[j]
@@ -311,15 +317,44 @@ class VandermondeEvaluator {
   }
 
  private:
+  /**
+   * @brief Construct the permutation of nodes so Vandermonde matrix V and its
+   *  inverse matrix C using the permuated ordering of nodes. This is useful
+   *  when we share one instance of VandermondeEvaluator for multiple elements
+   *  that share the same stencil pattern but with potentially different local
+   *  ordering of the stencil nodes.
+   *
+   * @param nodes [in] nodes associated to the element
+   * @param perm [out] j = perm[i]: i-th node externally is j-th node internally
+   * @param iperm [out] i = iperm[j]: j-th node internally is i-th node
+   * extrnally
+   */
+  void construct_permutation(const int* nodes, std::vector<int>& perm,
+                             std::vector<int>& iperm) const {
+    perm.resize(nnodes);
+    iperm.resize(nnodes);
+    std::iota(perm.begin(), perm.end(),
+              0);  // set values0 , 1, 2, ...
+    std::sort(perm.begin(), perm.end(), [this, &nodes](int p1, int p2) {
+      return this->mesh.get_node_vert(nodes[p1]) <
+             this->mesh.get_node_vert(nodes[p2]);
+    });
+
+    // iperm is the inverted permutation that maps back from internal ordering
+    // to external ordering of nodes
+    for (int i = 0; i < nnodes; i++) {
+      iperm[perm[i]] = i;
+    }
+  }
+
+  const Mesh& mesh;
+
   int nnodes;
   std::vector<T> Ck;
   std::vector<std::pair<int, int>> pterms;
   T xi_min[spatial_dim], xi_h[spatial_dim];
 
-  std::vector<int>
-      perm;  // j = perm[i]: i-th node externally is j-th node internally
-  std::vector<int>
-      iperm;  // i = iperm[j]: j-th node internally is i-th node extrnally
+  bool reorder_nodes = false;
 };
 
 template <typename T, int Np_1d>
@@ -500,7 +535,7 @@ class GDLSFQuadrature2D final : public QuadratureBase<T, quad_type> {
         [&](const algoim::uvector<T2, spatial_dim>& xi) {  // xi in [0, 1]
           T2 N[max_nnodes_per_element];
           // xi in [xi_min, xi_max]
-          eval(xi.data(), N, (T2*)nullptr);
+          eval(-1, xi.data(), N, (T2*)nullptr);
           T2 val;
           interp_val_grad<T2, Basis>(element_dof, N, nullptr, &val, nullptr);
           return val;
@@ -614,7 +649,7 @@ class GDBasis2D final : public BasisBase<T, Mesh_> {
   GDBasis2D(Mesh& mesh)
       : mesh(mesh),
         regular_eval(std::make_shared<VandermondeEvaluator<T, Mesh>>(
-            mesh, *(mesh.get_regular_stencil_elems().begin()))) {}
+            mesh, *(mesh.get_regular_stencil_elems().begin()), true)) {}
 
   /**
    * @brief Given all quadrature points, evaluate the shape function values,
@@ -635,16 +670,18 @@ class GDBasis2D final : public BasisBase<T, Mesh_> {
 
     std::shared_ptr<VandermondeEvaluator<T, Mesh>> eval;
     if (mesh.is_regular_stencil_elem(elem)) {
-      eval = std::make_shared<VandermondeEvaluator<T, Mesh>>(mesh, elem);
+      eval = regular_eval;
+      VandermondeCondLogger::add(
+          elem, VandermondeCondLogger::get(
+                    *(mesh.get_regular_stencil_elems().begin())));
     } else {
       eval = std::make_shared<VandermondeEvaluator<T, Mesh>>(mesh, elem);
-      // eval = regular_eval;
     }
 
     for (int q = 0; q < num_quad_pts; q++) {
       int offset_n = q * max_nnodes_per_element;
       int offset_nxi = q * max_nnodes_per_element * spatial_dim;
-      (*eval)(&pts[spatial_dim * q], N.data() + offset_n,
+      (*eval)(elem, &pts[spatial_dim * q], N.data() + offset_n,
               Nxi.data() + offset_nxi);
     }
   }
@@ -658,17 +695,19 @@ class GDBasis2D final : public BasisBase<T, Mesh_> {
 
     std::shared_ptr<VandermondeEvaluator<T, Mesh>> eval;
     if (mesh.is_regular_stencil_elem(elem)) {
-      eval = std::make_shared<VandermondeEvaluator<T, Mesh>>(mesh, elem);
+      eval = regular_eval;
+      VandermondeCondLogger::add(
+          elem, VandermondeCondLogger::get(
+                    *(mesh.get_regular_stencil_elems().begin())));
     } else {
       eval = std::make_shared<VandermondeEvaluator<T, Mesh>>(mesh, elem);
-      // eval = regular_eval;
     }
 
     for (int q = 0; q < num_quad_pts; q++) {
       int offset_n = q * max_nnodes_per_element;
       int offset_nxi = q * max_nnodes_per_element * spatial_dim;
       int offset_nxixi = q * max_nnodes_per_element * spatial_dim * spatial_dim;
-      (*eval)(&pts[spatial_dim * q], N.data() + offset_n,
+      (*eval)(elem, &pts[spatial_dim * q], N.data() + offset_n,
               Nxi.data() + offset_nxi, Nxixi.data() + offset_nxixi);
     }
   }

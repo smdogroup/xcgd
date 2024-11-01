@@ -57,8 +57,8 @@ class Circle {
   double sign = 1.0;
 };
 
+template <int Np_1d>
 void generate_lsf_mesh(bool flip = false) {
-  constexpr int Np_1d = 4;
   using T = double;
   using Grid = StructuredGrid2D<T>;
   using Mesh = CutMesh<T, Np_1d>;
@@ -77,7 +77,7 @@ void generate_lsf_mesh(bool flip = false) {
   Mesh mesh(grid, lsf);
 
   char vtkname[256];
-  std::snprintf(vtkname, 256, "mesh_gd%s.vtk", flip ? "_flip" : "");
+  std::snprintf(vtkname, 256, "mesh_gd%s_Np%d.vtk", flip ? "_flip" : "", Np_1d);
   ToVTK<T, Mesh> vtk(mesh, vtkname);
   vtk.write_mesh();
   vtk.write_sol("lsf", mesh.get_lsf_nodes().data());
@@ -164,5 +164,5 @@ void generate_lsf_mesh(bool flip = false) {
   }
 }
 
-TEST(mesh, LSFPositive) { generate_lsf_mesh(true); }
-TEST(mesh, LSFNegative) { generate_lsf_mesh(false); }
+TEST(mesh, LSFPositiveNp4) { generate_lsf_mesh<4>(true); }
+TEST(mesh, LSFNegativeNp4) { generate_lsf_mesh<4>(false); }
