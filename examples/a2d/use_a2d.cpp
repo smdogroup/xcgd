@@ -231,13 +231,13 @@ int main(int argc, char* argv[]) {
   };
 
   A2D::Vec<double, spatial_dim> xloc;
-  xloc(0) = 0.1;
-  xloc(1) = 0.3;
+  xloc(0) = 0.14;
+  xloc(1) = 0.32;
   auto intf = elasticity_int_fun(xloc);
   auto intf_cs = compute_intf_cs<double>(E, nu, xloc);
 
   for (int i = 0; i < spatial_dim; i++) {
-    std::printf("intf(%d): exact: %20.10f, cs: %20.10f\n", i, intf(i),
-                intf_cs(i));
+    std::printf("[i=%d]σij,j: %20.10e, fi: %20.10e, σij,j + fi: %20.10e\n", i,
+                -intf_cs(i), intf(i), intf(i) - intf_cs(i));
   }
 }
