@@ -60,6 +60,7 @@ class StaticElastic final {
   }
 
   std::vector<T> solve(const std::vector<int>& bc_dof,
+                       const std::vector<T>& bc_vals,
                        const std::vector<int>& load_dof,
                        const std::vector<T>& load_vals) {
     int ndof = Physics::dof_per_node * mesh.get_num_nodes();
@@ -69,19 +70,32 @@ class StaticElastic final {
     CSCMat* jac_csc = SparseUtils::bsr_to_csc(jac_bsr);
     jac_csc->zero_columns(bc_dof.size(), bc_dof.data());
 
-    // Set right hand side
-    std::vector<T> rhs(ndof, 0.0), t1(ndof, 0.0);
+    // Set right hand side (Dirichlet bcs and load)
+    std::vector<T> rhs(ndof, 0.0), t1(ndof, 0.0), t2(ndof, 0.0);
 
     analysis.residual(nullptr, t1.data(), rhs.data());
     for (int i = 0; i < rhs.size(); i++) {
       rhs[i] *= -1.0;
     }
+    for (int i = 0; i < bc_dof.size(); i++) {
+      rhs[bc_dof[i]] = bc_vals[i];
+    }
+
+    for (int i = 0; i < bc_dof.size(); i++) {
+      t1[bc_dof[i]] = bc_vals[i];
+    }
+
+    jac_bsr->axpy(t1.data(), t2.data());
+    for (int i = 0; i < bc_dof.size(); i++) {
+      t2[bc_dof[i]] = 0.0;
+    }
+
+    for (int i = 0; i < rhs.size(); i++) {
+      t2[i] = rhs[i] - t2[i];
+    }
 
     for (int i = 0; i < load_dof.size(); i++) {
       rhs[load_dof[i]] = load_vals[i];
-    }
-    for (int i : bc_dof) {
-      rhs[i] = 0.0;
     }
 
     // Factorize Jacobian matrix
@@ -89,7 +103,7 @@ class StaticElastic final {
     SparseUtils::SparseCholesky<T>* chol =
         new SparseUtils::SparseCholesky<T>(jac_csc);
     chol->factor();
-    std::vector<T> sol = rhs;
+    std::vector<T> sol = t2;
     chol->solve(sol.data());
 
 #ifdef XCGD_DEBUG_MODE
