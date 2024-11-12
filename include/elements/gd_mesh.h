@@ -268,6 +268,28 @@ class GridMesh : public GDMeshBase<T, Np_1d> {
     return nodes;
   }
 
+  std::vector<int> get_upper_boundary_nodes() const {
+    std::vector<int> nodes;
+    const int* nxy = this->grid.get_nxy();
+    for (int i = 0; i < nxy[0] + 1; i++) {
+      int coords[2] = {i, nxy[1]};
+      int node = this->grid.get_coords_vert(coords);
+      nodes.push_back(node);
+    }
+    return nodes;
+  }
+
+  std::vector<int> get_lower_boundary_nodes() const {
+    std::vector<int> nodes;
+    const int* nxy = this->grid.get_nxy();
+    for (int i = 0; i < nxy[0] + 1; i++) {
+      int coords[2] = {i, 0};
+      int node = this->grid.get_coords_vert(coords);
+      nodes.push_back(node);
+    }
+    return nodes;
+  }
+
   inline bool is_regular_stencil_elem(int elem) const {
     return static_cast<bool>(regular_stencil_elems.count(elem));
   }

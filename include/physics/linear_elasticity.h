@@ -9,6 +9,8 @@ class LinearElasticity final
     : public PhysicsBase<T, spatial_dim, 1, spatial_dim> {
  private:
   using PhysicsBase = PhysicsBase<T, spatial_dim, 1, spatial_dim>;
+  static_assert(spatial_dim == 3 or spatial_dim == 2,
+                "LinearElasticity is only implemented for 2D and 3D problems");
 
  public:
   using PhysicsBase::data_per_node;
@@ -17,17 +19,18 @@ class LinearElasticity final
 
   LinearElasticity(T E, T nu, const IntFunc& int_func)
       : mu(0.5 * E / (1.0 + nu)),
-        lambda(E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu))),
+        lambda(spatial_dim == 3 ? E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu))
+                                : E * nu / ((1.0 + nu) * (1.0 - nu))),
         int_func(int_func) {}
 
-  T energy(T weight, T _, A2D::Vec<T, spatial_dim>& __,
-           A2D::Vec<T, spatial_dim>& xloc,
+  T energy(T weight, T _, A2D::Vec<T, spatial_dim>& xloc,
+           A2D::Vec<T, spatial_dim>& ___,
            A2D::Mat<T, spatial_dim, spatial_dim>& J,
            A2D::Vec<T, dof_per_node>& u,
            A2D::Mat<T, dof_per_node, spatial_dim>& grad) const {
     T detJ, energy, potential;
     A2D::SymMat<T, spatial_dim> E, S;
-    A2D::Vec<T, dof_per_node> g = int_func(xloc);
+    A2D::Vec<T, dof_per_node> g(int_func(xloc));
 
     A2D::MatDet(J, detJ);
     A2D::MatGreenStrain<A2D::GreenStrainType::LINEAR>(grad, E);
@@ -38,14 +41,14 @@ class LinearElasticity final
     return output;
   }
 
-  void residual(T weight, T _, A2D::Vec<T, spatial_dim>& __,
-                A2D::Vec<T, spatial_dim>& xloc,
+  void residual(T weight, T _, A2D::Vec<T, spatial_dim>& xloc,
+                A2D::Vec<T, spatial_dim>& __,
                 A2D::Mat<T, spatial_dim, spatial_dim>& J,
                 A2D::Vec<T, dof_per_node>& u,
                 A2D::Mat<T, dof_per_node, spatial_dim>& grad,
                 A2D::Vec<T, dof_per_node>& coef_u,
                 A2D::Mat<T, dof_per_node, spatial_dim>& coef_grad) const {
-    A2D::Vec<T, dof_per_node> g = int_func(xloc);
+    A2D::Vec<T, dof_per_node> g(int_func(xloc));
     A2D::ADObj<T> detJ_obj, energy_obj, potential_obj, output_obj;
     A2D::ADObj<A2D::Vec<T, dof_per_node>&> u_obj(u, coef_u);
     A2D::ADObj<A2D::SymMat<T, spatial_dim>> E_obj, S_obj;

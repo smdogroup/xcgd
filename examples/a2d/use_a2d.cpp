@@ -4,6 +4,7 @@
 
 #include "ad/a2dgreenstrain.h"
 #include "ad/a2disotropic.h"
+#include "ad/a2dvec.h"
 
 #define PI 3.14159265358979323846
 
@@ -12,7 +13,7 @@ T stress_component(T E, T nu, A2D::Mat<T, dof_per_node, spatial_dim>& grad,
                    int I, int J) {
   static_assert(dof_per_node == spatial_dim);
   T mu = 0.5 * E / (1.0 + nu);
-  T lambda = E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu));
+  T lambda = E * nu / ((1.0 + nu) * (1.0 - nu));
 
   A2D::SymMat<T, spatial_dim> strain, stress;
   A2D::Vec<T, spatial_dim> t;
@@ -28,7 +29,7 @@ A2D::Mat<double, dof_per_node, spatial_dim> stress_component_grad(
     double E, double nu, A2D::Mat<double, dof_per_node, spatial_dim>& grad,
     int I, int J) {
   double mu = 0.5 * E / (1.0 + nu);
-  double lambda = E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu));
+  double lambda = E * nu / ((1.0 + nu) * (1.0 - nu));
 
   A2D::ADObj<double> output;
   A2D::ADObj<A2D::Vec<double, spatial_dim>> t_obj;
@@ -81,7 +82,7 @@ A2D::SymMat<T, spatial_dim> compute_stress(T E, T nu,
 
   T k = 1.9 * PI;
   T mu = 0.5 * E / (1.0 + nu);
-  T lambda = E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu));
+  T lambda = E * nu / ((1.0 + nu) * (1.0 - nu));
 
   u(0) = sin(k * xloc(0)) * sin(k * xloc(1));
   u(1) = cos(k * xloc(0)) * cos(k * xloc(1));
@@ -132,7 +133,7 @@ A2D::Vec<T, spatial_dim> compute_intf_cs(T E, T nu,
   return intf;
 }
 
-int test_stress_ad(int argc, char* argv[]) {
+void test_stress_ad(int argc, char* argv[]) {
   double E = 100.0, nu = 0.3;
   constexpr int dof_per_node = 2;
   constexpr int spatial_dim = 2;
@@ -153,12 +154,9 @@ int test_stress_ad(int argc, char* argv[]) {
                   outgrad_exact(i, j), outgrad_cs(i, j));
     }
   }
-  return 0;
 }
 
-int main(int argc, char* argv[]) {
-  // test_stress_ad(argc, argv);
-
+void test_elasticity_consistency_check() {
   double E = 100.0, nu = 0.3;
 
   constexpr int dof_per_node = 2;
@@ -167,7 +165,7 @@ int main(int argc, char* argv[]) {
 
   auto elasticity_int_fun = [E, nu](const A2D::Vec<T, spatial_dim>& xloc) {
     T mu = 0.5 * E / (1.0 + nu);
-    T lambda = E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu));
+    T lambda = E * nu / ((1.0 + nu) * (1.0 - nu));
 
     double k = 1.9 * PI;
     double k2 = k * k;
@@ -240,4 +238,28 @@ int main(int argc, char* argv[]) {
     std::printf("[i=%d]σij,j: %20.10e, fi: %20.10e, σij,j + fi: %20.10e\n", i,
                 -intf_cs(i), intf(i), intf(i) - intf_cs(i));
   }
+}
+
+void test_a2d_vec() {
+  using T = double;
+  constexpr int N = 3;
+  auto lam = []() {
+    A2D::Vec<T, N> ret;
+    ret(0) = 4.2;
+    return ret;
+  };
+
+  A2D::Vec<T, N> v1 = lam();
+  A2D::Vec<T, N> v2(lam());
+
+  std::cout << v1(0) << "\n";
+  std::cout << v2(0) << "\n";
+}
+
+int main(int argc, char* argv[]) {
+  // test_stress_ad(argc, argv);
+  // test_elasticity_consistency_check();
+  test_a2d_vec();
+
+  return 0;
 }

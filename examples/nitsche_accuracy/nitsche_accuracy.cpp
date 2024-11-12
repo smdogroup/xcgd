@@ -181,7 +181,7 @@ void write_field_vtk(std::string field_vtkpath, PhysicsType physics_type,
 // σij,j + fi = 0
 template <typename T, class Basis, class BcFun, class IntFun>
 void test_consistency_elasticity(T E, T nu, const BcFun& bc_fun,
-                                 const IntFun& int_fun) {
+                                 const IntFun& int_fun, double rel_tol = 1e-5) {
   A2D::Vec<double, Basis::spatial_dim> xloc;
   xloc(0) = 0.14;
   xloc(1) = 0.32;
@@ -193,7 +193,7 @@ void test_consistency_elasticity(T E, T nu, const BcFun& bc_fun,
   auto stress_fun = [E, nu,
                      bc_fun](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
     T mu = 0.5 * E / (1.0 + nu);
-    T lambda = E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu));
+    T lambda = E * nu / ((1.0 + nu) * (1.0 - nu));
 
     A2D::Vec<T, Basis::spatial_dim> u = bc_fun(xloc);
     A2D::SymMat<T, Basis::spatial_dim> strain, stress;
@@ -246,8 +246,17 @@ void test_consistency_elasticity(T E, T nu, const BcFun& bc_fun,
                 stress_grad(i), intf(i), stress_grad(i) + intf(i));
   }
 
+  T rel_err = abs(err_2norm / int_2norm);
   std::printf("residual: %20.10e, normalized residual: %20.10e\n", err_2norm,
-              err_2norm / int_2norm);
+              rel_err);
+  if (rel_err > rel_tol) {
+    char msg[256];
+    std::snprintf(msg, 256,
+                  "Consistency check failed, normalized residual too large "
+                  "(%.10e > %.10e)",
+                  rel_err, rel_tol);
+    throw std::runtime_error(msg);
+  }
 }
 
 enum class ProbInstance { Circle, Wedge, Image };
@@ -257,7 +266,8 @@ enum class ProbInstance { Circle, Wedge, Image };
 template <int Np_1d, PhysicsType physics_type>
 void execute_accuracy_study(std::string prefix, ProbInstance instance,
                             std::string image_json, int nxy_val,
-                            bool save_stencils, double nitsche_eta) {
+                            bool save_stencils, double nitsche_eta,
+                            bool consistency_check) {
   using T = double;
   using Grid = StructuredGrid2D<T>;
   using QuadratureBulk = GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER>;
@@ -290,15 +300,9 @@ void execute_accuracy_study(std::string prefix, ProbInstance instance,
         double k = 1.9 * PI;
         u(0) = sin(k * xloc(0)) * sin(k * xloc(1));
         u(1) = cos(k * xloc(0)) * cos(k * xloc(1));
+
         return u;
       };
-  // auto elasticity_bc_fun =
-  //     []<typename T2>(const A2D::Vec<T2, Basis::spatial_dim>& xloc) {
-  //       A2D::Vec<T2, Basis::spatial_dim> u;
-  //       u(0) = 0.0;
-  //       u(1) = xloc(1) * xloc(1);
-  //       return u;
-  //     };
 
   T E = 100.0, nu = 0.3;
   auto elasticity_int_fun =
@@ -307,7 +311,7 @@ void execute_accuracy_study(std::string prefix, ProbInstance instance,
         constexpr int dof_per_node = Basis::spatial_dim;
 
         T2 mu = 0.5 * E / (1.0 + nu);
-        T2 lambda = E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu));
+        T2 lambda = E * nu / ((1.0 + nu) * (1.0 - nu));
 
         double k = 1.9 * PI;
         double k2 = k * k;
@@ -369,73 +373,8 @@ void execute_accuracy_study(std::string prefix, ProbInstance instance,
         intf(1) = -(Spartials(1, 0) + Spartials(1, 1));
         return intf;
       };
-  // auto elasticity_int_fun =
-  //     [E, nu]<typename T2>(const A2D::Vec<T2, Basis::spatial_dim>& xloc) {
-  //       constexpr int spatial_dim = Basis::spatial_dim;
-  //       constexpr int dof_per_node = Basis::spatial_dim;
-  //
-  //       T2 mu = 0.5 * E / (1.0 + nu);
-  //       T2 lambda = E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu));
-  //
-  //       A2D::Mat<T2, dof_per_node, spatial_dim> grad;
-  //       T2 ux = 0.0;
-  //       T2 uy = 0.0;
-  //       T2 vx = 0.0;
-  //       T2 vy = 2.0 * xloc(1);
-  //
-  //       grad(0, 0) = ux;
-  //       grad(0, 1) = uy;
-  //       grad(1, 0) = vx;
-  //       grad(1, 1) = vy;
-  //
-  //       T2 uxx = 0.0;
-  //       T2 uxy = 0.0;
-  //       T2 uyx = 0.0;
-  //       T2 uyy = 0.0;
-  //       T2 vxx = 0.0;
-  //       T2 vxy = 0.0;
-  //       T2 vyx = 0.0;
-  //       T2 vyy = 2.0;
-  //
-  //       A2D::ADObj<A2D::Mat<T2, dof_per_node, spatial_dim>> grad_obj(grad);
-  //       A2D::ADObj<A2D::SymMat<T2, spatial_dim>> E_obj, S_obj;
-  //
-  //       auto stack = A2D::MakeStack(
-  //           A2D::MatGreenStrain<A2D::GreenStrainType::LINEAR>(grad_obj,
-  //           E_obj), A2D::SymIsotropic(mu, lambda, E_obj, S_obj));
-  //
-  //       // Spartials(i, j) = ∂S(i, j)/∂x(j)
-  //       A2D::Mat<T2, dof_per_node, spatial_dim> Spartials;
-  //
-  //       for (int i = 0; i < spatial_dim; i++) {
-  //         for (int j = 0; j < spatial_dim; j++) {
-  //           grad_obj.bvalue().zero();
-  //           E_obj.bvalue().zero();
-  //           S_obj.bvalue().zero();
-  //           S_obj.bvalue()(i, j) = 1.0;
-  //
-  //           stack.reverse();
-  //
-  //           // ∂S(i, j)/∂x(j) = ∂S(i, j)/∂grad * ∂grad/∂x(j)
-  //           auto& bgrad = grad_obj.bvalue();
-  //
-  //           if (j == 0) {
-  //             Spartials(i, j) = bgrad(0, 0) * uxx + bgrad(0, 1) * uyx +
-  //                               bgrad(1, 0) * vxx + bgrad(1, 1) * vyx;
-  //           } else {
-  //             Spartials(i, j) = bgrad(0, 0) * uxy + bgrad(0, 1) * uyy +
-  //                               bgrad(1, 0) * vxy + bgrad(1, 1) * vyy;
-  //           }
-  //         }
-  //       }
-  //
-  //       A2D::Vec<T2, dof_per_node> intf;
-  //       intf(0) = -(Spartials(0, 0) + Spartials(0, 1));
-  //       intf(1) = -(Spartials(1, 0) + Spartials(1, 1));
-  //       return intf;
-  //     };
 
-  if (physics_type == PhysicsType::LinearElasticity) {
+  if (consistency_check and physics_type == PhysicsType::LinearElasticity) {
     test_consistency_elasticity<T, Basis>(E, nu, elasticity_bc_fun,
                                           elasticity_int_fun);
   }
@@ -665,6 +604,7 @@ int main(int argc, char* argv[]) {
 
   ArgParser p;
   p.add_argument<int>("--save-degenerate-stencils", 0);
+  p.add_argument<int>("--consistency-check", 1);
   p.add_argument<int>("--Np_1d", 2);
   p.add_argument<int>("--nxy", 64);
   p.add_argument<double>("--nitsche_eta", 1e6);
@@ -676,6 +616,7 @@ int main(int argc, char* argv[]) {
   p.add_argument<std::string>("--image_json", "image.json");
   p.parse_args(argc, argv);
 
+  bool consistency_check = p.get<int>("consistency-check");
   bool save_stencils = p.get<int>("save-degenerate-stencils");
 
   std::string prefix = p.get<std::string>("prefix");
@@ -706,23 +647,28 @@ int main(int argc, char* argv[]) {
     switch (Np_1d) {
       case 2:
         execute_accuracy_study<2, PhysicsType::Poisson>(
-            prefix, instance, image_json, nxy_val, save_stencils, nitsche_eta);
+            prefix, instance, image_json, nxy_val, save_stencils, nitsche_eta,
+            consistency_check);
         break;
       case 4:
         execute_accuracy_study<4, PhysicsType::Poisson>(
-            prefix, instance, image_json, nxy_val, save_stencils, nitsche_eta);
+            prefix, instance, image_json, nxy_val, save_stencils, nitsche_eta,
+            consistency_check);
         break;
       case 6:
         execute_accuracy_study<6, PhysicsType::Poisson>(
-            prefix, instance, image_json, nxy_val, save_stencils, nitsche_eta);
+            prefix, instance, image_json, nxy_val, save_stencils, nitsche_eta,
+            consistency_check);
         break;
       case 8:
         execute_accuracy_study<8, PhysicsType::Poisson>(
-            prefix, instance, image_json, nxy_val, save_stencils, nitsche_eta);
+            prefix, instance, image_json, nxy_val, save_stencils, nitsche_eta,
+            consistency_check);
         break;
       case 10:
         execute_accuracy_study<10, PhysicsType::Poisson>(
-            prefix, instance, image_json, nxy_val, save_stencils, nitsche_eta);
+            prefix, instance, image_json, nxy_val, save_stencils, nitsche_eta,
+            consistency_check);
         break;
       default:
         printf("Unsupported Np_1d (%d), exiting...\n", Np_1d);
@@ -733,32 +679,33 @@ int main(int argc, char* argv[]) {
     switch (Np_1d) {
       case 2:
         execute_accuracy_study<2, PhysicsType::LinearElasticity>(
-            prefix, instance, image_json, nxy_val, save_stencils, nitsche_eta);
+            prefix, instance, image_json, nxy_val, save_stencils, nitsche_eta,
+            consistency_check);
         break;
-        // case 4:
-        //   execute_accuracy_study<4, PhysicsType::LinearElasticity>(
-        //       prefix, instance, image_json, nxy_val, save_stencils,
-        //       nitsche_eta);
-        //   break;
-        // case 6:
-        //   execute_accuracy_study<6, PhysicsType::LinearElasticity>(
-        //       prefix, instance, image_json, nxy_val, save_stencils,
-        //       nitsche_eta);
-        //   break;
-        // case 8:
-        //   execute_accuracy_study<8, PhysicsType::LinearElasticity>(
-        //       prefix, instance, image_json, nxy_val, save_stencils,
-        //       nitsche_eta);
-        //   break;
-        // case 10:
-        //   execute_accuracy_study<10, PhysicsType::LinearElasticity>(
-        //       prefix, instance, image_json, nxy_val, save_stencils,
-        //       nitsche_eta);
-        //   break;
-        // default:
-        //   printf("Unsupported Np_1d (%d), exiting...\n", Np_1d);
-        //   exit(-1);
-        //   break;
+      case 4:
+        execute_accuracy_study<4, PhysicsType::LinearElasticity>(
+            prefix, instance, image_json, nxy_val, save_stencils, nitsche_eta,
+            consistency_check);
+        break;
+      case 6:
+        execute_accuracy_study<6, PhysicsType::LinearElasticity>(
+            prefix, instance, image_json, nxy_val, save_stencils, nitsche_eta,
+            consistency_check);
+        break;
+      case 8:
+        execute_accuracy_study<8, PhysicsType::LinearElasticity>(
+            prefix, instance, image_json, nxy_val, save_stencils, nitsche_eta,
+            consistency_check);
+        break;
+      case 10:
+        execute_accuracy_study<10, PhysicsType::LinearElasticity>(
+            prefix, instance, image_json, nxy_val, save_stencils, nitsche_eta,
+            consistency_check);
+        break;
+      default:
+        printf("Unsupported Np_1d (%d), exiting...\n", Np_1d);
+        exit(-1);
+        break;
     }
   }
 
