@@ -4,6 +4,7 @@
 #include <complex>
 #include <cstdio>
 #include <ctime>
+#include <numeric>
 #include <string>
 
 inline double freal(double a) { return a; }
@@ -12,6 +13,20 @@ inline double freal(std::complex<double> a) { return a.real(); }
 // inline double fabs(double a) { return a >= 0 ? a : -a; }
 inline double fabs(std::complex<double> a) {
   return a.real() >= 0 ? a.real() : -a.real();
+}
+
+template <typename T>
+double hard_max(std::vector<T> vals) {
+  return *std::max_element(vals.begin(), vals.end());
+}
+
+template <typename T>
+double ks_max(std::vector<T> vals, double ksrho = 50.0) {
+  double umax = hard_max(vals);
+  std::vector<T> eta(vals.size());
+  std::transform(vals.begin(), vals.end(), eta.begin(),
+                 [umax, ksrho](T x) { return exp(ksrho * (x - umax)); });
+  return log(std::accumulate(eta.begin(), eta.end(), 0.0)) / ksrho + umax;
 }
 
 /**

@@ -34,14 +34,14 @@ class StructuredGrid2D;
 /**
  * @brief The abstract base class for a 2D Galerkin difference mesh
  */
-template <typename T, int Np_1d_>
+template <typename T, int Np_1d_, class Grid_ = StructuredGrid2D<T>>
 class GDMeshBase : public MeshBase<T, 2, Np_1d_ * Np_1d_, 4> {
  private:
   using MeshBase_ = MeshBase<T, 2, Np_1d_ * Np_1d_, 4>;
   static_assert(Np_1d_ % 2 == 0);
 
  public:
-  using Grid = StructuredGrid2D<T>;
+  using Grid = Grid_;
   using MeshBase_::corner_nodes_per_element;
   using MeshBase_::max_nnodes_per_element;
   using MeshBase_::spatial_dim;
@@ -49,7 +49,9 @@ class GDMeshBase : public MeshBase<T, 2, Np_1d_ * Np_1d_, 4> {
   static constexpr bool is_cut_mesh = false;
   static constexpr int Np_1d = Np_1d_;
 
-  GDMeshBase(const Grid& grid) : grid(grid) { check_grid_compatibility(grid); }
+  GDMeshBase(const Grid& grid) : grid(grid) {
+    grid.template check_grid_compatibility<Np_1d>();
+  }
 
   inline const Grid& get_grid() const { return grid; }
 
@@ -85,55 +87,61 @@ class GDMeshBase : public MeshBase<T, 2, Np_1d_ * Np_1d_, 4> {
     }
   }
 
- protected:
-  void check_grid_compatibility(const Grid& grid) const {
-    const int* nxy = grid.get_nxy();
-    for (int d = 0; d < spatial_dim; d++) {
-      if (nxy[d] < Np_1d - 1) {
-        char msg[256];
-        std::snprintf(
-            msg, 256,
-            "too few elements (%d) for Np_1d (%d) along %d-th dimension",
-            nxy[d], Np_1d, d);
-        throw std::runtime_error(msg);
+  std::vector<int> get_left_boundary_nodes(double tol = 1e-10) const {
+    const T* xy0 = this->grid.get_xy0();
+    std::vector<int> nodes;
+    for (int i = 0; i < this->get_num_nodes(); i++) {
+      T xloc[spatial_dim];
+      this->get_node_xloc(i, xloc);
+      if (xloc[0] - xy0[0] < tol) {
+        nodes.push_back(i);
       }
     }
+    return nodes;
   }
 
-  /**
-   * @brief For a GD element, get the stencil associated to the ground grid,
-   * regardless the optional boundary defined by the level set function
-   *
-   * @param cell [in] cell index
-   * @param verts [out] stencil vertices
-   * @return bool whether the stensil is regular (i.e. not a boundary stencil)
-   */
-  bool get_cell_ground_stencil(int cell, int* verts) const {
-    bool is_stencil_regular = true;
-    constexpr int q = Np_1d / 2;
-    int eij[spatial_dim];
-    grid.get_cell_coords(cell, eij);
-    const int* nxy = grid.get_nxy();
-    for (int d = 0; d < spatial_dim; d++) {
-      if (eij[d] < q - 1) {
-        is_stencil_regular = false;
-        eij[d] = q - 1;
-      } else if (eij[d] > nxy[d] - q) {
-        eij[d] = nxy[d] - q;
-        is_stencil_regular = false;
+  std::vector<int> get_lower_boundary_nodes(double tol = 1e-10) const {
+    const T* xy0 = this->grid.get_xy0();
+    std::vector<int> nodes;
+    for (int i = 0; i < this->get_num_nodes(); i++) {
+      T xloc[spatial_dim];
+      this->get_node_xloc(i, xloc);
+      if (xloc[1] - xy0[1] < tol) {
+        nodes.push_back(i);
       }
     }
+    return nodes;
+  }
 
-    int index = 0;
-    for (int j = 0; j < Np_1d; j++) {
-      for (int i = 0; i < Np_1d; i++, index++) {
-        verts[index] =
-            grid.get_coords_vert(eij[0] - q + 1 + i, eij[1] - q + 1 + j);
+  std::vector<int> get_right_boundary_nodes(double tol = 1e-10) const {
+    const T* xy0 = this->grid.get_xy0();
+    const T* lxy = this->grid.get_lxy();
+    std::vector<int> nodes;
+    for (int i = 0; i < this->get_num_nodes(); i++) {
+      T xloc[spatial_dim];
+      this->get_node_xloc(i, xloc);
+      if (xy0[0] + lxy[0] - xloc[0] < tol) {
+        nodes.push_back(i);
       }
     }
-    return is_stencil_regular;
-  };
+    return nodes;
+  }
 
+  std::vector<int> get_upper_boundary_nodes(double tol = 1e-10) const {
+    const T* xy0 = this->grid.get_xy0();
+    const T* lxy = this->grid.get_lxy();
+    std::vector<int> nodes;
+    for (int i = 0; i < this->get_num_nodes(); i++) {
+      T xloc[spatial_dim];
+      this->get_node_xloc(i, xloc);
+      if (xy0[1] + lxy[1] - xloc[1] < tol) {
+        nodes.push_back(i);
+      }
+    }
+    return nodes;
+  }
+
+ protected:
   const Grid& grid;
 };
 

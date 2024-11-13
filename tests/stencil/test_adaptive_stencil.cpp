@@ -73,7 +73,8 @@ void solve_wedge_problem() {
   load_dof.push_back(2 * vert_nodes.at(grid.get_coords_vert(nx - 1, 0)) + 1);
   std::vector<T> load_vals = {0.0, -1.0};
 
-  std::vector<T> sol = elastic.solve(bc_dof, load_dof, load_vals);
+  std::vector<T> sol = elastic.solve(
+      bc_dof, std::vector<T>(bc_dof.size(), T(0.0)), load_dof, load_vals);
 
   char vtkname[256];
   std::snprintf(vtkname, 256, "wedge_mesh_Np_1d_%d.vtk", Np_1d);

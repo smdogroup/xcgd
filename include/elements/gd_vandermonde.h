@@ -511,6 +511,7 @@ class GDLSFQuadrature2D final : public QuadratureBase<T, quad_type> {
             "number of quadrature points for ∂pt/∂φ_%d is inconsistent. Got "
             "%ld, expect %d.",
             i, dwts.size(), num_quad_pts);
+        throw std::runtime_error(msg);
       }
 
       for (int q = 0; q < num_quad_pts; q++) {
