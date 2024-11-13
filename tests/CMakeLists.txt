@@ -6,6 +6,11 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(googletest)
 
+if (XCGD_USE_OPENMP)
+  link_libraries(OpenMP::OpenMP_CXX)
+  add_subdirectory(openmp)
+endif()
+
 add_subdirectory(physics)
 add_subdirectory(linalg)
 add_subdirectory(elements)

@@ -371,7 +371,14 @@ class GalerkinAnalysis final {
     T xq = 0.0;
     std::vector<T> element_x(max_nnodes_per_element);
 
+    std::vector<T> element_jac(
+        mesh.get_num_elements() * max_dof_per_element * max_dof_per_element,
+        T(0.0));
+
+#pragma omp parallel for
     for (int i = 0; i < mesh.get_num_elements(); i++) {
+      int element_jac_offset = i * max_dof_per_element * max_dof_per_element;
+
       // Get the element node locations
       T element_xloc[spatial_dim * max_nnodes_per_element];
       get_element_xloc<T, Mesh, Basis>(mesh, i, element_xloc);
@@ -384,12 +391,6 @@ class GalerkinAnalysis final {
       // Get the element degrees of freedom
       T element_dof[max_dof_per_element];
       get_element_vars<T, dof_per_node, Mesh, Basis>(mesh, i, dof, element_dof);
-
-      // Create the element Jacobian
-      T element_jac[max_dof_per_element * max_dof_per_element];
-      for (int j = 0; j < max_dof_per_element * max_dof_per_element; j++) {
-        element_jac[j] = 0.0;
-      }
 
       std::vector<T> pts, wts, ns;
       int num_quad_pts = quadrature.get_quadrature_pts(i, pts, wts, ns);
@@ -441,10 +442,14 @@ class GalerkinAnalysis final {
 
         // Add the contributions to the element Jacobian
         add_matrix<T, Basis>(&N[offset_n], &Nxi[offset_nxi], jac_vals,
-                             jac_mixed_ref, jac_grad_ref, element_jac);
+                             jac_mixed_ref, jac_grad_ref,
+                             element_jac.data() + element_jac_offset);
       }
+    }
 
-      mat->add_block_values(i, mesh, element_jac);
+    for (int i = 0; i < mesh.get_num_elements(); i++) {
+      int element_jac_offset = i * max_dof_per_element * max_dof_per_element;
+      mat->add_block_values(i, mesh, element_jac.data() + element_jac_offset);
     }
   }
 

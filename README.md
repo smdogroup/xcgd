@@ -42,5 +42,6 @@ cd build && ctest . -j <num_procs>
 |XCGD_PAROPT_DIR|path to a ParOpt installation|```${HOME}/git/paropt```|a path|
 |XCGD_BUILD_TESTS|build unit tests or not|```ON```|```ON```, ```OFF```|
 |XCGD_BUILD_EXAMPLES|build examples or not|```ON```|```ON```, ```OFF```|
+|XCGD_USE_OPENMP|use openmp or not|```ON```|```ON```, ```OFF```|
 |CMAKE_BUILD_TYPE|build type|N/A|```Release```, ```Debug```|
 |XCGD_INSTALL_DIR|destination of the installation|${HOME}/installs/xcgd|a path|

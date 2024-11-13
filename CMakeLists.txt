@@ -20,6 +20,7 @@ set(XCGD_PAROPT_DIR $ENV{HOME}/git/paropt)
 
 option(XCGD_BUILD_TESTS "Build unit tests or not" ON)
 option(XCGD_BUILD_EXAMPLES "Build examples or not" ON)
+option(XCGD_USE_OPENMP "use openmp or not" ON)
 
 # If in debug mode, set the preprocessor definition
 if(CMAKE_BUILD_TYPE MATCHES Debug)
@@ -36,6 +37,10 @@ check_path_and_inform(FATAL_ERROR algoim ${XCGD_ALGOIM_DIR} XCGD_ALGOIM_DIR)
 check_path_and_inform(WARNING paropt ${XCGD_PAROPT_DIR} XCGD_PAROPT_DIR)
 find_package(A2D REQUIRED PATHS ${XCGD_A2D_DIR})
 find_package(SparseUtils REQUIRED PATHS ${XCGD_SPARSE_UTILS_DIR})
+
+if(XCGD_USE_OPENMP)
+find_package(OpenMP REQUIRED)
+endif()
 
 # Set warning flags
 if(CMAKE_CXX_COMPILER_ID MATCHES "AppleClang|GNU")

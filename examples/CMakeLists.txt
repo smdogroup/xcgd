@@ -1,3 +1,7 @@
+if (XCGD_USE_OPENMP)
+  link_libraries(OpenMP::OpenMP_CXX)
+endif()
+
 add_subdirectory(jacobian_vector_product)
 add_subdirectory(direct_solve)
 add_subdirectory(pi_study)
