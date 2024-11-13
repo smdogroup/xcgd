@@ -40,17 +40,17 @@ class CutDirichlet final : public PhysicsBase<T, spatial_dim, 0, 1> {
     A2D::MatVecMult(J, nrm_ref, nrm);
 
     // Compute the scaling from ref frame to physical frame
-    T scale;
+    T scale2;
     A2D::Mat<T, spatial_dim, spatial_dim> JTJ;
     A2D::Vec<T, spatial_dim> JTJdt;
     A2D::MatMatMult<A2D::MatOp::TRANSPOSE, A2D::MatOp::NORMAL>(J, J, JTJ);
     A2D::MatVecMult(JTJ, tan_ref, JTJdt);
-    A2D::VecDot(tan_ref, JTJdt, scale);
+    A2D::VecDot(tan_ref, JTJdt, scale2);
 
     T ngrad;
     A2D::VecDot(grad, nrm, ngrad);
 
-    return weight * sqrt(scale) *
+    return weight * sqrt(scale2) *
            (-ngrad * u + 0.5 * eta * u * u + bc_func(xloc) * (ngrad - eta * u));
   }
 
@@ -68,7 +68,7 @@ class CutDirichlet final : public PhysicsBase<T, spatial_dim, 0, 1> {
     A2D::MatVecMult(J, nrm_ref, nrm);
 
     // Create quantites
-    A2D::ADObj<T> ngrad_obj, scale_obj, output_obj;
+    A2D::ADObj<T> ngrad_obj, scale2_obj, output_obj;
     A2D::ADObj<A2D::Mat<T, spatial_dim, spatial_dim>> J_obj(J), JTJ_obj;
     A2D::ADObj<A2D::Vec<T, spatial_dim>> JTJdt_obj;
 
@@ -80,9 +80,9 @@ class CutDirichlet final : public PhysicsBase<T, spatial_dim, 0, 1> {
         A2D::MatMatMult<A2D::MatOp::TRANSPOSE, A2D::MatOp::NORMAL>(J_obj, J_obj,
                                                                    JTJ_obj),
         A2D::MatVecMult(JTJ_obj, tan_ref, JTJdt_obj),
-        A2D::VecDot(tan_ref, JTJdt_obj, scale_obj),
+        A2D::VecDot(tan_ref, JTJdt_obj, scale2_obj),
         A2D::VecDot(grad_obj, nrm, ngrad_obj),
-        A2D::Eval(weight * sqrt(scale_obj) *
+        A2D::Eval(weight * sqrt(scale2_obj) *
                       (-ngrad_obj * u_obj + 0.5 * eta * u_obj * u_obj +
                        bc_func(xloc) * (ngrad_obj - eta * u_obj)),
                   output_obj));
@@ -107,7 +107,7 @@ class CutDirichlet final : public PhysicsBase<T, spatial_dim, 0, 1> {
     // Create quantites
     T ub = 0.0;
     A2D::Vec<T, spatial_dim> bgrad;
-    A2D::A2DObj<T> ngrad_obj, scale_obj, output_obj;
+    A2D::A2DObj<T> ngrad_obj, scale2_obj, output_obj;
     A2D::A2DObj<A2D::Mat<T, spatial_dim, spatial_dim>> J_obj(J), JTJ_obj;
     A2D::A2DObj<A2D::Vec<T, spatial_dim>> JTJdt_obj;
 
@@ -120,9 +120,9 @@ class CutDirichlet final : public PhysicsBase<T, spatial_dim, 0, 1> {
         A2D::MatMatMult<A2D::MatOp::TRANSPOSE, A2D::MatOp::NORMAL>(J_obj, J_obj,
                                                                    JTJ_obj),
         A2D::MatVecMult(JTJ_obj, tan_ref, JTJdt_obj),
-        A2D::VecDot(tan_ref, JTJdt_obj, scale_obj),
+        A2D::VecDot(tan_ref, JTJdt_obj, scale2_obj),
         A2D::VecDot(grad_obj, nrm, ngrad_obj),
-        A2D::Eval(weight * sqrt(scale_obj) *
+        A2D::Eval(weight * sqrt(scale2_obj) *
                       (-ngrad_obj * u_obj + 0.5 * eta * u_obj * u_obj +
                        bc_func(xloc) * (ngrad_obj - eta * u_obj)),
                   output_obj));
@@ -147,7 +147,7 @@ class CutDirichlet final : public PhysicsBase<T, spatial_dim, 0, 1> {
     // Create quantites
     T ub = 0.0, up = 0.0, uh = 0.0;
     A2D::Vec<T, spatial_dim> bgrad, pgrad, hgrad;
-    A2D::A2DObj<T> ngrad_obj, scale_obj, output_obj;
+    A2D::A2DObj<T> ngrad_obj, scale2_obj, output_obj;
     A2D::A2DObj<A2D::Mat<T, spatial_dim, spatial_dim>> J_obj(J), JTJ_obj;
     A2D::A2DObj<A2D::Vec<T, spatial_dim>> JTJdt_obj;
 
@@ -159,9 +159,9 @@ class CutDirichlet final : public PhysicsBase<T, spatial_dim, 0, 1> {
         A2D::MatMatMult<A2D::MatOp::TRANSPOSE, A2D::MatOp::NORMAL>(J_obj, J_obj,
                                                                    JTJ_obj),
         A2D::MatVecMult(JTJ_obj, tan_ref, JTJdt_obj),
-        A2D::VecDot(tan_ref, JTJdt_obj, scale_obj),
+        A2D::VecDot(tan_ref, JTJdt_obj, scale2_obj),
         A2D::VecDot(grad_obj, nrm, ngrad_obj),
-        A2D::Eval(weight * sqrt(scale_obj) *
+        A2D::Eval(weight * sqrt(scale2_obj) *
                       (-ngrad_obj * u_obj + 0.5 * eta * u_obj * u_obj +
                        bc_func(xloc) * (ngrad_obj - eta * u_obj)),
                   output_obj));
@@ -234,12 +234,12 @@ class VectorCutDirichlet final : public PhysicsBase<T, spatial_dim, 0, dim> {
     A2D::MatVecMult(J, nrm_ref, nrm);
 
     // Compute the scaling from ref frame to physical frame
-    T scale;
+    T scale2;
     A2D::Mat<T, spatial_dim, spatial_dim> JTJ;
     A2D::Vec<T, spatial_dim> JTJdt;
     A2D::MatMatMult<A2D::MatOp::TRANSPOSE, A2D::MatOp::NORMAL>(J, J, JTJ);
     A2D::MatVecMult(JTJ, tan_ref, JTJdt);
-    A2D::VecDot(tan_ref, JTJdt, scale);
+    A2D::VecDot(tan_ref, JTJdt, scale2);
 
     A2D::Vec<T, dof_per_node> ngrad;  // ∂u/∂n
     A2D::MatVecMult(grad, nrm, ngrad);
@@ -250,7 +250,7 @@ class VectorCutDirichlet final : public PhysicsBase<T, spatial_dim, 0, dim> {
     A2D::VecDot(ngrad, g, ngradg);
     A2D::VecDot(u, g, ug);
 
-    return weight * sqrt(scale) * (-ngradu + ngradg + eta * (0.5 * uu - ug));
+    return weight * sqrt(scale2) * (-ngradu + ngradg + eta * (0.5 * uu - ug));
   }
 
   void residual(T weight, T _, A2D::Vec<T, spatial_dim>& xloc,
@@ -270,7 +270,8 @@ class VectorCutDirichlet final : public PhysicsBase<T, spatial_dim, 0, dim> {
     A2D::MatVecMult(J, nrm_ref, nrm);
 
     // Create quantites
-    A2D::ADObj<T> scale_obj, output_obj, ngradu_obj, uu_obj, ngradg_obj, ug_obj;
+    A2D::ADObj<T> scale2_obj, output_obj, ngradu_obj, uu_obj, ngradg_obj,
+        ug_obj;
     A2D::ADObj<A2D::Vec<T, dof_per_node>> ngrad_obj;
     A2D::ADObj<A2D::Mat<T, spatial_dim, spatial_dim>> J_obj(J), JTJ_obj;
     A2D::ADObj<A2D::Vec<T, spatial_dim>> JTJdt_obj;
@@ -284,13 +285,13 @@ class VectorCutDirichlet final : public PhysicsBase<T, spatial_dim, 0, dim> {
         A2D::MatMatMult<A2D::MatOp::TRANSPOSE, A2D::MatOp::NORMAL>(J_obj, J_obj,
                                                                    JTJ_obj),
         A2D::MatVecMult(JTJ_obj, tan_ref, JTJdt_obj),
-        A2D::VecDot(tan_ref, JTJdt_obj, scale_obj),
+        A2D::VecDot(tan_ref, JTJdt_obj, scale2_obj),
         A2D::MatVecMult(grad_obj, nrm, ngrad_obj),
         A2D::VecDot(ngrad_obj, u_obj, ngradu_obj),
         A2D::VecDot(u_obj, u_obj, uu_obj),
         A2D::VecDot(ngrad_obj, g, ngradg_obj), A2D::VecDot(u_obj, g, ug_obj),
         A2D::Eval(
-            weight * sqrt(scale_obj) *
+            weight * sqrt(scale2_obj) *
                 (-ngradu_obj + ngradg_obj + eta * (0.5 * uu_obj - ug_obj)),
             output_obj));
     output_obj.bvalue() = 1.0;
@@ -318,7 +319,7 @@ class VectorCutDirichlet final : public PhysicsBase<T, spatial_dim, 0, dim> {
     // Create quantites
     A2D::Vec<T, dof_per_node> ub;
     A2D::Mat<T, dof_per_node, spatial_dim> bgrad;
-    A2D::A2DObj<T> scale_obj, output_obj, ngradu_obj, uu_obj, ngradg_obj,
+    A2D::A2DObj<T> scale2_obj, output_obj, ngradu_obj, uu_obj, ngradg_obj,
         ug_obj;
     A2D::A2DObj<A2D::Vec<T, dof_per_node>> ngrad_obj;
     A2D::A2DObj<A2D::Mat<T, spatial_dim, spatial_dim>> J_obj(J), JTJ_obj;
@@ -333,13 +334,13 @@ class VectorCutDirichlet final : public PhysicsBase<T, spatial_dim, 0, dim> {
         A2D::MatMatMult<A2D::MatOp::TRANSPOSE, A2D::MatOp::NORMAL>(J_obj, J_obj,
                                                                    JTJ_obj),
         A2D::MatVecMult(JTJ_obj, tan_ref, JTJdt_obj),
-        A2D::VecDot(tan_ref, JTJdt_obj, scale_obj),
+        A2D::VecDot(tan_ref, JTJdt_obj, scale2_obj),
         A2D::MatVecMult(grad_obj, nrm, ngrad_obj),
         A2D::VecDot(ngrad_obj, u_obj, ngradu_obj),
         A2D::VecDot(u_obj, u_obj, uu_obj),
         A2D::VecDot(ngrad_obj, g, ngradg_obj), A2D::VecDot(u_obj, g, ug_obj),
         A2D::Eval(
-            weight * sqrt(scale_obj) *
+            weight * sqrt(scale2_obj) *
                 (-ngradu_obj + ngradg_obj + eta * (0.5 * uu_obj - ug_obj)),
             output_obj));
     output_obj.bvalue() = 1.0;
@@ -367,7 +368,7 @@ class VectorCutDirichlet final : public PhysicsBase<T, spatial_dim, 0, dim> {
     // Create quantites
     A2D::Vec<T, dof_per_node> ub, up, uh;
     A2D::Mat<T, dof_per_node, spatial_dim> bgrad, pgrad, hgrad;
-    A2D::A2DObj<T> scale_obj, output_obj, ngradu_obj, uu_obj, ngradg_obj,
+    A2D::A2DObj<T> scale2_obj, output_obj, ngradu_obj, uu_obj, ngradg_obj,
         ug_obj;
     A2D::A2DObj<A2D::Vec<T, dof_per_node>> ngrad_obj;
     A2D::A2DObj<A2D::Mat<T, spatial_dim, spatial_dim>> J_obj(J), JTJ_obj;
@@ -382,13 +383,13 @@ class VectorCutDirichlet final : public PhysicsBase<T, spatial_dim, 0, dim> {
         A2D::MatMatMult<A2D::MatOp::TRANSPOSE, A2D::MatOp::NORMAL>(J_obj, J_obj,
                                                                    JTJ_obj),
         A2D::MatVecMult(JTJ_obj, tan_ref, JTJdt_obj),
-        A2D::VecDot(tan_ref, JTJdt_obj, scale_obj),
+        A2D::VecDot(tan_ref, JTJdt_obj, scale2_obj),
         A2D::MatVecMult(grad_obj, nrm, ngrad_obj),
         A2D::VecDot(ngrad_obj, u_obj, ngradu_obj),
         A2D::VecDot(u_obj, u_obj, uu_obj),
         A2D::VecDot(ngrad_obj, g, ngradg_obj), A2D::VecDot(u_obj, g, ug_obj),
         A2D::Eval(
-            weight * sqrt(scale_obj) *
+            weight * sqrt(scale2_obj) *
                 (-ngradu_obj + ngradg_obj + eta * (0.5 * uu_obj - ug_obj)),
             output_obj));
     output_obj.bvalue() = 1.0;
