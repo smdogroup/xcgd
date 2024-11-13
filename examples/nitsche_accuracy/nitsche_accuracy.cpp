@@ -30,7 +30,7 @@ class L2normBulk final : public PhysicsBase<T, spatial_dim, 0, 1> {
            A2D::Vec<T, spatial_dim>& ____) const {
     T detJ;
     A2D::MatDet(J, detJ);
-    return weight * detJ * val * val;
+    return weight * detJ * sqrt(val * val);
   }
 };
 
@@ -44,7 +44,7 @@ class VecL2normBulk final : public PhysicsBase<T, spatial_dim, 0, dim> {
     T detJ, dot;
     A2D::MatDet(J, detJ);
     A2D::VecDot(u, u, dot);
-    return weight * detJ * dot;
+    return weight * detJ * sqrt(dot);
   }
 };
 
@@ -100,18 +100,6 @@ class VecL2normSurf final : public PhysicsBase<T, spatial_dim, 0, dim> {
     return weight * scale * dot;
   }
 };
-
-double hard_max(std::vector<double> vals) {
-  return *std::max_element(vals.begin(), vals.end());
-}
-
-double ks_max(std::vector<double> vals, double ksrho = 50.0) {
-  double umax = hard_max(vals);
-  std::vector<double> eta(vals.size());
-  std::transform(vals.begin(), vals.end(), eta.begin(),
-                 [umax, ksrho](double x) { return exp(ksrho * (x - umax)); });
-  return log(std::accumulate(eta.begin(), eta.end(), 0.0)) / ksrho + umax;
-}
 
 enum class PhysicsType { Poisson, LinearElasticity };
 
@@ -423,7 +411,7 @@ void execute_accuracy_study(std::string prefix, ProbInstance instance,
         T region1 = sin(angle) * (x[0] - 1.0) + cos(angle) * x[1];  // <= 0
         T region2 = 1e-6 - x[0];
         T region3 = 1e-6 - x[1];
-        return hard_max({region1, region2, region3});
+        return hard_max<T>({region1, region2, region3});
       });
       break;
     }
@@ -566,11 +554,11 @@ void execute_accuracy_study(std::string prefix, ProbInstance instance,
   T area = integrator_bulk.energy(nullptr, ones.data());
   T perimeter = integrator_bcs.energy(nullptr, ones.data());
 
-  T err_l2norm_bulk = integrator_bulk.energy(nullptr, diff.data());
-  T err_l2norm_bcs = integrator_bcs.energy(nullptr, diff.data());
+  T err_l2norm_bulk = sqrt(integrator_bulk.energy(nullptr, diff.data()));
+  T err_l2norm_bcs = sqrt(integrator_bcs.energy(nullptr, diff.data()));
 
-  T l2norm_bulk = integrator_bulk.energy(nullptr, sol_exact.data());
-  T l2norm_bcs = integrator_bcs.energy(nullptr, sol_exact.data());
+  T l2norm_bulk = sqrt(integrator_bulk.energy(nullptr, sol_exact.data()));
+  T l2norm_bcs = sqrt(integrator_bcs.energy(nullptr, sol_exact.data()));
 
   json j = {// {"sol", sol},
             // {"sol_exact", sol_exact},
