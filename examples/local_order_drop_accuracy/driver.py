@@ -12,20 +12,7 @@ from time import time
 import sys
 
 
-def get_poisson_l2_error_deprecated(prefix, cmd):
-    subprocess.run(cmd, capture_output=True)
-
-    with open(join(prefix, "sol.json")) as f:
-        j = json.load(f)
-
-    return np.abs(
-        np.linalg.norm(np.array(j["sol"]), ord=2)
-        / np.linalg.norm(np.array(j["sol_exact"]), ord=2)
-        - 1.0
-    )
-
-
-def get_poisson_l2_error(prefix, cmd):
+def get_l2_error(prefix, cmd):
     try:
         subprocess.run(cmd, capture_output=True)
     # except subprocess.CalledProcessError as e:
@@ -104,7 +91,10 @@ def annotate_slope(
 
 
 def run_experiments(
-    Np_1d_list=[2, 4, 6, 8], max_order_drop=2, nxy_list=[8, 16, 32, 64, 128]
+    physics_type="poisson",
+    Np_1d_list=[2, 4, 6, 8],
+    max_order_drop=2,
+    nxy_list=[8, 16, 32, 64, 128],
 ):
     order = [
         (Np_1d, Np_bc)
@@ -123,9 +113,10 @@ def run_experiments(
 
     for Np_1d, Np_bc in order:
         for nxy in nxy_list:
-            prefix = f"outputs_Np1d_{Np_1d}_Npbc_{Np_bc}_nxy_{nxy}"
+            prefix = f"outputs_{physics_type}_Np1d_{Np_1d}_Npbc_{Np_bc}_nxy_{nxy}"
             cmd = [
-                "./poisson_order_drop",
+                "./order_drop_study",
+                f"--physics_type={physics_type}",
                 "--save-degenerate-stencils=0",
                 f"--Np_1d={Np_1d}",
                 f"--Np_bc={Np_bc}",
@@ -134,7 +125,7 @@ def run_experiments(
             ]
 
             t1 = time()
-            err_l2norm, err_l2norm_nrmed = get_poisson_l2_error(prefix, cmd)
+            err_l2norm, err_l2norm_nrmed = get_l2_error(prefix, cmd)
             t2 = time()
 
             print(
@@ -169,7 +160,7 @@ def adjust_plot_lim(ax, left=0.0, right=0.2, bottom=0.3, up=0.0):
     return
 
 
-def plot(cases_df, normalize, voffset, voffset_text):
+def plot(cases_df, physics_type, normalize, voffset, voffset_text):
     fig, ax = plt.subplots(
         ncols=1,
         nrows=1,
@@ -213,16 +204,34 @@ def plot(cases_df, normalize, voffset, voffset_text):
     ax.set_xlabel("Mesh size $h$")
     # ax.set_xlabel("number of elements in each dimension")
 
-    if normalize:
-        ax.set_ylabel(
-            "Normalized L2 norm of the solution error\n"
-            + r"$\dfrac{\int_\Omega (u_h - u_\text{exact})^2 d\Omega}{\int_\Omega  u_\text{exact}^2 d\Omega}$"
-        )
+    if physics_type == "poisson":
+        numerator = r"\sqrt{\int_\Omega (u_h - u_\text{exact})^2 d\Omega}"
+        denominator = r"\sqrt{\int_\Omega u_\text{exact}^2 d\Omega}"
+        if normalize:
+            ax.set_ylabel(
+                "Normalized L2 norm of the solution error\n"
+                + r"$\dfrac{"
+                + numerator
+                + r"}{"
+                + denominator
+                + r"}$"
+            )
+        else:
+            ax.set_ylabel("L2 norm of the solution error\n" + r"$" + numerator + r"$")
     else:
-        ax.set_ylabel(
-            "L2 norm of the solution error\n"
-            + r"$\int_\Omega (u_h - u_\text{exact})^2 d\Omega$"
-        )
+        numerator = r"\sqrt{\int_\Omega (\mathbf{u}_h - \mathbf{u}_\text{exact}) \cdot (\mathbf{u}_h - \mathbf{u}_\text{exact}) d\Omega}"
+        denominator = r"\sqrt{\int_\Omega \mathbf{u}_\text{exact} \cdot \mathbf{u}_\text{exact} d\Omega}"
+        if normalize:
+            ax.set_ylabel(
+                "Normalized L2 norm of the solution error\n"
+                + r"$\dfrac{"
+                + numerator
+                + r"}{"
+                + denominator
+                + r"}$"
+            )
+        else:
+            ax.set_ylabel("L2 norm of the solution error\n" + r"$" + numerator + r"$")
 
     ax.legend(frameon=False, loc="lower right")
     ax.spines["top"].set_visible(False)
@@ -236,6 +245,9 @@ def plot(cases_df, normalize, voffset, voffset_text):
 if __name__ == "__main__":
     p = argparse.ArgumentParser(formatter_class=argparse.HelpFormatter)
 
+    p.add_argument(
+        "--physics_type", default="poisson", choices=["poisson", "linear_elasticity"]
+    )
     p.add_argument("--csv", type=str, default=None, help="case data csv")
     p.add_argument(
         "--Np_1d",
@@ -265,6 +277,7 @@ if __name__ == "__main__":
 
     if args.csv is None:
         df = run_experiments(
+            args.physics_type,
             Np_1d_list=args.Np_1d,
             max_order_drop=args.max_order_drop,
             nxy_list=args.nxy,
@@ -282,8 +295,10 @@ if __name__ == "__main__":
         #     print(df)
         #     exit()
 
-    fig, ax = plot(df, args.normalize_l2error, args.voffset, args.voffset_text)
-    run_name = "precision_order_drop"
+    fig, ax = plot(
+        df, args.physics_type, args.normalize_l2error, args.voffset, args.voffset_text
+    )
+    run_name = f"precision_order_drop_{args.physics_type}"
     if args.normalize_l2error:
         run_name += "_nrmed"
 

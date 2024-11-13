@@ -27,6 +27,20 @@ class L2normBulk final : public PhysicsBase<T, spatial_dim, 0, 1> {
   }
 };
 
+template <typename T, int spatial_dim, int dim>
+class VecL2normBulk final : public PhysicsBase<T, spatial_dim, 0, dim> {
+ public:
+  T energy(T weight, T _, A2D::Vec<T, spatial_dim>& __,
+           A2D::Vec<T, spatial_dim>& ___,
+           A2D::Mat<T, spatial_dim, spatial_dim>& J, A2D::Vec<T, dim>& u,
+           A2D::Mat<T, dim, spatial_dim>& ____) const {
+    T detJ, dot;
+    A2D::MatDet(J, detJ);
+    A2D::VecDot(u, u, dot);
+    return weight * detJ * dot;
+  }
+};
+
 template <typename T, int Np_1d>
 class GridMeshDropOrder : public GridMesh<T, Np_1d> {
  private:
@@ -58,7 +72,7 @@ class GridMeshDropOrder : public GridMesh<T, Np_1d> {
     }
 
     int tnodes[Np_1d * Np_1d];
-    this->get_cell_ground_stencil(elem, tnodes);
+    this->grid.template get_cell_ground_stencil<Np_1d>(elem, tnodes);
 
     int eij[2] = {-1, -1};
     this->grid.get_cell_coords(elem, eij);
@@ -436,8 +450,12 @@ void execute_accuracy_study(std::string prefix, int nxy, int Np_bc,
     diff[i] = (sol[i] - sol_exact[i]);
   }
 
-  GalerkinAnalysis<T, Mesh, Quadrature, Basis,
-                   L2normBulk<T, Basis::spatial_dim>>
+  GalerkinAnalysis<
+      T, Mesh, Quadrature, Basis,
+      typename std::conditional<
+          physics_type == PhysicsType::Poisson,
+          L2normBulk<T, Basis::spatial_dim>,
+          VecL2normBulk<T, Basis::spatial_dim, Basis::spatial_dim>>::type>
       integrator(mesh, quadrature, basis, {});
 
   std::vector<T> ones(sol.size(), 1.0);
@@ -447,8 +465,8 @@ void execute_accuracy_study(std::string prefix, int nxy, int Np_bc,
       physics_app->get_analysis().energy(nullptr, sol_exact.data());
 
   T area = integrator.energy(nullptr, ones.data());
-  T err_l2norm = integrator.energy(nullptr, diff.data());
-  T l2norm = integrator.energy(nullptr, sol_exact.data());
+  T err_l2norm = sqrt(integrator.energy(nullptr, diff.data()));
+  T l2norm = sqrt(integrator.energy(nullptr, sol_exact.data()));
 
   json j = {{"energy", energy},
             {"energy_exact", energy_exact},
