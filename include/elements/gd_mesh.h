@@ -79,36 +79,36 @@ class StructuredGrid2D final {
   }
 
   // coordinates -> vert
-  inline int get_coords_vert(int ni, int nj) const {
-    return ni + (nxy[0] + 1) * nj;
+  inline int get_coords_vert(int ix, int iy) const {
+    return ix + (nxy[0] + 1) * iy;
   }
-  inline int get_coords_vert(const int* nij) const {
-    return nij[0] + (nxy[0] + 1) * nij[1];
+  inline int get_coords_vert(const int* ixy) const {
+    return ixy[0] + (nxy[0] + 1) * ixy[1];
   }
 
   // vert -> coordinates
-  inline void get_vert_coords(int vert, int* nij) const {
-    nij[0] = vert % (nxy[0] + 1);
-    nij[1] = vert / (nxy[0] + 1);
+  inline void get_vert_coords(int vert, int* ixy) const {
+    ixy[0] = vert % (nxy[0] + 1);
+    ixy[1] = vert / (nxy[0] + 1);
   }
 
   // coordinates -> cell
-  inline int get_coords_cell(int ei, int ej) const { return ei + nxy[0] * ej; }
-  inline int get_coords_cell(const int* eij) const {
-    return eij[0] + nxy[0] * eij[1];
+  inline int get_coords_cell(int ex, int ey) const { return ex + nxy[0] * ey; }
+  inline int get_coords_cell(const int* exy) const {
+    return exy[0] + nxy[0] * exy[1];
   }
 
   // cell -> coordinates
-  inline void get_cell_coords(int cell, int* eij) const {
-    eij[0] = cell % nxy[0];
-    eij[1] = cell / nxy[0];
+  inline void get_cell_coords(int cell, int* exy) const {
+    exy[0] = cell % nxy[0];
+    exy[1] = cell / nxy[0];
   }
 
   // cell -> verts
   void get_cell_verts(int cell, int* verts) const {
     if (verts) {
-      int nij[spatial_dim] = {cell % nxy[0], cell / nxy[0]};
-      verts[0] = get_coords_vert(nij);   //  3-------2
+      int ixy[spatial_dim] = {cell % nxy[0], cell / nxy[0]};
+      verts[0] = get_coords_vert(ixy);   //  3-------2
       verts[1] = verts[0] + 1;           //  |       |
       verts[2] = verts[1] + nxy[0] + 1;  //  |       |
       verts[3] = verts[2] - 1;           //  0-------1
@@ -118,19 +118,19 @@ class StructuredGrid2D final {
   // cell -> xloc for all verts
   void get_cell_verts_xloc(int cell, T* xloc) const {
     if (xloc) {
-      int nij[spatial_dim] = {cell % nxy[0], cell / nxy[0]};
+      int ixy[spatial_dim] = {cell % nxy[0], cell / nxy[0]};
 
-      xloc[0] = xy0[0] + h[0] * nij[0];
-      xloc[1] = xy0[1] + h[1] * nij[1];
+      xloc[0] = xy0[0] + h[0] * ixy[0];
+      xloc[1] = xy0[1] + h[1] * ixy[1];
 
-      xloc[2] = xy0[0] + h[0] * (nij[0] + 1);
-      xloc[3] = xy0[1] + h[1] * nij[1];
+      xloc[2] = xy0[0] + h[0] * (ixy[0] + 1);
+      xloc[3] = xy0[1] + h[1] * ixy[1];
 
-      xloc[4] = xy0[0] + h[0] * (nij[0] + 1);
-      xloc[5] = xy0[1] + h[1] * (nij[1] + 1);
+      xloc[4] = xy0[0] + h[0] * (ixy[0] + 1);
+      xloc[5] = xy0[1] + h[1] * (ixy[1] + 1);
 
-      xloc[6] = xy0[0] + h[0] * nij[0];
-      xloc[7] = xy0[1] + h[1] * (nij[1] + 1);
+      xloc[6] = xy0[0] + h[0] * ixy[0];
+      xloc[7] = xy0[1] + h[1] * (ixy[1] + 1);
     }
   }
 
@@ -144,10 +144,10 @@ class StructuredGrid2D final {
 
   void get_vert_xloc(int vert, T* xloc) const {
     if (xloc) {
-      int nij[spatial_dim];
-      get_vert_coords(vert, nij);
+      int ixy[spatial_dim];
+      get_vert_coords(vert, ixy);
       for (int d = 0; d < spatial_dim; d++) {
-        xloc[d] = xy0[d] + h[d] * T(nij[d]);
+        xloc[d] = xy0[d] + h[d] * T(ixy[d]);
       }
     }
   }
@@ -155,18 +155,66 @@ class StructuredGrid2D final {
   // Get the xloc of the centroid of the cell
   void get_cell_xloc(int cell, T* xloc) const {
     if (xloc) {
-      int nij[spatial_dim];
-      get_cell_coords(cell, nij);
+      int ixy[spatial_dim];
+      get_cell_coords(cell, ixy);
       for (int d = 0; d < spatial_dim; d++) {
-        xloc[d] = xy0[d] + h[d] * (T(nij[d]) + 0.5);
+        xloc[d] = xy0[d] + h[d] * (T(ixy[d]) + 0.5);
+      }
+    }
+  }
+
+  const T* get_lxy() const { return lxy; };
+  const T* get_xy0() const { return xy0; };
+  const T* get_h() const { return h; };
+
+  /**
+   * @brief For a GD element, get the stencil associated to the ground grid,
+   * regardless the optional boundary defined by the level set function
+   *
+   * @param cell [in] cell index
+   * @param verts [out] stencil vertices
+   * @return bool whether the stensil is regular (i.e. not a boundary stencil)
+   */
+  template <int Np_1d>
+  bool get_cell_ground_stencil(int cell, int* verts) const {
+    bool is_stencil_regular = true;
+    constexpr int q = Np_1d / 2;
+    int exy[spatial_dim];
+    get_cell_coords(cell, exy);
+    for (int d = 0; d < spatial_dim; d++) {
+      if (exy[d] < q - 1) {
+        is_stencil_regular = false;
+        exy[d] = q - 1;
+      } else if (exy[d] > nxy[d] - q) {
+        exy[d] = nxy[d] - q;
+        is_stencil_regular = false;
+      }
+    }
+
+    int index = 0;
+    for (int j = 0; j < Np_1d; j++) {
+      for (int i = 0; i < Np_1d; i++, index++) {
+        verts[index] = get_coords_vert(exy[0] - q + 1 + i, exy[1] - q + 1 + j);
+      }
+    }
+    return is_stencil_regular;
+  };
+
+  template <int Np_1d>
+  void check_grid_compatibility() const {
+    for (int d = 0; d < spatial_dim; d++) {
+      if (nxy[d] < Np_1d - 1) {
+        char msg[256];
+        std::snprintf(
+            msg, 256,
+            "too few elements (%d) for Np_1d (%d) along %d-th dimension",
+            nxy[d], Np_1d, d);
+        throw std::runtime_error(msg);
       }
     }
   }
 
   const int* get_nxy() const { return nxy; };
-  const T* get_lxy() const { return lxy; };
-  const T* get_xy0() const { return xy0; };
-  const T* get_h() const { return h; };
 
  private:
   int nxy[spatial_dim];
@@ -181,10 +229,10 @@ class StructuredGrid2D final {
  *
  * Note: This class is light-weight, as the mesh data is computed on-the-fly.
  */
-template <typename T, int Np_1d>
-class GridMesh : public GDMeshBase<T, Np_1d> {
+template <typename T, int Np_1d, class Grid = StructuredGrid2D<T>>
+class GridMesh : public GDMeshBase<T, Np_1d, Grid> {
  private:
-  using MeshBase = GDMeshBase<T, Np_1d>;
+  using MeshBase = GDMeshBase<T, Np_1d, Grid>;
 
  public:
   using MeshBase::corner_nodes_per_element;
@@ -202,7 +250,7 @@ class GridMesh : public GDMeshBase<T, Np_1d> {
     // Identify all the elements with regular stencils
     for (int i = 0; i < num_elements; i++) {
       int _[max_nnodes_per_element];
-      if (this->get_cell_ground_stencil(i, _)) {
+      if (this->grid.template get_cell_ground_stencil<Np_1d>(i, _)) {
         regular_stencil_elems.insert(i);
       }
     }
@@ -234,7 +282,7 @@ class GridMesh : public GDMeshBase<T, Np_1d> {
         }
       }
     }
-    this->get_cell_ground_stencil(elem, nodes);
+    this->grid.template get_cell_ground_stencil<Np_1d>(elem, nodes);
     return max_nnodes_per_element;
   }
 
@@ -244,50 +292,6 @@ class GridMesh : public GDMeshBase<T, Np_1d> {
 
   inline void get_elem_vert_ranges(int elem, T* xloc_min, T* xloc_max) const {
     this->grid.get_cell_vert_ranges(elem, xloc_min, xloc_max);
-  }
-
-  std::vector<int> get_left_boundary_nodes() const {
-    std::vector<int> nodes;
-    const int* nxy = this->grid.get_nxy();
-    for (int j = 0; j < nxy[1] + 1; j++) {
-      int coords[2] = {0, j};
-      int node = this->grid.get_coords_vert(coords);
-      nodes.push_back(node);
-    }
-    return nodes;
-  }
-
-  std::vector<int> get_right_boundary_nodes() const {
-    std::vector<int> nodes;
-    const int* nxy = this->grid.get_nxy();
-    for (int j = 0; j < nxy[1] + 1; j++) {
-      int coords[2] = {nxy[0], j};
-      int node = this->grid.get_coords_vert(coords);
-      nodes.push_back(node);
-    }
-    return nodes;
-  }
-
-  std::vector<int> get_upper_boundary_nodes() const {
-    std::vector<int> nodes;
-    const int* nxy = this->grid.get_nxy();
-    for (int i = 0; i < nxy[0] + 1; i++) {
-      int coords[2] = {i, nxy[1]};
-      int node = this->grid.get_coords_vert(coords);
-      nodes.push_back(node);
-    }
-    return nodes;
-  }
-
-  std::vector<int> get_lower_boundary_nodes() const {
-    std::vector<int> nodes;
-    const int* nxy = this->grid.get_nxy();
-    for (int i = 0; i < nxy[0] + 1; i++) {
-      int coords[2] = {i, 0};
-      int node = this->grid.get_coords_vert(coords);
-      nodes.push_back(node);
-    }
-    return nodes;
   }
 
   inline bool is_regular_stencil_elem(int elem) const {
@@ -312,11 +316,11 @@ class GridMesh : public GDMeshBase<T, Np_1d> {
  * @brief The Galerkin difference mesh defined on a structured
  * grid with cuts defined by a level set function
  */
-template <typename T, int Np_1d>
-class CutMesh final : public GDMeshBase<T, Np_1d> {
+template <typename T, int Np_1d, class Grid = StructuredGrid2D<T>>
+class CutMesh final : public GDMeshBase<T, Np_1d, Grid> {
  private:
-  using MeshBase = GDMeshBase<T, Np_1d>;
-  using LSFMesh = GridMesh<T, Np_1d>;
+  using MeshBase = GDMeshBase<T, Np_1d, Grid>;
+  using LSFMesh = GridMesh<T, Np_1d, Grid>;
 
  public:
   using MeshBase::corner_nodes_per_element;
@@ -381,7 +385,7 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
 
     int nnodes = 0;
     int cell = elem_cells.at(elem);
-    this->get_cell_ground_stencil(cell, nodes);
+    this->grid.template get_cell_ground_stencil<Np_1d>(cell, nodes);
     adjust_stencil(cell, nodes);
 
     for (int i = 0; i < max_nnodes_per_element; i++) {
@@ -413,35 +417,6 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
 
   inline void get_elem_vert_ranges(int elem, T* xloc_min, T* xloc_max) const {
     this->grid.get_cell_vert_ranges(elem_cells.at(elem), xloc_min, xloc_max);
-  }
-
-  /* Helper function */
-  std::vector<int> get_left_boundary_nodes(double tol = 1e-10) const {
-    const T* xy0 = this->grid.get_xy0();
-    std::vector<int> nodes;
-    for (int i = 0; i < num_nodes; i++) {
-      T xloc[spatial_dim];
-      get_node_xloc(i, xloc);
-      if (xloc[0] - xy0[0] < tol) {
-        nodes.push_back(i);
-      }
-    }
-    return nodes;
-  }
-
-  /* Helper function */
-  std::vector<int> get_right_boundary_nodes(double tol = 1e-10) const {
-    const T* xy0 = this->grid.get_xy0();
-    const T* lxy = this->grid.get_lxy();
-    std::vector<int> nodes;
-    for (int i = 0; i < num_nodes; i++) {
-      T xloc[spatial_dim];
-      get_node_xloc(i, xloc);
-      if (xy0[0] + lxy[0] - xloc[0] < tol) {
-        nodes.push_back(i);
-      }
-    }
-    return nodes;
   }
 
   std::vector<T> get_lsf_nodes() const {
@@ -575,7 +550,8 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
     // Identify all the elements with regular stencils
     for (int i = 0; i < num_elements; i++) {
       int verts[max_nnodes_per_element];
-      if (this->get_cell_ground_stencil(get_elem_cell(i), verts)) {
+      if (this->grid.template get_cell_ground_stencil<Np_1d>(get_elem_cell(i),
+                                                             verts)) {
         bool is_regular_stencil = true;
         for (int j = 0; j < max_nnodes_per_element; j++) {
           if (vert_nodes.count(verts[j]) == 0) {
@@ -594,19 +570,6 @@ class CutMesh final : public GDMeshBase<T, Np_1d> {
                 num_nodes_old, num_nodes, num_elems_old, num_elements);
 #endif
   }
-
-  // Helper function
-  // bool is_irregular_stencil(int elem) {
-  //   int cell = elem_cells.at(elem);
-  //   int verts[max_nnodes_per_element];
-  //   this->get_cell_ground_stencil(cell, verts);
-  //   for (int index = 0; index < max_nnodes_per_element; index++) {
-  //     if (vert_nodes.count(verts[index]) == 0) {
-  //       return true;
-  //     }
-  //   }
-  //   return false;
-  // }
 
   inline const std::unordered_map<int, int>& get_vert_nodes() const {
     return vert_nodes;
