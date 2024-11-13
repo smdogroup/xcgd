@@ -12,6 +12,13 @@ from time import time
 import sys
 
 
+def print_and_log(logpath, string):
+    with open(logpath, "a") as f:
+        f.write(string)
+        f.write("\n")
+    print(string)
+
+
 def get_l2_error(prefix, cmd):
     try:
         subprocess.run(cmd, capture_output=True)
@@ -91,11 +98,15 @@ def annotate_slope(
 
 
 def run_experiments(
+    run_name,
     physics_type="poisson",
     Np_1d_list=[2, 4, 6, 8],
     max_order_drop=2,
     nxy_list=[8, 16, 32, 64, 128],
 ):
+    logpath = f"{run_name}.log"
+    open(logpath, "w").close()  # erase existing file
+
     order = [
         (Np_1d, Np_bc)
         for Np_1d in Np_1d_list
@@ -128,8 +139,9 @@ def run_experiments(
             err_l2norm, err_l2norm_nrmed = get_l2_error(prefix, cmd)
             t2 = time()
 
-            print(
-                f"Np_1d: {Np_1d:2d}, Np_bc: {Np_bc:2d}, nxy: {nxy:4d}, execution time: {t2 - t1:.2f} s"
+            print_and_log(
+                logpath,
+                f"Np_1d: {Np_1d:2d}, Np_bc: {Np_bc:2d}, nxy: {nxy:4d}, execution time: {t2 - t1:.2f} s",
             )
 
             df_data["Np_1d"].append(Np_1d)
@@ -275,8 +287,13 @@ if __name__ == "__main__":
 
     args = p.parse_args()
 
+    run_name = f"precision_order_drop_{args.physics_type}"
+    if args.normalize_l2error:
+        run_name += "_nrmed"
+
     if args.csv is None:
         df = run_experiments(
+            run_name,
             args.physics_type,
             Np_1d_list=args.Np_1d,
             max_order_drop=args.max_order_drop,
@@ -298,9 +315,6 @@ if __name__ == "__main__":
     fig, ax = plot(
         df, args.physics_type, args.normalize_l2error, args.voffset, args.voffset_text
     )
-    run_name = f"precision_order_drop_{args.physics_type}"
-    if args.normalize_l2error:
-        run_name += "_nrmed"
 
     fig.savefig(f"{run_name}.pdf")
     df.to_csv(f"{run_name}.csv", index=False)

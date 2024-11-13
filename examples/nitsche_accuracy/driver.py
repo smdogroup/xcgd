@@ -14,6 +14,13 @@ from lsf_creator import extract_lsf_from_image
 from pathlib import Path
 
 
+def print_and_log(logpath, string):
+    with open(logpath, "a") as f:
+        f.write(string)
+        f.write("\n")
+    print(string)
+
+
 def get_poisson_l2_error_deprecated(prefix, cmd):
     subprocess.run(cmd, capture_output=True)
 
@@ -135,6 +142,9 @@ def run_experiments(
         "err_l2norm_bcs_nrmed": [],
     }
 
+    logpath = f"{run_name}.log"
+    open(logpath, "w").close()  # erase existing file
+
     for nxy in nxy_list:
         image_json_path = ""
         instance_name = instance
@@ -177,8 +187,9 @@ def run_experiments(
 
                 t2 = time()
 
-                print(
-                    f"Np_1d: {Np_1d:2d}, nxy: {nxy:4d}, nitsche_eta: {nitsche_eta:.2e}, execution time: {t2 - t1:.2f} s"
+                print_and_log(
+                    logpath,
+                    f"Np_1d: {Np_1d:2d}, nxy: {nxy:4d}, nitsche_eta: {nitsche_eta:.2e}, execution time: {t2 - t1:.2f} s",
                 )
 
                 df_data["Np_1d"].append(Np_1d)
