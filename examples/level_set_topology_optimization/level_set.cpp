@@ -37,10 +37,10 @@ class TopoAnalysis {
   int constexpr static spatial_dim = Grid::spatial_dim;
 
  public:
-  TopoAnalysis(T r0, T E, T nu, const IntFunc& int_func, T penalty,
-               bool use_robust_projection, double proj_beta, double proj_eta,
-               Grid& grid, Mesh& mesh, Quadrature& quadrature, Basis& basis,
-               std::string prefix)
+  TopoAnalysis(std::string instance, T r0, T E, T nu, const IntFunc& int_func,
+               T penalty, bool use_robust_projection, double proj_beta,
+               double proj_eta, Grid& grid, Mesh& mesh, Quadrature& quadrature,
+               Basis& basis, std::string prefix)
       : filter(r0, grid, use_robust_projection, proj_beta, proj_eta),
         elastic(E, nu, mesh, quadrature, basis, int_func),
         vol_analysis(mesh, quadrature, basis, vol),
@@ -163,7 +163,8 @@ class TopoAnalysis {
     VandermondeCondLogger::enable();
 
     try {
-      std::vector<T> sol = elastic.solve(bc_dof, load_dof, load_vals);
+      std::vector<T> sol = elastic.solve(
+          bc_dof, std::vector<T>(bc_dof.size(), T(0.0)), load_dof, load_vals);
       return sol;
     } catch (const StencilConstructionFailed& e) {
       std::printf(
@@ -569,6 +570,16 @@ void execute(int argc, char* argv[]) {
   Quadrature quadrature(mesh);
 
   // Set up analysis
+  std::string instance = parser.get_str_option("instance");
+  if (!(instance == "lbracket" or instance == "cantilever")) {
+    throw std::runtime_error(
+        "expect lbracket or cantilever for option instance, got " + instance);
+  }
+
+  // TODO: lift this once lbracket is implemented
+  if (instance == "lbracket") {
+    throw std::runtime_error("lbracket is WIP");
+  }
   T r0 = parser.get_double_option("helmholtz_r0");
   T E = parser.get_double_option("E");
   T nu = parser.get_double_option("nu");
@@ -576,9 +587,9 @@ void execute(int argc, char* argv[]) {
   double robust_proj_beta = parser.get_double_option("robust_proj_beta");
   double robust_proj_eta = parser.get_double_option("robust_proj_eta");
   T penalty = parser.get_double_option("grad_penalty_coeff");
-  TopoAnalysis topo(r0, E, nu, int_func, penalty, use_robust_projection,
-                    robust_proj_beta, robust_proj_eta, grid, mesh, quadrature,
-                    basis, prefix);
+  TopoAnalysis topo(instance, r0, E, nu, int_func, penalty,
+                    use_robust_projection, robust_proj_beta, robust_proj_eta,
+                    grid, mesh, quadrature, basis, prefix);
 
   double domain_area = lxy[0] * lxy[1];
   double area_frac = parser.get_double_option("area_frac");
