@@ -21,12 +21,26 @@ double hard_max(std::vector<T> vals) {
 }
 
 template <typename T>
+double hard_min(std::vector<T> vals) {
+  return *std::min_element(vals.begin(), vals.end());
+}
+
+template <typename T>
 double ks_max(std::vector<T> vals, double ksrho = 50.0) {
   double umax = hard_max(vals);
   std::vector<T> eta(vals.size());
   std::transform(vals.begin(), vals.end(), eta.begin(),
                  [umax, ksrho](T x) { return exp(ksrho * (x - umax)); });
   return log(std::accumulate(eta.begin(), eta.end(), 0.0)) / ksrho + umax;
+}
+
+template <typename T>
+double ks_min(std::vector<T> vals, double ksrho = 50.0) {
+  double umin = hard_min(vals);
+  std::vector<T> eta(vals.size());
+  std::transform(vals.begin(), vals.end(), eta.begin(),
+                 [umin, ksrho](T x) { return exp(ksrho * (umin - x)); });
+  return umin - log(std::accumulate(eta.begin(), eta.end(), 0.0)) / ksrho;
 }
 
 /**

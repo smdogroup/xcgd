@@ -74,12 +74,12 @@ class LbracketGrid2D {
   }
 
   // vert -> coordinates
-  inline void get_vert_coords(int vert, int* nij) const {
+  inline void get_vert_coords(int vert, int* ixy) const {
     if (vert < grid1.get_num_verts()) {
-      grid1.get_vert_coords(vert, nij);
+      grid1.get_vert_coords(vert, ixy);
     } else {
-      grid2.get_vert_coords(vert - vert_offset, nij);
-      nij[1] += ny1;
+      grid2.get_vert_coords(vert - vert_offset, ixy);
+      ixy[1] += ny1;
     }
   }
 
@@ -113,17 +113,17 @@ class LbracketGrid2D {
   // cell -> verts
   void get_cell_verts(int cell, int* verts) const {
     if (cell < grid1.get_num_cells()) {
-      return grid1.get_cell_verts(cell, verts);
+      grid1.get_cell_verts(cell, verts);
     } else {
-      return grid2.get_cell_verts(cell - grid1.get_num_cells(), verts);
+      grid2.get_cell_verts(cell - grid1.get_num_cells(), verts);
       verts[2] += vert_offset;
       verts[3] += vert_offset;
-      if (verts[0] > nx2 + 1) {
+      if (verts[0] >= nx2 + 1) {
         verts[0] += vert_offset;
         verts[1] += vert_offset;
       } else {
-        verts[0] += vert_offset - nx1 - 1;
-        verts[1] += vert_offset - nx1 - 1;
+        verts[0] += (nx1 + 1) * ny1;
+        verts[1] += (nx1 + 1) * ny1;
       }
     }
   }
