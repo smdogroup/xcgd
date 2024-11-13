@@ -18,7 +18,7 @@ TEST(lbracket_mesh, lbracket_grid) {
 
   Mesh mesh(grid);
 
-  ToVTK<T, Mesh> vtk(mesh, "lbracket.vtk");
+  ToVTK<T, Mesh> vtk(mesh, "lbracket_grid.vtk");
   vtk.write_mesh();
 
   for (int elem = 0; elem < mesh.get_num_elements(); elem++) {
