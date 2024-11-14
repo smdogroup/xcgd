@@ -10,7 +10,7 @@
 #include "elements/gd_mesh.h"
 #include "elements/gd_vandermonde.h"
 #include "physics/cut_bcs.h"
-#include "physics/poisson.h"
+#include "physics/linear_elasticity.h"
 #include "sparse_utils/sparse_utils.h"
 #include "test_commons.h"
 #include "utils/mesher.h"
@@ -19,7 +19,8 @@ using T = double;
 
 template <class Physics, class Mesh, class Quadrature, class Basis>
 void test_physics_fd(std::tuple<Mesh *, Quadrature *, Basis *> tuple,
-                     Physics &physics, double h = 1e-6, double tol = 1e-14) {
+                     Physics &physics, double h = 1e-6, double tol = 1e-14,
+                     bool check_res_only = false) {
   Mesh *mesh = std::get<0>(tuple);
   Quadrature *quadrature = std::get<1>(tuple);
   Basis *basis = std::get<2>(tuple);
@@ -72,31 +73,36 @@ void test_physics_fd(std::tuple<Mesh *, Quadrature *, Basis *> tuple,
   analysis.residual(nullptr, dof1, res1);
   analysis.residual(nullptr, dof2, res2);
 
-  analysis.jacobian_product(nullptr, dof, direction, Jp);
-
   double dres_fd = (energy2 - energy1) / (2.0 * h);
   double dres_exact = 0.0;
   double dres_relerr = 0.0;
-  double dJp_fd = 0.0;
-  double dJp_exact = 0.0;
-  double dJp_relerr = 0.0;
+
   for (int i = 0; i < ndof; i++) {
     dres_exact += res[i] * direction[i];
-    dJp_fd += p[i] * (res2[i] - res1[i]) / (2.0 * h);
-    dJp_exact += Jp[i] * p[i];
   }
 
   dres_relerr = (dres_exact - dres_fd) / dres_fd;
   if (dres_exact == 0 and dres_fd == 0) dres_relerr = 0.0;
-
-  dJp_relerr = (dJp_exact - dJp_fd) / dJp_fd;
-  if (dJp_exact == 0 and dJp_fd == 0) dJp_relerr = 0.0;
 
   std::printf("\nDerivatives check for the residual\n");
   std::printf("finite difference derivatives: %25.15e\n", dres_fd);
   std::printf("exact derivatives:             %25.15e\n", dres_exact);
   std::printf("relative error:                %25.15e\n", dres_relerr);
   EXPECT_NEAR(dres_relerr, 0.0, tol);
+
+  if (check_res_only) return;
+
+  analysis.jacobian_product(nullptr, dof, direction, Jp);
+  double dJp_fd = 0.0;
+  double dJp_exact = 0.0;
+  double dJp_relerr = 0.0;
+  for (int i = 0; i < ndof; i++) {
+    dJp_fd += p[i] * (res2[i] - res1[i]) / (2.0 * h);
+    dJp_exact += Jp[i] * p[i];
+  }
+
+  dJp_relerr = (dJp_exact - dJp_fd) / dJp_fd;
+  if (dJp_exact == 0 and dJp_fd == 0) dJp_relerr = 0.0;
 
   std::printf("\nDerivatives check for the Jacobian-vector product\n");
   std::printf("finite difference derivatives: %25.15e\n", dJp_fd);
@@ -173,6 +179,41 @@ void test_cut_dirichlet(
 }
 
 template <class Quadrature, class Basis>
+void test_elasticity_external_load(
+    std::tuple<typename Basis::Mesh *, Quadrature *, Basis *> tuple,
+    double h = 1e-5, double tol = 1e-10) {
+  if constexpr (Basis::spatial_dim == 2) {
+    auto load_func = [](const A2D::Vec<T, 2> xloc) {
+      A2D::Vec<T, 2> ret;
+      ret(0) = -1.2 * sin(xloc(0)) + tan(xloc(1));
+      ret(1) = 3.4 * exp(xloc(1)) * cos(xloc(0));
+      return ret;
+    };
+
+    LinearElasticityExternalLoad<T, Basis::spatial_dim, typeof(load_func)>
+        physics_load(load_func);
+    test_physics_fd(tuple, physics_load, h, tol, true);
+  } else if constexpr (Basis::spatial_dim == 3) {
+    auto load_func = [](const A2D::Vec<T, 3> xloc) {
+      A2D::Vec<T, 3> ret;
+      ret(0) = -1.2 * sin(xloc(0)) + tan(xloc(1)) * cos(xloc(2));
+      ret(1) = 3.4 * exp(xloc(1)) * cos(xloc(0));
+      ret(2) = 5.6 * sin(xloc(2));
+      return ret;
+    };
+
+    LinearElasticityExternalLoad<T, Basis::spatial_dim, typeof(load_func)>
+        physics_load(load_func);
+    test_physics_fd(tuple, physics_load, h, tol, true);
+
+  } else {
+    throw std::runtime_error(
+        ("unknown Basis::spatial_dim: " + std::to_string(Basis::spatial_dim))
+            .c_str());
+  }
+}
+
+template <class Quadrature, class Basis>
 void test_vector_cut_dirichlet(
     std::tuple<typename Basis::Mesh *, Quadrature *, Basis *> tuple,
     double h = 1e-5, double tol = 1e-10) {
@@ -193,4 +234,8 @@ TEST(physics, CutDirichlet) {
 
 TEST(physics, VectorCutDirichlet) {
   test_vector_cut_dirichlet(create_gd_lsf_surf_basis());
+}
+
+TEST(physics, LinearElasticityExternalLoad) {
+  test_elasticity_external_load(create_gd_lsf_surf_basis());
 }

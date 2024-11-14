@@ -128,4 +128,87 @@ class LinearElasticity final
   const IntFunc& int_func;
 };
 
+template <typename T, int spatial_dim, class LoadFunc>
+class LinearElasticityExternalLoad final
+    : public PhysicsBase<T, spatial_dim, 1, spatial_dim> {
+ private:
+  using PhysicsBase = PhysicsBase<T, spatial_dim, 1, spatial_dim>;
+  static_assert(spatial_dim == 3 or spatial_dim == 2,
+                "LinearElasticity is only implemented for 2D and 3D problems");
+
+ public:
+  using PhysicsBase::data_per_node;
+  using PhysicsBase::dof_per_node;
+  using PhysicsBase::spatial_dim;
+
+  LinearElasticityExternalLoad(const LoadFunc& load_func)
+      : load_func(load_func) {}
+
+  T energy(T weight, T _, A2D::Vec<T, spatial_dim>& xloc,
+           A2D::Vec<T, spatial_dim>& nrm_ref,
+           A2D::Mat<T, spatial_dim, spatial_dim>& J,
+           A2D::Vec<T, dof_per_node>& u,
+           A2D::Mat<T, dof_per_node, spatial_dim>& grad) const {
+    A2D::Vec<T, dof_per_node> load(load_func(xloc));
+
+    // Get tangent direction in the reference frame
+    A2D::Vec<T, spatial_dim> tan_ref;
+    A2D::Mat<T, spatial_dim, spatial_dim> rot;
+    rot(0, 1) = -1.0;
+    rot(1, 0) = 1.0;
+    A2D::MatVecMult(rot, nrm_ref, tan_ref);
+
+    // Compute the scaling from ref frame to physical frame
+    T scale2;
+    A2D::Mat<T, spatial_dim, spatial_dim> JTJ;
+    A2D::Vec<T, spatial_dim> JTJdt;
+    A2D::MatMatMult<A2D::MatOp::TRANSPOSE, A2D::MatOp::NORMAL>(J, J, JTJ);
+    A2D::MatVecMult(JTJ, tan_ref, JTJdt);
+    A2D::VecDot(tan_ref, JTJdt, scale2);
+
+    T dot;
+    A2D::VecDot(load, u, dot);
+    T output = weight * sqrt(scale2) * dot;
+
+    return output;
+  }
+
+  void residual(T weight, T _, A2D::Vec<T, spatial_dim>& xloc,
+                A2D::Vec<T, spatial_dim>& nrm_ref,
+                A2D::Mat<T, spatial_dim, spatial_dim>& J,
+                A2D::Vec<T, dof_per_node>& u,
+                A2D::Mat<T, dof_per_node, spatial_dim>& grad,
+                A2D::Vec<T, dof_per_node>& coef_u,
+                A2D::Mat<T, dof_per_node, spatial_dim>& coef_grad) const {
+    A2D::Vec<T, dof_per_node> load(load_func(xloc));
+
+    // Get tangent direction in the reference frame
+    A2D::Vec<T, spatial_dim> tan_ref;
+    A2D::Mat<T, spatial_dim, spatial_dim> rot;
+    rot(0, 1) = -1.0;
+    rot(1, 0) = 1.0;
+    A2D::MatVecMult(rot, nrm_ref, tan_ref);
+
+    // Create AD objects
+    A2D::ADObj<T> scale2_obj, dot_obj, output_obj;
+    A2D::ADObj<A2D::Mat<T, spatial_dim, spatial_dim>> J_obj(J), JTJ_obj;
+    A2D::ADObj<A2D::Vec<T, spatial_dim>> JTJdt_obj;
+    A2D::ADObj<A2D::Vec<T, dof_per_node>&> u_obj(u, coef_u);
+
+    auto stack = A2D::MakeStack(
+        A2D::MatMatMult<A2D::MatOp::TRANSPOSE, A2D::MatOp::NORMAL>(J_obj, J_obj,
+                                                                   JTJ_obj),
+        A2D::MatVecMult(JTJ_obj, tan_ref, JTJdt_obj),
+        A2D::VecDot(tan_ref, JTJdt_obj, scale2_obj),
+        A2D::VecDot(load, u_obj, dot_obj),
+        A2D::Eval(weight * sqrt(scale2_obj) * dot_obj, output_obj));
+
+    output_obj.bvalue() = 1.0;
+    stack.reverse();
+  }
+
+ private:
+  const LoadFunc& load_func;
+};
+
 #endif  // XCGD_LINEAR_ELASTICITY_H
