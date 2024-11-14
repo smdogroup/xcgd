@@ -378,8 +378,19 @@ class GDGaussQuadrature2D final : public QuadratureBase<T> {
     }
   }
 
+  /**
+   * @brief Get the quadrature points and weights
+   *
+   * @param elem element index
+   * @param pts concatenation of [ξ, η] for each quadrature point, size:
+   * num_quad * spatial_dim
+   * @param wts quadrature weights, size: num_quad
+   * @param ns if is surface quadrature, stores the outer normal vector in
+   * reference frame
+   * @return int num_quad
+   */
   int get_quadrature_pts(int elem, std::vector<T>& pts, std::vector<T>& wts,
-                         std::vector<T>& _) const {
+                         std::vector<T>& ns) const {
     int constexpr spatial_dim = Mesh::spatial_dim;
 
     if constexpr (quad_type == QuadPtType::INNER) {
@@ -403,15 +414,23 @@ class GDGaussQuadrature2D final : public QuadratureBase<T> {
         if constexpr (surf_quad == SurfQuad::LEFT) {
           pts[q * spatial_dim] = T(0.0);
           pts[q * spatial_dim + 1] = pts_1d[q];
+          ns[q * spatial_dim] = T(-1.0);
+          ns[q * spatial_dim + 1] = T(0.0);
         } else if constexpr (surf_quad == SurfQuad::RIGHT) {
           pts[q * spatial_dim] = T(1.0);
           pts[q * spatial_dim + 1] = pts_1d[q];
+          ns[q * spatial_dim] = T(1.0);
+          ns[q * spatial_dim + 1] = T(0.0);
         } else if constexpr (surf_quad == SurfQuad::LOWER) {
           pts[q * spatial_dim] = pts_1d[q];
           pts[q * spatial_dim + 1] = T(0.0);
+          ns[q * spatial_dim] = T(0.0);
+          ns[q * spatial_dim + 1] = T(-1.0);
         } else if constexpr (surf_quad == SurfQuad::UPPER) {
           pts[q * spatial_dim] = pts_1d[q];
           pts[q * spatial_dim + 1] = T(1.0);
+          ns[q * spatial_dim] = T(0.0);
+          ns[q * spatial_dim + 1] = T(1.0);
         }
       }
       return num_quad_pts;
