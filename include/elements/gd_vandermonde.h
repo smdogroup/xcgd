@@ -357,13 +357,18 @@ class VandermondeEvaluator {
   bool reorder_nodes = false;
 };
 
-template <typename T, int Np_1d>
+enum class SurfQuad { UPPER, LOWER, LEFT, RIGHT, NA };
+
+template <typename T, int Np_1d, QuadPtType quad_type = QuadPtType::INNER,
+          SurfQuad surf_quad = SurfQuad::NA>
 class GDGaussQuadrature2D final : public QuadratureBase<T> {
  private:
   // algoim limit, see gaussquad.hpp
   static_assert(Np_1d <= algoim::GaussQuad::p_max);  // algoim limit
-  static constexpr int num_quad_pts = Np_1d * Np_1d;
   using Mesh = GridMesh<T, Np_1d>;
+  static_assert((quad_type == QuadPtType::SURFACE) xor
+                    (surf_quad == SurfQuad::NA),
+                "quad_type and surf_quad are not compatible");
 
  public:
   GDGaussQuadrature2D(const Mesh& mesh) : mesh(mesh) {
@@ -376,17 +381,41 @@ class GDGaussQuadrature2D final : public QuadratureBase<T> {
   int get_quadrature_pts(int elem, std::vector<T>& pts, std::vector<T>& wts,
                          std::vector<T>& _) const {
     int constexpr spatial_dim = Mesh::spatial_dim;
-    pts.resize(spatial_dim * num_quad_pts);
-    wts.resize(num_quad_pts);
-    for (int q = 0; q < num_quad_pts; q++) {  // q = i * Np_1d + j
-      int i = q / Np_1d;
-      int j = q % Np_1d;
-      pts[q * spatial_dim] = pts_1d[i];
-      pts[q * spatial_dim + 1] = pts_1d[j];
-      wts[q] = wts_1d[i] * wts_1d[j];
-    }
 
-    return num_quad_pts;
+    if constexpr (quad_type == QuadPtType::INNER) {
+      static constexpr int num_quad_pts = Np_1d * Np_1d;
+      pts.resize(spatial_dim * num_quad_pts);
+      wts.resize(num_quad_pts);
+      for (int q = 0; q < num_quad_pts; q++) {  // q = i * Np_1d + j
+        int i = q / Np_1d;
+        int j = q % Np_1d;
+        pts[q * spatial_dim] = pts_1d[i];
+        pts[q * spatial_dim + 1] = pts_1d[j];
+        wts[q] = wts_1d[i] * wts_1d[j];
+      }
+      return num_quad_pts;
+    } else {  // QuadPtType::SURFACE
+      static constexpr int num_quad_pts = Np_1d;
+      pts.resize(spatial_dim * num_quad_pts);
+      wts.resize(num_quad_pts);
+      for (int q = 0; q < num_quad_pts; q++) {
+        wts[q] = wts_1d[q];
+        if constexpr (surf_quad == SurfQuad::LEFT) {
+          pts[q * spatial_dim] = T(0.0);
+          pts[q * spatial_dim + 1] = pts_1d[q];
+        } else if constexpr (surf_quad == SurfQuad::RIGHT) {
+          pts[q * spatial_dim] = T(1.0);
+          pts[q * spatial_dim + 1] = pts_1d[q];
+        } else if constexpr (surf_quad == SurfQuad::LOWER) {
+          pts[q * spatial_dim] = pts_1d[q];
+          pts[q * spatial_dim + 1] = T(0.0);
+        } else if constexpr (surf_quad == SurfQuad::UPPER) {
+          pts[q * spatial_dim] = pts_1d[q];
+          pts[q * spatial_dim + 1] = T(1.0);
+        }
+      }
+      return num_quad_pts;
+    }
   }
 
  private:
