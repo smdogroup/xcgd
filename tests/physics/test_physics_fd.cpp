@@ -190,7 +190,7 @@ void test_elasticity_external_load(
       return ret;
     };
 
-    LinearElasticityExternalLoad<T, Basis::spatial_dim, typeof(load_func)>
+    ElasticityExternalLoad<T, Basis::spatial_dim, typeof(load_func)>
         physics_load(load_func);
     test_physics_fd(tuple, physics_load, h, tol, true);
   } else if constexpr (Basis::spatial_dim == 3) {
@@ -202,7 +202,7 @@ void test_elasticity_external_load(
       return ret;
     };
 
-    LinearElasticityExternalLoad<T, Basis::spatial_dim, typeof(load_func)>
+    ElasticityExternalLoad<T, Basis::spatial_dim, typeof(load_func)>
         physics_load(load_func);
     test_physics_fd(tuple, physics_load, h, tol, true);
 
@@ -236,6 +236,6 @@ TEST(physics, VectorCutDirichlet) {
   test_vector_cut_dirichlet(create_gd_lsf_surf_basis());
 }
 
-TEST(physics, LinearElasticityExternalLoad) {
+TEST(physics, ElasticityExternalLoad) {
   test_elasticity_external_load(create_gd_lsf_surf_basis());
 }

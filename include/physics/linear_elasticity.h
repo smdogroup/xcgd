@@ -129,7 +129,7 @@ class LinearElasticity final
 };
 
 template <typename T, int spatial_dim, class LoadFunc>
-class LinearElasticityExternalLoad final
+class ElasticityExternalLoad final
     : public PhysicsBase<T, spatial_dim, 1, spatial_dim> {
  private:
   using PhysicsBase = PhysicsBase<T, spatial_dim, 1, spatial_dim>;
@@ -141,8 +141,7 @@ class LinearElasticityExternalLoad final
   using PhysicsBase::dof_per_node;
   using PhysicsBase::spatial_dim;
 
-  LinearElasticityExternalLoad(const LoadFunc& load_func)
-      : load_func(load_func) {}
+  ElasticityExternalLoad(const LoadFunc& load_func) : load_func(load_func) {}
 
   T energy(T weight, T _, A2D::Vec<T, spatial_dim>& xloc,
            A2D::Vec<T, spatial_dim>& nrm_ref,
