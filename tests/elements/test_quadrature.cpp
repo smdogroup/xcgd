@@ -42,10 +42,10 @@ void test_gauss_surf_quad() {
         } else if constexpr (surf_quad == SurfQuad::LEFT) {
           EXPECT_NEAR((ix + 1.0) * lxy[0] / nxy[0], xloc_q[2 * Np_1d * cell],
                       1e-15);
-        } else if constexpr (surf_quad == SurfQuad::LOWER) {
+        } else if constexpr (surf_quad == SurfQuad::BOTTOM) {
           EXPECT_NEAR(iy * lxy[1] / nxy[1], xloc_q[2 * Np_1d * cell + 1],
                       1e-15);
-        } else if constexpr (surf_quad == SurfQuad::UPPER) {
+        } else if constexpr (surf_quad == SurfQuad::TOP) {
           EXPECT_NEAR((iy + 1.0) * lxy[1] / nxy[1],
                       xloc_q[2 * Np_1d * cell + 1], 1e-15);
         }

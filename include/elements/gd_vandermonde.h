@@ -9,6 +9,7 @@
 #include <iostream>
 #include <limits>
 #include <numeric>
+#include <set>
 #include <vector>
 
 #include "dual.hpp"
@@ -357,11 +358,11 @@ class VandermondeEvaluator {
   bool reorder_nodes = false;
 };
 
-enum class SurfQuad { UPPER, LOWER, LEFT, RIGHT, NA };
+enum class SurfQuad { LEFT, RIGHT, BOTTOM, TOP, NA };
 
 template <typename T, int Np_1d, QuadPtType quad_type = QuadPtType::INNER,
           SurfQuad surf_quad = SurfQuad::NA>
-class GDGaussQuadrature2D final : public QuadratureBase<T> {
+class GDGaussQuadrature2D final : public QuadratureBase<T, quad_type> {
  private:
   // algoim limit, see gaussquad.hpp
   static_assert(Np_1d <= algoim::GaussQuad::p_max);  // algoim limit
@@ -371,7 +372,8 @@ class GDGaussQuadrature2D final : public QuadratureBase<T> {
                 "quad_type and surf_quad are not compatible");
 
  public:
-  GDGaussQuadrature2D(const Mesh& mesh) : mesh(mesh) {
+  GDGaussQuadrature2D(const Mesh& mesh, const std::set<int> elements = {})
+      : mesh(mesh), elements(elements) {
     for (int i = 0; i < Np_1d; i++) {
       pts_1d[i] = algoim::GaussQuad::x(Np_1d, i);  // in (0, 1)
       wts_1d[i] = algoim::GaussQuad::w(Np_1d, i);
@@ -391,6 +393,9 @@ class GDGaussQuadrature2D final : public QuadratureBase<T> {
    */
   int get_quadrature_pts(int elem, std::vector<T>& pts, std::vector<T>& wts,
                          std::vector<T>& ns) const {
+    if (elements.size() and !elements.count(elem)) {
+      return 0;
+    }
     int constexpr spatial_dim = Mesh::spatial_dim;
 
     if constexpr (quad_type == QuadPtType::INNER) {
@@ -408,6 +413,7 @@ class GDGaussQuadrature2D final : public QuadratureBase<T> {
     } else {  // QuadPtType::SURFACE
       static constexpr int num_quad_pts = Np_1d;
       pts.resize(spatial_dim * num_quad_pts);
+      ns.resize(spatial_dim * num_quad_pts);
       wts.resize(num_quad_pts);
       for (int q = 0; q < num_quad_pts; q++) {
         wts[q] = wts_1d[q];
@@ -421,12 +427,12 @@ class GDGaussQuadrature2D final : public QuadratureBase<T> {
           pts[q * spatial_dim + 1] = pts_1d[q];
           ns[q * spatial_dim] = T(1.0);
           ns[q * spatial_dim + 1] = T(0.0);
-        } else if constexpr (surf_quad == SurfQuad::LOWER) {
+        } else if constexpr (surf_quad == SurfQuad::BOTTOM) {
           pts[q * spatial_dim] = pts_1d[q];
           pts[q * spatial_dim + 1] = T(0.0);
           ns[q * spatial_dim] = T(0.0);
           ns[q * spatial_dim + 1] = T(-1.0);
-        } else if constexpr (surf_quad == SurfQuad::UPPER) {
+        } else if constexpr (surf_quad == SurfQuad::TOP) {
           pts[q * spatial_dim] = pts_1d[q];
           pts[q * spatial_dim + 1] = T(1.0);
           ns[q * spatial_dim] = T(0.0);
@@ -439,6 +445,7 @@ class GDGaussQuadrature2D final : public QuadratureBase<T> {
 
  private:
   const Mesh& mesh;
+  std::set<int> elements;
   std::array<T, Np_1d> pts_1d, wts_1d;
 };
 

@@ -367,3 +367,81 @@ TEST(elements, surf_integration_ellipse_Np6) {
   double tol = 1e-10;
   EXPECT_NEAR(perimeter, perimeter_exact, tol);
 }
+
+template <typename T, int Np_1d, SurfQuad surf_quad>
+T compute_edges_length() {
+  using Quadrature =
+      GDGaussQuadrature2D<T, Np_1d, QuadPtType::SURFACE, surf_quad>;
+  using Mesh = GridMesh<T, Np_1d>;
+  using Basis = GDBasis2D<T, Mesh>;
+  using Grid = StructuredGrid2D<T>;
+  using Physics = SurfaceIntegration<T, Basis::spatial_dim>;
+  using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
+
+  int nxy[2] = {16, 16};
+  double lxy[2] = {1.0, 1.5};
+
+  Grid grid(nxy, lxy);
+  Mesh mesh(grid);
+
+  std::set<int> elements;
+
+  switch (surf_quad) {
+    case SurfQuad::LEFT: {
+      for (int i = 0; i < 16; i++) {
+        elements.insert(grid.get_coords_cell(0, i));
+      }
+      break;
+    }
+    case SurfQuad::RIGHT: {
+      for (int i = 0; i < 16; i++) {
+        elements.insert(grid.get_coords_cell(15, i));
+      }
+      break;
+    }
+    case SurfQuad::BOTTOM: {
+      for (int i = 0; i < 16; i++) {
+        elements.insert(grid.get_coords_cell(i, 0));
+      }
+      break;
+    }
+    case SurfQuad::TOP: {
+      for (int i = 0; i < 16; i++) {
+        elements.insert(grid.get_coords_cell(i, 15));
+      }
+      break;
+    }
+  }
+
+  Quadrature quadrature(mesh, elements);
+  Basis basis(mesh);
+
+  std::vector<T> dof(mesh.get_num_nodes(), 1.0);
+
+  Physics physics;
+  Analysis analysis(mesh, quadrature, basis, physics);
+
+  return analysis.energy(nullptr, dof.data());
+}
+
+TEST(elements, edge_integration_Np2) {
+  double ll = compute_edges_length<double, 2, SurfQuad::LEFT>();
+  double lr = compute_edges_length<double, 2, SurfQuad::RIGHT>();
+  double lb = compute_edges_length<double, 2, SurfQuad::BOTTOM>();
+  double lt = compute_edges_length<double, 2, SurfQuad::TOP>();
+  EXPECT_NEAR(ll, 1.5, 1e-30);
+  EXPECT_NEAR(lr, 1.5, 1e-30);
+  EXPECT_NEAR(lb, 1.0, 1e-30);
+  EXPECT_NEAR(lt, 1.0, 1e-30);
+}
+
+TEST(elements, edge_integration_Np4) {
+  double ll = compute_edges_length<double, 4, SurfQuad::LEFT>();
+  double lr = compute_edges_length<double, 4, SurfQuad::RIGHT>();
+  double lb = compute_edges_length<double, 4, SurfQuad::BOTTOM>();
+  double lt = compute_edges_length<double, 4, SurfQuad::TOP>();
+  EXPECT_NEAR(ll, 1.5, 1e-12);
+  EXPECT_NEAR(lr, 1.5, 1e-12);
+  EXPECT_NEAR(lb, 1.0, 1e-12);
+  EXPECT_NEAR(lt, 1.0, 1e-12);
+}
