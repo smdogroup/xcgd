@@ -60,9 +60,7 @@ class StaticElastic final {
   }
 
   std::vector<T> solve(const std::vector<int>& bc_dof,
-                       const std::vector<T>& bc_vals,
-                       const std::vector<int>& load_dof,
-                       const std::vector<T>& load_vals) {
+                       const std::vector<T>& bc_vals) {
     int ndof = Physics::dof_per_node * mesh.get_num_nodes();
 
     // Compute Jacobian matrix
@@ -94,8 +92,79 @@ class StaticElastic final {
       t2[i] = rhs[i] - t2[i];
     }
 
-    for (int i = 0; i < load_dof.size(); i++) {
-      rhs[load_dof[i]] = load_vals[i];
+    // Factorize Jacobian matrix
+    SparseUtils::CholOrderingType order = SparseUtils::CholOrderingType::ND;
+    SparseUtils::SparseCholesky<T>* chol =
+        new SparseUtils::SparseCholesky<T>(jac_csc);
+    chol->factor();
+    std::vector<T> sol = t2;
+    chol->solve(sol.data());
+
+#ifdef XCGD_DEBUG_MODE
+    // Write Jacobian matrix to a file
+    jac_csc->write_mtx("K_bcs.mtx");
+
+    // Check error
+    // res = Ku - rhs
+    std::vector<T> Ku(sol.size());
+    jac_bsr->axpy(sol.data(), Ku.data());
+    T err = 0.0;
+    for (int i = 0; i < Ku.size(); i++) {
+      err += (Ku[i] - rhs[i]) * (Ku[i] - rhs[i]);
+    }
+    std::printf("[Debug] Linear elasticity residual:\n");
+    std::printf("||Ku - f||_2: %25.15e\n", sqrt(err));
+#endif
+
+    if (jac_bsr) delete jac_bsr;
+    if (jac_csc) delete jac_csc;
+    if (chol) delete chol;
+
+    return sol;
+  }
+
+  template <class... LoadAnalyses>
+  std::vector<T> solve(const std::vector<int>& bc_dof,
+                       const std::vector<T>& bc_vals,
+                       const std::tuple<LoadAnalyses...>& load_analyses) {
+    int ndof = Physics::dof_per_node * mesh.get_num_nodes();
+
+    // Compute Jacobian matrix
+    BSRMat* jac_bsr = jacobian(bc_dof);
+    CSCMat* jac_csc = SparseUtils::bsr_to_csc(jac_bsr);
+    jac_csc->zero_columns(bc_dof.size(), bc_dof.data());
+
+    // Set right hand side (Dirichlet bcs and load)
+    std::vector<T> rhs(ndof, 0.0), t1(ndof, 0.0), t2(ndof, 0.0);
+
+    // Add internal load contributions to the right-hand size
+    analysis.residual(nullptr, t1.data(), rhs.data());
+
+    // Add external load contributions to the right-hand size
+    std::apply(
+        [&t1, &rhs](auto&&... load_analysis) mutable {
+          (load_analysis.residual(nullptr, t1.data(), rhs.data()), ...);
+        },
+        load_analyses);
+
+    for (int i = 0; i < rhs.size(); i++) {
+      rhs[i] *= -1.0;
+    }
+    for (int i = 0; i < bc_dof.size(); i++) {
+      rhs[bc_dof[i]] = bc_vals[i];
+    }
+
+    for (int i = 0; i < bc_dof.size(); i++) {
+      t1[bc_dof[i]] = bc_vals[i];
+    }
+
+    jac_bsr->axpy(t1.data(), t2.data());
+    for (int i = 0; i < bc_dof.size(); i++) {
+      t2[bc_dof[i]] = 0.0;
+    }
+
+    for (int i = 0; i < rhs.size(); i++) {
+      t2[i] = rhs[i] - t2[i];
     }
 
     // Factorize Jacobian matrix

@@ -636,8 +636,8 @@ class GalerkinAnalysis final {
                                                nullptr, &xloc, nullptr);
 
         typename Physics::dof_t vals{};
-        interp_val_grad<T, Basis>(element_dof, &N[offset_n], nullptr, &vals,
-                                  nullptr);
+        interp_val_grad<T, Basis, Physics::dof_per_node>(
+            element_dof, &N[offset_n], nullptr, &vals, nullptr);
 
         for (int d = 0; d < spatial_dim; d++) {
           xloc_q.push_back(xloc(d));

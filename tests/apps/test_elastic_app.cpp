@@ -1,6 +1,8 @@
+#include "analysis.h"
 #include "apps/static_elastic.h"
 #include "elements/gd_mesh.h"
 #include "elements/gd_vandermonde.h"
+#include "physics/linear_elasticity.h"
 #include "test_commons.h"
 #include "utils/vtk.h"
 
@@ -32,10 +34,9 @@ void test_elastic_app() {
   using Quadrature = GDGaussQuadrature2D<T, Np_1d>;
   using Mesh = GridMesh<T, Np_1d>;
   using Basis = GDBasis2D<T, Mesh>;
-  int nxy[2] = {5, 5};
-  T lxy[2] = {2.0, 2.0};
-  T xy0[2] = {-1.0, -1.0};
-  Grid grid(nxy, lxy, xy0);
+  int nxy[2] = {32, 16};
+  T lxy[2] = {2.0, 1.0};
+  Grid grid(nxy, lxy);
   Mesh mesh(grid);
   Quadrature quadrature(mesh);
   Basis basis(mesh);
@@ -48,8 +49,6 @@ void test_elastic_app() {
     auto int_fun = [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
       A2D::Vec<T, Basis::spatial_dim> intf;
       intf(0) = xloc(0);
-      std::printf("xloc: (%15.5f, %15.5f), fx: %15.5f\n", xloc(0), xloc(1),
-                  intf(0));
       return intf;
     };
     StaticElastic<T, Mesh, Quadrature, Basis, typeof(int_fun)> elastic(
@@ -62,8 +61,9 @@ void test_elastic_app() {
       bc_dof.insert(bc_dof.end(), t.begin(), t.end());
     }
     std::vector<T> sol =
-        elastic.solve(bc_dof, std::vector<T>(bc_dof.size(), 0.0), {}, {});
-    ToVTK<T, Mesh> vtk(mesh, "elastic_case1.vtk");
+        elastic.solve(bc_dof, std::vector<T>(bc_dof.size(), 0.0));
+    ToVTK<T, Mesh> vtk(mesh,
+                       "elastic_case1_Np" + std::to_string(Np_1d) + ".vtk");
     vtk.write_mesh();
     vtk.write_vec("u", sol.data());
   }
@@ -92,11 +92,66 @@ void test_elastic_app() {
     std::vector<T> bc_vals = left_vals;
     bc_vals.insert(bc_vals.end(), right_vals.begin(), right_vals.end());
 
-    std::vector<T> sol = elastic.solve(bc_dof, bc_vals, {}, {});
-    ToVTK<T, Mesh> vtk(mesh, "elastic_case2.vtk");
+    std::vector<T> sol = elastic.solve(bc_dof, bc_vals);
+    ToVTK<T, Mesh> vtk(mesh,
+                       "elastic_case2_Np" + std::to_string(Np_1d) + ".vtk");
+    vtk.write_mesh();
+    vtk.write_vec("u", sol.data());
+  }
+
+  // Case 3: 0-displacement on left and load on part of the right
+  {
+    auto int_fun = [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
+      A2D::Vec<T, Basis::spatial_dim> intf;
+      return intf;
+    };
+    StaticElastic<T, Mesh, Quadrature, Basis, typeof(int_fun)> elastic(
+        E, nu, mesh, quadrature, basis, int_fun);
+
+    // Boundary condition
+    std::vector<int> bc_dof = get_dof_vec_from_nodes<T, Basis::spatial_dim>(
+        mesh.get_left_boundary_nodes());
+    std::vector<T> bc_vals(bc_dof.size(), 0.0);
+
+    // Load
+    auto load_func = [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
+      A2D::Vec<T, Basis::spatial_dim> intf;
+      if (xloc(1) <= 0.3) {
+        intf(0) = 1.0;
+        // intf(1) = -1.0;
+      }
+      return intf;
+    };
+    using LoadPhysics =
+        ElasticityExternalLoad<T, Basis::spatial_dim, typeof(load_func)>;
+    using LoadQuadrature =
+        GDGaussQuadrature2D<T, Np_1d, QuadPtType::SURFACE, SurfQuad::RIGHT>;
+    using LoadAnalysis =
+        GalerkinAnalysis<T, Mesh, LoadQuadrature, Basis, LoadPhysics>;
+
+    LoadPhysics load_physics(load_func);
+    std::set<int> load_elements;
+    for (int i = 0; i < nxy[1]; i++) {
+      load_elements.insert(grid.get_coords_cell(nxy[0] - 1, i));
+    }
+    LoadQuadrature load_quadrature(mesh, load_elements);
+    LoadAnalysis load_analysis(mesh, load_quadrature, basis, load_physics);
+
+    FieldToVTKNew<T, Basis::spatial_dim> quad_vtk(
+        "elastic_case3_loadquads_Np" + std::to_string(Np_1d) + ".vtk");
+    auto [xloc_q, _] = load_analysis.interpolate_dof(
+        std::vector<T>(mesh.get_num_nodes(), T(0.0)).data());
+    quad_vtk.add_mesh(xloc_q);
+    quad_vtk.write_mesh();
+
+    std::vector<T> sol =
+        elastic.solve(bc_dof, bc_vals, std::tuple<LoadAnalysis>{load_analysis});
+    ToVTK<T, Mesh> vtk(mesh,
+                       "elastic_case3_Np" + std::to_string(Np_1d) + ".vtk");
     vtk.write_mesh();
     vtk.write_vec("u", sol.data());
   }
 }
 
-TEST(apps, Elastic) { test_elastic_app<2>(); }
+TEST(apps, ElasticNp2) { test_elastic_app<2>(); }
+TEST(apps, ElasticNp4) { test_elastic_app<4>(); }

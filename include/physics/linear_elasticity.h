@@ -167,7 +167,7 @@ class ElasticityExternalLoad final
 
     T dot;
     A2D::VecDot(load, u, dot);
-    T output = weight * sqrt(scale2) * dot;
+    T output = -weight * sqrt(scale2) * dot;
 
     return output;
   }
@@ -200,7 +200,7 @@ class ElasticityExternalLoad final
         A2D::MatVecMult(JTJ_obj, tan_ref, JTJdt_obj),
         A2D::VecDot(tan_ref, JTJdt_obj, scale2_obj),
         A2D::VecDot(load, u_obj, dot_obj),
-        A2D::Eval(weight * sqrt(scale2_obj) * dot_obj, output_obj));
+        A2D::Eval(-weight * sqrt(scale2_obj) * dot_obj, output_obj));
 
     output_obj.bvalue() = 1.0;
     stack.reverse();
