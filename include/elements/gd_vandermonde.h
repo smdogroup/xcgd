@@ -361,12 +361,11 @@ class VandermondeEvaluator {
 enum class SurfQuad { LEFT, RIGHT, BOTTOM, TOP, NA };
 
 template <typename T, int Np_1d, QuadPtType quad_type = QuadPtType::INNER,
-          SurfQuad surf_quad = SurfQuad::NA>
+          SurfQuad surf_quad = SurfQuad::NA, class Mesh = GridMesh<T, Np_1d>>
 class GDGaussQuadrature2D final : public QuadratureBase<T, quad_type> {
  private:
   // algoim limit, see gaussquad.hpp
   static_assert(Np_1d <= algoim::GaussQuad::p_max);  // algoim limit
-  using Mesh = GridMesh<T, Np_1d>;
   static_assert((quad_type == QuadPtType::SURFACE) xor
                     (surf_quad == SurfQuad::NA),
                 "quad_type and surf_quad are not compatible");

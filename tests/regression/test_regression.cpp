@@ -108,8 +108,8 @@ void test_regression_static(json j) {
   std::vector<T> load_vals(j["load_vals"]);
   EXPECT_EQ(load_dof.size(), load_vals.size());
 
-  std::vector<T> sol = elastic.solve(
-      bc_dof, std::vector<T>(bc_dof.size(), T(0.0)), load_dof, load_vals);
+  std::vector<T> sol =
+      elastic.solve(bc_dof, std::vector<T>(bc_dof.size(), T(0.0)));
 
   char vtkname[256];
   std::snprintf(vtkname, 256, "regression_Np_1d_%d.vtk", Np_1d);

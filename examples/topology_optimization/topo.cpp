@@ -163,8 +163,8 @@ class TopoAnalysis {
     VandermondeCondLogger::enable();
 
     try {
-      std::vector<T> sol = elastic.solve(
-          bc_dof, std::vector<T>(bc_dof.size(), T(0.0)), load_dof, load_vals);
+      std::vector<T> sol =
+          elastic.solve(bc_dof, std::vector<T>(bc_dof.size(), T(0.0)));
       return sol;
     } catch (const StencilConstructionFailed& e) {
       std::printf(
@@ -580,6 +580,7 @@ void execute(int argc, char* argv[]) {
   if (instance == "lbracket") {
     throw std::runtime_error("lbracket is WIP");
   }
+
   T r0 = parser.get_double_option("helmholtz_r0");
   T E = parser.get_double_option("E");
   T nu = parser.get_double_option("nu");
@@ -608,8 +609,24 @@ void execute(int argc, char* argv[]) {
 
   options->setOption("algorithm", "mma");
   options->setOption("mma_max_iterations", parser.get_int_option("max_it"));
+  options->setOption("mma_init_asymptote_offset",
+                     parser.get_double_option("mma_init_asymptote_offset"));
   options->setOption("mma_move_limit",
                      parser.get_double_option("mma_move_limit"));
+  options->setOption("max_major_iters",
+                     parser.get_int_option("max_major_iters"));
+  options->setOption("penalty_gamma",
+                     parser.get_double_option("penalty_gamma"));
+  options->setOption("qn_subspace_size",
+                     parser.get_int_option("qn_subspace_size"));
+  options->setOption("qn_type", parser.get_str_option("qn_type").c_str());
+  options->setOption("abs_res_tol", parser.get_double_option("abs_res_tol"));
+  options->setOption("starting_point_strategy",
+                     parser.get_str_option("starting_point_strategy").c_str());
+  options->setOption("barrier_strategy",
+                     parser.get_str_option("barrier_strategy").c_str());
+  options->setOption("use_line_search",
+                     parser.get_bool_option("use_line_search"));
   options->setOption("output_file",
                      (fspath(prefix) / fspath("paropt.out")).c_str());
   options->setOption("tr_output_file",

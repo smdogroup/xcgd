@@ -65,7 +65,7 @@ TEST(lbracket_mesh, lbracket_via_lsf) {
   vtk.write_mesh();
   vtk.write_sol("lsf", mesh.get_lsf_nodes().data());
 
-  auto [xloc_q, dof_q] = analysis.interpolate_dof(mesh.get_lsf_nodes().data());
+  auto [xloc_q, dof_q] = analysis.interpolate(mesh.get_lsf_nodes().data());
 
   FieldToVTKNew<T, Basis::spatial_dim> field_vtk("lbracket_lsf_quad.vtk");
   field_vtk.add_mesh(xloc_q);

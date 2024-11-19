@@ -49,15 +49,13 @@ TEST(topo, stress_evaluation_regular_grid) {
     load_dof.push_back(load_node * Basis::spatial_dim + 1);
   }
 
-  // std::vector<T> sol =
-  //     elastic.solve(bc_dof, std::vector<T>(bc_dof.size(), 0.0), load_dof,
-  //                   std::vector<T>(load_dof.size(), 1.0));
   std::vector<T> sol =
-      elastic.solve(bc_dof, std::vector<T>(bc_dof.size(), 0.0), {}, {});
+      elastic.solve(bc_dof, std::vector<T>(bc_dof.size(), 0.0));
 
   ToVTK<T, Mesh> vtk(mesh, "lbracket_case.vtk");
   vtk.write_mesh();
   vtk.write_vec("u", sol.data());
+  vtk.write_sol("lsf", mesh.get_lsf_nodes().data());
 
   using Physics = LinearElasticity2DVonMisesStress<T>;
   using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
@@ -66,9 +64,14 @@ TEST(topo, stress_evaluation_regular_grid) {
   Analysis analysis(mesh, quadrature, basis, physics);
 
   auto [xloc_q, stress_q] = analysis.interpolate_energy(sol.data());
+  auto [_, lsf_q] =
+      analysis.template interpolate<1>(mesh.get_lsf_nodes().data());
   FieldToVTKNew<T, Basis::spatial_dim> field_vtk("lbracket_case_quad.vtk");
   field_vtk.add_mesh(xloc_q);
   field_vtk.write_mesh();
   field_vtk.add_sol("VonMises", stress_q);
+  field_vtk.add_sol("lsf", lsf_q);
+
   field_vtk.write_sol("VonMises");
+  field_vtk.write_sol("lsf");
 }

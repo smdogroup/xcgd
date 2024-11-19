@@ -139,7 +139,7 @@ void test_elastic_app() {
 
     FieldToVTKNew<T, Basis::spatial_dim> quad_vtk(
         "elastic_case3_loadquads_Np" + std::to_string(Np_1d) + ".vtk");
-    auto [xloc_q, _] = load_analysis.interpolate_dof(
+    auto [xloc_q, _] = load_analysis.interpolate(
         std::vector<T>(mesh.get_num_nodes(), T(0.0)).data());
     quad_vtk.add_mesh(xloc_q);
     quad_vtk.write_mesh();

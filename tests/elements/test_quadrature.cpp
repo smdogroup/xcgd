@@ -32,7 +32,7 @@ void test_gauss_surf_quad() {
   Analysis analysis(mesh, quadrature, basis, physics);
 
   std::vector<T> dof(mesh.get_num_nodes(), T(0.0));  // dummy dof
-  auto [xloc_q, dof_q] = analysis.interpolate_dof(dof.data());
+  auto [xloc_q, dof_q] = analysis.interpolate(dof.data());
 
   for (int iy = 0, cell = 0; iy < nxy[1]; iy++) {
     for (int ix = 0; ix < nxy[0]; ix++, cell++) {

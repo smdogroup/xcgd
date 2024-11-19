@@ -65,7 +65,8 @@ TEST(utils, CfgParser) {
   EXPECT_EQ(parser.get_str_option("foo"), "bar");
   EXPECT_EQ(parser.get_int_option("int_key"), 5);
   EXPECT_DOUBLE_EQ(parser.get_double_option("num_key"), 4.2);
-  EXPECT_EQ(parser.get_num_options(), 9);
+  EXPECT_DOUBLE_EQ(parser.get_double_option("num_key_2"), 100000.0);
+  EXPECT_EQ(parser.get_num_options(), 10);
   EXPECT_EQ(parser.get_bool_option("is_true"), true);
   EXPECT_EQ(parser.get_bool_option("is_true_too"), true);
   EXPECT_EQ(parser.get_bool_option("is_false"), false);

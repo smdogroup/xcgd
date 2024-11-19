@@ -61,7 +61,6 @@ void solve_wedge_problem() {
   StaticElastic elastic(70, 0.3, mesh, quadrature, basis, int_func);
 
   std::vector<int> bc_dof;
-  std::vector<int> load_dof;
   auto vert_nodes = mesh.get_vert_nodes();
   for (int j = 0; j < ny; j++) {
     for (int d = 0; d < Mesh::spatial_dim; d++) {
@@ -69,12 +68,26 @@ void solve_wedge_problem() {
           Mesh::spatial_dim * vert_nodes.at(grid.get_coords_vert(0, j)) + d);
     }
   }
-  load_dof.push_back(2 * vert_nodes.at(grid.get_coords_vert(nx - 1, 0)));
-  load_dof.push_back(2 * vert_nodes.at(grid.get_coords_vert(nx - 1, 0)) + 1);
-  std::vector<T> load_vals = {0.0, -1.0};
 
-  std::vector<T> sol = elastic.solve(
-      bc_dof, std::vector<T>(bc_dof.size(), T(0.0)), load_dof, load_vals);
+  auto load_func = [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
+    A2D::Vec<T, Basis::spatial_dim> intf;
+    intf(1) = -1.0;
+    return intf;
+  };
+  using LoadPhysics =
+      ElasticityExternalLoad<T, Basis::spatial_dim, typeof(load_func)>;
+  using LoadQuadrature = GDGaussQuadrature2D<T, Np_1d, QuadPtType::SURFACE,
+                                             SurfQuad::BOTTOM, Mesh>;
+  using LoadAnalysis =
+      GalerkinAnalysis<T, Mesh, LoadQuadrature, Basis, LoadPhysics>;
+  LoadPhysics load_physics(load_func);
+  std::set<int> load_elements = {grid.get_coords_cell(nx - 1, 0)};
+  LoadQuadrature load_quadrature(mesh, load_elements);
+  LoadAnalysis load_analysis(mesh, load_quadrature, basis, load_physics);
+
+  std::vector<T> sol =
+      elastic.solve(bc_dof, std::vector<T>(bc_dof.size(), T(0.0)),
+                    std::tuple<LoadAnalysis>{load_analysis});
 
   char vtkname[256];
   std::snprintf(vtkname, 256, "wedge_mesh_Np_1d_%d.vtk", Np_1d);

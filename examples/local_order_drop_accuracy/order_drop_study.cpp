@@ -437,12 +437,7 @@ void execute_accuracy_study(std::string prefix, int nxy, int Np_bc,
   }
 
   // Solve
-  std::vector<T> sol;
-  if constexpr (physics_type == PhysicsType::Poisson) {
-    sol = physics_app->solve(dof_bcs, dof_vals);
-  } else {
-    sol = physics_app->solve(dof_bcs, dof_vals, {}, {});
-  }
+  std::vector<T> sol = physics_app->solve(dof_bcs, dof_vals);
 
   // Compute the L2 norm of the solution field (not vector)
   std::vector<T> diff(sol.size());

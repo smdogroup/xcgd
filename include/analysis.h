@@ -606,11 +606,11 @@ class GalerkinAnalysis final {
     }
   }
 
-  // Interpolate dof on quadrature points, intended to be used for
+  // Interpolate scalar or vector on quadrature points, intended to be used for
   // debug or post-process
-  std::pair<std::vector<T>, std::vector<T>> interpolate_dof(
-      const T dof[]) const {
-    std::vector<T> xloc_q, dof_q;
+  template <int ncomp_per_node = Physics::dof_per_node>
+  std::pair<std::vector<T>, std::vector<T>> interpolate(const T vals[]) const {
+    std::vector<T> xloc_q, vals_q;
 
     for (int i = 0; i < mesh.get_num_elements(); i++) {
       // Get the element node locations
@@ -618,8 +618,9 @@ class GalerkinAnalysis final {
       get_element_xloc<T, Mesh, Basis>(mesh, i, element_xloc);
 
       // Get the element degrees of freedom
-      T element_dof[max_dof_per_element];
-      get_element_vars<T, dof_per_node, Mesh, Basis>(mesh, i, dof, element_dof);
+      T element_vals[max_nnodes_per_element * ncomp_per_node];
+      get_element_vars<T, ncomp_per_node, Mesh, Basis>(mesh, i, vals,
+                                                       element_vals);
 
       std::vector<T> pts, wts, ns;
       int num_quad_pts = quadrature.get_quadrature_pts(i, pts, wts, ns);
@@ -635,24 +636,31 @@ class GalerkinAnalysis final {
         interp_val_grad<T, Basis, spatial_dim>(element_xloc, &N[offset_n],
                                                nullptr, &xloc, nullptr);
 
-        typename Physics::dof_t vals{};
-        interp_val_grad<T, Basis, Physics::dof_per_node>(
-            element_dof, &N[offset_n], nullptr, &vals, nullptr);
+        typename std::conditional<ncomp_per_node == 1, T,
+                                  A2D::Vec<T, ncomp_per_node>>::type vq{};
+
+        if constexpr (ncomp_per_node == 1) {
+          interp_val_grad<T, Basis>(element_vals, &N[offset_n], nullptr, &vq,
+                                    nullptr);
+        } else {
+          interp_val_grad<T, Basis, ncomp_per_node>(element_vals, &N[offset_n],
+                                                    nullptr, &vq, nullptr);
+        }
 
         for (int d = 0; d < spatial_dim; d++) {
           xloc_q.push_back(xloc(d));
         }
 
-        if constexpr (Physics::dof_per_node > 1) {
-          for (int k = 0; k < Physics::dof_per_node; k++) {
-            dof_q.push_back(vals(k));
+        if constexpr (ncomp_per_node > 1) {
+          for (int k = 0; k < ncomp_per_node; k++) {
+            vals_q.push_back(vq(k));
           }
         } else {
-          dof_q.push_back(vals);
+          vals_q.push_back(vq);
         }
       }
     }
-    return {xloc_q, dof_q};
+    return {xloc_q, vals_q};
   }
 
   // Evaluate the energy on quadrature points, intended to be used for

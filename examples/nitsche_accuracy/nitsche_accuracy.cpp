@@ -151,7 +151,7 @@ void write_field_vtk(std::string field_vtkpath, PhysicsType physics_type,
                      const std::vector<T>& sol) {
   FieldToVTKNew<T, Mesh::spatial_dim> field_vtk(field_vtkpath);
 
-  auto [xloc_q, dof_q] = analysis.interpolate_dof(sol.data());
+  auto [xloc_q, dof_q] = analysis.interpolate(sol.data());
 
   field_vtk.add_mesh(xloc_q);
   field_vtk.write_mesh();

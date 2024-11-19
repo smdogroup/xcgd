@@ -191,7 +191,7 @@ void solve_linear_elasticity_gd() {
   }
 
   std::vector<T> sol =
-      elastic.solve(bc_dof, std::vector<T>(bc_dof.size(), T(0.0)), {}, {});
+      elastic.solve(bc_dof, std::vector<T>(bc_dof.size(), T(0.0)));
 
   ToVTK<T, Mesh> vtk(mesh, "gravity.vtk");
   vtk.write_mesh();
