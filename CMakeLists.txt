@@ -20,7 +20,7 @@ set(XCGD_PAROPT_DIR $ENV{HOME}/git/paropt)
 
 option(XCGD_BUILD_TESTS "Build unit tests or not" ON)
 option(XCGD_BUILD_EXAMPLES "Build examples or not" ON)
-option(XCGD_USE_OPENMP "use openmp or not" ON)
+option(XCGD_USE_OPENMP "use openmp or not" OFF)
 
 # If in debug mode, set the preprocessor definition
 if(CMAKE_BUILD_TYPE MATCHES Debug)

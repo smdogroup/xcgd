@@ -1,6 +1,7 @@
 #include <mpi.h>
 
 #include <filesystem>
+#include <set>
 
 #include "ParOptOptimizer.h"
 #include "analysis.h"
@@ -14,103 +15,136 @@
 #include "utils/exceptions.h"
 #include "utils/json.h"
 #include "utils/loggers.h"
+#include "utils/misc.h"
 #include "utils/vtk.h"
 
 #define PI 3.141592653589793
 
 using fspath = std::filesystem::path;
 
-template <typename T, int Np_1d_filter, class Mesh, class Quadrature,
-          class Basis, class IntFunc>
+template <typename T, int Np_1d, int Np_1d_filter>
 class TopoAnalysis {
  private:
   using Grid = StructuredGrid2D<T>;
+  using Mesh = CutMesh<T, Np_1d>;
+  using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
+  using Basis = GDBasis2D<T, Mesh>;
   using Filter = HelmholtzFilter<T, Np_1d_filter>;
-  using StaticElastic = StaticElastic<T, Mesh, Quadrature, Basis, IntFunc>;
+
+  constexpr static auto int_func =
+      [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
+        return A2D::Vec<T, Basis::spatial_dim>{};
+      };
+  constexpr static auto load_func =
+      [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
+        A2D::Vec<T, Basis::spatial_dim> ret;
+        ret(1) = -1.0;
+        return ret;
+      };
+
+  using StaticElastic =
+      StaticElastic<T, Mesh, Quadrature, Basis, typeof(int_func)>;
   using Volume = VolumePhysics<T, Basis::spatial_dim>;
   using Penalization = GradPenalization<T, Basis::spatial_dim>;
   using VolAnalysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Volume>;
   using PenalizationAnalysis =
       GalerkinAnalysis<T, typename Filter::Mesh, typename Filter::Quadrature,
                        typename Filter::Basis, Penalization>;
+  using LoadPhysics =
+      ElasticityExternalLoad<T, Basis::spatial_dim, typeof(load_func)>;
+  using LoadQuadrature =
+      GDGaussQuadrature2D<T, Np_1d, QuadPtType::SURFACE, SurfQuad::RIGHT, Mesh>;
+  using LoadAnalysis =
+      GalerkinAnalysis<T, Mesh, LoadQuadrature, Basis, LoadPhysics>;
 
   int constexpr static spatial_dim = Grid::spatial_dim;
 
  public:
-  TopoAnalysis(std::string instance, T r0, T E, T nu, const IntFunc& int_func,
-               T penalty, bool use_robust_projection, double proj_beta,
-               double proj_eta, Grid& grid, Mesh& mesh, Quadrature& quadrature,
-               Basis& basis, std::string prefix)
-      : filter(r0, grid, use_robust_projection, proj_beta, proj_eta),
+  TopoAnalysis(std::string instance, int nxy[], T lxy[], double loaded_frac,
+               T r0, T E, T nu, T penalty, bool use_robust_projection,
+               double proj_beta, double proj_eta, std::string prefix)
+      : grid(nxy, lxy),
+        mesh(grid),
+        quadrature(mesh),
+        basis(mesh),
+        filter(r0, grid, use_robust_projection, proj_beta, proj_eta),
         elastic(E, nu, mesh, quadrature, basis, int_func),
         vol_analysis(mesh, quadrature, basis, vol),
         pen(penalty),
         pen_analysis(filter.get_mesh(), filter.get_quadrature(),
                      filter.get_basis(), pen),
-        mesh(mesh),
-        quadrature(quadrature),
-        basis(basis),
         phi(mesh.get_lsf_dof()),
         prefix(prefix) {
-    const T* xy0 = grid.get_xy0();
-    const T* lxy = grid.get_lxy();
-
-    // Get bcs and load verts
+    // Get bc verts, i.e. vertices that we apply boundary condition if there is
+    // material
     double tol = 1e-10;
-    double frac = 0.1;
     for (int i = 0; i < grid.get_num_verts(); i++) {
       T xloc[spatial_dim];
       grid.get_vert_xloc(i, xloc);
-      if (xloc[0] - xy0[0] < tol) {
+      if (xloc[0] < tol) {
         bc_verts.push_back(i);
-      } else if (xy0[0] + lxy[0] - xloc[0] < tol and
-                 xloc[1] - (xy0[1] + (0.5 + frac) * lxy[1]) < tol and
-                 xloc[1] - (xy0[1] + (0.5 - frac) * lxy[1]) > -tol) {
-        load_verts.push_back(i);
       }
+    }
+
+    // Set loaded cells
+    for (int iy = 0; iy < nxy[1]; iy++) {
+      T xloc[Grid::spatial_dim];
+      int c = grid.get_coords_cell(nxy[0] - 1, iy);
+      grid.get_cell_xloc(c, xloc);
+      if (xloc[1] >= lxy[1] * (1.0 - loaded_frac) / 2.0 and
+          xloc[1] <= lxy[1] * (1.0 + loaded_frac) / 2.0) {
+        loaded_cells.insert(c);
+      }
+    }
+
+    // Find loaded verts
+    for (int cell : loaded_cells) {
+      int verts[Grid::nverts_per_cell];
+      grid.get_cell_verts(cell, verts);
+      loaded_verts.insert(verts[1]);
+      loaded_verts.insert(verts[2]);
     }
   }
 
   // Create nodal design variables for a domain with periodic holes
-  std::vector<T> create_initial_topology(int m, int n, double t,
-                                         bool take_abs = true) {
+  std::vector<T> create_initial_topology(int nholes_x, int nholes_y, double r,
+                                         bool cell_center = true) {
     const T* lxy = mesh.get_grid().get_lxy();
-    int ndv = mesh.get_grid().get_num_verts();
-    std::vector<T> x0(ndv, 0.0);
-    for (int i = 0; i < ndv; i++) {
+    int nverts = mesh.get_grid().get_num_verts();
+    std::vector<T> lsf(nverts, 0.0);
+    for (int i = 0; i < nverts; i++) {
       T xloc[spatial_dim];
       mesh.get_grid().get_vert_xloc(i, xloc);
-      // x0[i] = (cos(xloc[0] / lxy[0] * 2.0 * PI * m) - 0.5) *
-      //             (cos(xloc[1] / lxy[1] * 2.0 * PI * n) - 0.5) * 2.0 / 3.0 -
-      //         0.5;
-      T val;
-      if (take_abs) {
-        val = abs(cos(xloc[0] / lxy[0] * 2.0 * PI * m) *
-                  sin(xloc[1] / lxy[1] * 2.0 * PI * n)) -
-              t;
-        if (val < 0) {
-          x0[i] = val / t;
-        } else {
-          x0[i] = val / (1.0 - t);
-        }
-      } else {
-        if (n % 2) {
-          val = cos(xloc[0] / lxy[0] * 2.0 * PI * m) *
-                    cos(xloc[1] / lxy[1] * 2.0 * PI * n) -
-                t;
-        } else {
-          val = -cos(xloc[0] / lxy[0] * 2.0 * PI * m) *
-                    cos(xloc[1] / lxy[1] * 2.0 * PI * n) -
-                t;
-        }
-        if (val < 0) {
-          x0[i] = val / (1.0 + t);
-        } else {
-          x0[i] = val / (1.0 - t);
+      T x = xloc[0];
+      T y = xloc[1];
+
+      std::vector<T> lsf_vals;
+      for (int ix = 0; ix < nholes_x; ix++) {
+        for (int iy = 0; iy < nholes_y; iy++) {
+          if (cell_center) {
+            T x0 = lxy[0] / nholes_x / 2.0 * (2.0 * ix + 1.0);
+            T y0 = lxy[1] / nholes_y / 2.0 * (2.0 * iy + 1.0);
+            lsf_vals.push_back(r -
+                               sqrt((x - x0) * (x - x0) + (y - y0) * (y - y0)));
+          } else {
+            T x0 = lxy[0] / (nholes_x - 1.0) * ix;
+            T y0 = lxy[1] / (nholes_y - 1.0) * iy;
+            lsf_vals.push_back(r -
+                               sqrt((x - x0) * (x - x0) + (y - y0) * (y - y0)));
+          }
         }
       }
+      lsf[i] = hard_max(lsf_vals);
     }
-    return x0;
+
+    // Normalize lsf so values are within [-1, 1]
+    T lsf_max = hard_max(lsf);
+    T lsf_min = hard_min(lsf);
+    for (int i = 0; i < nverts; i++) {
+      lsf[i] = (lsf[i] - lsf_min) / (lsf_max - lsf_min) * 2.0 - 1.0;
+    }
+
+    return lsf;
   }
 
   void update_mesh(const std::vector<T>& x) {
@@ -132,29 +166,10 @@ class TopoAnalysis {
         }
       }
     }
-
-    // Update load dof
-    load_dof.clear();
-    active_load_verts.clear();
-    for (int load_vert : load_verts) {
-      if (vert_nodes.count(load_vert) and x[load_vert] < 0.0) {
-        active_load_verts.push_back(load_vert);
-        load_dof.push_back(spatial_dim * vert_nodes.at(load_vert) +
-                           1);  // y dir
-      }
-    }
-
-    // Update load values
-    T force = 1.0;
-    load_vals.clear();
-    load_vals = std::vector<T>(active_load_verts.size(),
-                               -force / active_load_verts.size());
   }
 
   std::vector<T> update_mesh_and_solve(const std::vector<T>& x) {
     // Solve the static problem
-    // Note: bc_dof might change from iteration to iteration, but load_dof
-    // should be constant if optimizer bounds are applied properly
     update_mesh(x);
 
     DegenerateStencilLogger::clear();
@@ -163,8 +178,18 @@ class TopoAnalysis {
     VandermondeCondLogger::enable();
 
     try {
+      LoadPhysics load_physics(load_func);
+      std::set<int> load_elements;
+      for (int i = 0; i < mesh.get_num_elements(); i++) {
+        if (loaded_cells.count(mesh.get_elem_cell(i))) {
+          load_elements.insert(i);
+        }
+      }
+      LoadQuadrature load_quadrature(mesh, load_elements);
+      LoadAnalysis load_analysis(mesh, load_quadrature, basis, load_physics);
       std::vector<T> sol =
-          elastic.solve(bc_dof, std::vector<T>(bc_dof.size(), T(0.0)));
+          elastic.solve(bc_dof, std::vector<T>(bc_dof.size(), T(0.0)),
+                        std::tuple<LoadAnalysis>(load_analysis));
       return sol;
     } catch (const StencilConstructionFailed& e) {
       std::printf(
@@ -191,6 +216,7 @@ class TopoAnalysis {
     std::vector<T> sol = update_mesh_and_solve(x);
 
     std::vector<T> dummy(mesh.get_num_nodes(), 0.0);
+    // WARNING: this holds only when body force is zero!
     comp = 2.0 * elastic.get_analysis().energy(nullptr, sol.data());
     area = vol_analysis.energy(nullptr, dummy.data());
 
@@ -227,12 +253,12 @@ class TopoAnalysis {
   }
 
   void write_quad_pts_to_vtk(const std::string vtk_path) {
-    Interpolator<T, Quadrature, Basis> interp(mesh, quadrature, basis);
+    Interpolator<T, Quadrature, Basis> interp{mesh, quadrature, basis};
     interp.to_vtk(vtk_path);
   }
 
-  void write_design_to_vtk(const std::string vtk_path, const std::vector<T>& x,
-                           const std::vector<T>& phi) {
+  void write_grid_vtk(const std::string vtk_path, const std::vector<T>& x,
+                      const std::vector<T>& phi, bool essential_only = false) {
     if (x.size() != phi.size()) {
       throw std::runtime_error("sizes don't match");
     }
@@ -242,20 +268,23 @@ class TopoAnalysis {
     vtk.write_sol("x", x.data());
     vtk.write_sol("phi", phi.data());
 
-    std::vector<T> bcs(x.size(), 0.0);
-    std::vector<T> loads(x.size(), 0.0);
+    if (!essential_only) {
+      std::vector<T> bcs(x.size(), 0.0);
+      for (int v : bc_verts) bcs[v] = 1.0;
+      vtk.write_sol("bc-verts", bcs.data());
 
-    for (int v : bc_verts) bcs[v] = 1.0;
-    for (int v : load_verts) loads[v] = 1.0;
+      std::vector<T> loaded_verts_v(mesh.get_grid().get_num_verts(), 0.0);
+      for (int v : loaded_verts) loaded_verts_v[v] = 1.0;
+      vtk.write_sol("loaded_verts", loaded_verts_v.data());
 
-    vtk.write_sol("bc-verts", bcs.data());
-    vtk.write_sol("load-verts", loads.data());
+      std::vector<T> loaded_cells_v(mesh.get_grid().get_num_cells(), 0.0);
+      for (int c : loaded_cells) loaded_cells_v[c] = 1.0;
+      vtk.write_cell_sol("loaded_cells", loaded_cells_v.data());
+    }
   }
 
-  void write_cut_design_to_vtk(const std::string vtk_path,
-                               const std::vector<T>& x,
-                               const std::vector<T>& phi,
-                               const std::vector<T>& u) {
+  void write_cut_vtk(const std::string vtk_path, const std::vector<T>& x,
+                     const std::vector<T>& phi, const std::vector<T>& u) {
     if (x.size() != phi.size() or
         u.size() != spatial_dim * mesh.get_num_nodes()) {
       throw std::runtime_error("sizes don't match");
@@ -268,12 +297,9 @@ class TopoAnalysis {
     vtk.write_sol("phi", mesh.get_lsf_nodes().data());
 
     std::vector<T> dof_bcs(spatial_dim * mesh.get_num_nodes(), 0.0);
-    std::vector<T> dof_load(spatial_dim * mesh.get_num_nodes(), 0.0);
 
     for (int i : bc_dof) dof_bcs[i] = 1.0;
-    for (int i : load_dof) dof_load[i] = 1.0;
     vtk.write_vec("bc-dof", dof_bcs.data());
-    vtk.write_vec("load-dof", dof_load.data());
 
     std::vector<double> conds(mesh.get_num_elements());
     for (int elem = 0; elem < mesh.get_num_elements(); elem++) {
@@ -303,15 +329,17 @@ class TopoAnalysis {
     j["ly"] = parser.get_double_option("ly");
     j["lsf_dof"] = mesh.get_lsf_dof();
     j["bc_dof"] = bc_dof;
-    j["load_dof"] = load_dof;
-    j["load_vals"] = load_vals;
     write_json(json_path, j);
   }
 
   std::vector<T>& get_phi() { return phi; }
-  std::vector<int>& get_active_load_verts() { return active_load_verts; }
 
  private:
+  Grid grid;
+  Mesh mesh;
+  Quadrature quadrature;
+  Basis basis;
+
   Filter filter;
   StaticElastic elastic;
   Volume vol;
@@ -319,20 +347,15 @@ class TopoAnalysis {
   Penalization pen;
   PenalizationAnalysis pen_analysis;
 
-  Mesh& mesh;
-  Quadrature& quadrature;
-  Basis& basis;
   std::vector<T>& phi;  // LSF values (filtered design variables)
 
   std::string prefix;
 
   std::vector<int> bc_verts;
-  std::vector<int> load_verts;
-  std::vector<int> active_load_verts;
-
   std::vector<int> bc_dof;
-  std::vector<int> load_dof;
-  std::vector<T> load_vals;
+
+  std::set<int> loaded_cells;
+  std::set<int> loaded_verts;
 };
 
 template <typename T, class TopoAnalysis>
@@ -388,23 +411,18 @@ class TopoProb : public ParOptProblem {
     ubvec->getArray(&ub);
 
     std::vector<T> x0 = topo.create_initial_topology(
-        parser.get_int_option("init_topology_m"),
-        parser.get_int_option("init_topology_n"),
-        parser.get_double_option("init_topology_t"),
-        parser.get_bool_option("init_topology_abs"));
+        parser.get_int_option("init_topology_nholes_x"),
+        parser.get_int_option("init_topology_nholes_y"),
+        parser.get_double_option("init_topology_r"),
+        parser.get_bool_option("init_topology_cell_center"));
 
-    // update mesh and bc/load dof, but don't perform the linear solve
+    // update mesh and bc dof, but don't perform the linear solve
     topo.update_mesh(x0);
 
     for (int i = 0; i < nvars; i++) {
       x[i] = x0[i];
       lb[i] = -1.0;
       ub[i] = 1.0;
-    }
-
-    const std::vector<int>& active_load_verts = topo.get_active_load_verts();
-    for (int v : active_load_verts) {
-      ub[v] = -1.0e-5;  // effectively 0
     }
   }
 
@@ -431,14 +449,14 @@ class TopoProb : public ParOptProblem {
 
     if (counter % parser.get_int_option("write_vtk_every") == 0) {
       // Write design to vtk
-      std::string vtk_name = "design_" + std::to_string(counter) + ".vtk";
-      topo.write_design_to_vtk(fspath(prefix) / fspath(vtk_name), x,
-                               topo.get_phi());
+      std::string vtk_name = "grid_" + std::to_string(counter) + ".vtk";
+      topo.write_grid_vtk(fspath(prefix) / fspath(vtk_name), x, topo.get_phi(),
+                          true);
 
       // Write cut mesh to vtk
       vtk_name = "cut_" + std::to_string(counter) + ".vtk";
-      topo.write_cut_design_to_vtk(fspath(prefix) / fspath(vtk_name), x,
-                                   topo.get_phi(), u);
+      topo.write_cut_vtk(fspath(prefix) / fspath(vtk_name), x, topo.get_phi(),
+                         u);
     }
 
     // write quadrature to vtk for gradient check
@@ -446,13 +464,12 @@ class TopoProb : public ParOptProblem {
       std::string vtk_name = "fdcheck_quad_" + std::to_string(counter) + ".vtk";
       topo.write_quad_pts_to_vtk(fspath(prefix) / fspath(vtk_name));
 
-      vtk_name = "fdcheck_design_" + std::to_string(counter) + ".vtk";
-      topo.write_design_to_vtk(fspath(prefix) / fspath(vtk_name), x,
-                               topo.get_phi());
+      vtk_name = "fdcheck_grid_" + std::to_string(counter) + ".vtk";
+      topo.write_grid_vtk(fspath(prefix) / fspath(vtk_name), x, topo.get_phi());
 
       vtk_name = "fdcheck_cut_" + std::to_string(counter) + ".vtk";
-      topo.write_cut_design_to_vtk(fspath(prefix) / fspath(vtk_name), x,
-                                   topo.get_phi(), u);
+      topo.write_cut_vtk(fspath(prefix) / fspath(vtk_name), x, topo.get_phi(),
+                         u);
     }
 
     // print optimization progress
@@ -513,19 +530,7 @@ void execute(int argc, char* argv[]) {
   MPI_Init(&argc, &argv);
 
   using T = double;
-  using Grid = StructuredGrid2D<T>;
-  int constexpr spatial_dim = Grid::spatial_dim;
-
-  using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
-  using Mesh = CutMesh<T, Np_1d>;
-  using Basis = GDBasis2D<T, Mesh>;
-
-  auto int_func = [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
-    return A2D::Vec<T, Basis::spatial_dim>{};
-  };
-
-  using TopoAnalysis =
-      TopoAnalysis<T, Np_1d_filter, Mesh, Quadrature, Basis, typeof(int_func)>;
+  using TopoAnalysis = TopoAnalysis<T, Np_1d, Np_1d_filter>;
 
   bool smoke_test = false;
   if (argc > 2 and "--smoke" == std::string(argv[2])) {
@@ -549,25 +554,20 @@ void execute(int argc, char* argv[]) {
     std::filesystem::create_directory(json_dir);
   }
 
-  std::string cfg_path(argv[1]);
-  ConfigParser parser(cfg_path);
+  std::string cfg_path{argv[1]};
+  ConfigParser parser{cfg_path};
   std::filesystem::copy(
       cfg_path,
       fspath(prefix) / fspath(std::filesystem::absolute(cfg_path).filename()));
 
   // Set up grid
   int nxy[2] = {parser.get_int_option("nx"), parser.get_int_option("ny")};
+  double loaded_frac = parser.get_double_option("loaded_frac");
   if (smoke_test) {
     nxy[0] = 9;
     nxy[1] = 5;
   }
   T lxy[2] = {parser.get_double_option("lx"), parser.get_double_option("ly")};
-  Grid grid(nxy, lxy);
-
-  // Set up analysis mesh
-  Mesh mesh(grid);
-  Basis basis(mesh);
-  Quadrature quadrature(mesh);
 
   // Set up analysis
   std::string instance = parser.get_str_option("instance");
@@ -588,9 +588,18 @@ void execute(int argc, char* argv[]) {
   double robust_proj_beta = parser.get_double_option("robust_proj_beta");
   double robust_proj_eta = parser.get_double_option("robust_proj_eta");
   T penalty = parser.get_double_option("grad_penalty_coeff");
-  TopoAnalysis topo(instance, r0, E, nu, int_func, penalty,
-                    use_robust_projection, robust_proj_beta, robust_proj_eta,
-                    grid, mesh, quadrature, basis, prefix);
+  TopoAnalysis topo{instance,
+                    nxy,
+                    lxy,
+                    loaded_frac,
+                    r0,
+                    E,
+                    nu,
+                    penalty,
+                    use_robust_projection,
+                    robust_proj_beta,
+                    robust_proj_eta,
+                    prefix};
 
   double domain_area = lxy[0] * lxy[1];
   double area_frac = parser.get_double_option("area_frac");
@@ -608,7 +617,7 @@ void execute(int argc, char* argv[]) {
   int max_it = smoke_test ? 10 : parser.get_int_option("max_it");
 
   options->setOption("algorithm", "mma");
-  options->setOption("mma_max_iterations", parser.get_int_option("max_it"));
+  options->setOption("mma_max_iterations", max_it);
   options->setOption("mma_init_asymptote_offset",
                      parser.get_double_option("mma_init_asymptote_offset"));
   options->setOption("mma_move_limit",
@@ -651,12 +660,12 @@ int main(int argc, char* argv[]) {
   VandermondeCondLogger::enable();
 
   if (argc == 1) {
-    std::printf("Usage: ./level_set level_set.cfg [--smoke]\n");
+    std::printf("Usage: ./topo level_set.cfg [--smoke]\n");
     exit(0);
   }
 
-  std::string cfg_path(argv[1]);
-  ConfigParser parser(cfg_path);
+  std::string cfg_path{argv[1]};
+  ConfigParser parser{cfg_path};
   int Np_1d = parser.get_int_option("Np_1d");
   int Np_1d_filter = parser.get_int_option("Np_1d_filter");
 
