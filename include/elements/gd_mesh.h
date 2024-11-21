@@ -408,6 +408,17 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid> {
     return nnodes;
   }
 
+  // Similar to get_elem_dof_nodes, but use grid indices (i.e. cell, vert)
+  // instead so we can facilitate mesh patching
+  int get_cell_dof_verts(int cell, int* verts) const {
+    int nodes[max_nnodes_per_element];
+    int nnodes = get_elem_dof_nodes(cell_elems.at(cell), nodes);
+    for (int i = 0; i < nnodes; i++) {
+      verts[i] = get_node_vert(nodes[i]);
+    }
+    return nnodes;
+  }
+
   inline void get_elem_corner_nodes(int elem, int* nodes) const {
     this->grid.get_cell_verts(elem_cells.at(elem), nodes);
     for (int i = 0; i < corner_nodes_per_element; i++) {
@@ -445,11 +456,14 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid> {
   inline int get_elem_cell(int elem) const { return elem_cells.at(elem); }
   inline int get_node_vert(int node) const { return node_verts.at(node); }
 
+  inline const std::map<int, int>& get_cell_elems() const { return cell_elems; }
+
   // Update the mesh when the lsf_dof is updated
   void update_mesh() {
     node_verts.clear();
     vert_nodes.clear();
     elem_cells.clear();
+    cell_elems.clear();
     dir_cells.clear();
     cut_elems.clear();
     regular_stencil_elems.clear();
@@ -531,6 +545,11 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid> {
 
     num_nodes = node_verts.size();
     num_elements = elem_cells.size();
+
+    // Populate cell_elems
+    for (int e = 0; e < num_elements; e++) {
+      cell_elems[elem_cells[e]] = e;
+    }
 
     // Identify all cut elements
     for (int i = 0; i < num_elements; i++) {
@@ -659,7 +678,8 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid> {
 
   // indices of cells that are dof elements, i.e. cells that have active degrees
   // of freedom
-  std::vector<int> elem_cells;  // elem -> cell
+  std::vector<int> elem_cells;    // elem -> cell
+  std::map<int, int> cell_elems;  // cell-> elem
 
   // push direction for each cell
   std::vector<int> dir_cells;

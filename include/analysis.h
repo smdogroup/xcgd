@@ -11,7 +11,14 @@
 #include "utils/linalg.h"
 #include "utils/misc.h"
 
-template <typename T, class Mesh, class Quadrature, class Basis, class Physics>
+/**
+ *  ...
+ * @param cell_is_elem if true, then the entire grid is considered the mesh, and
+ * the mesh passed in might be only part of the global mesh, useful when we have
+ * multiple cut meshes that are patching together
+ */
+template <typename T, class Mesh, class Quadrature, class Basis, class Physics,
+          bool grid_is_mesh = false>
 class GalerkinAnalysis final {
  public:
   // Static data taken from the element basis
@@ -32,7 +39,7 @@ class GalerkinAnalysis final {
   T energy(const T x[], const T dof[]) const {
     T total_energy = 0.0;
     T xq = 0.0;
-    std::vector<T> element_x(max_nnodes_per_element);
+    std::vector<T> element_x = std::vector<T>(max_nnodes_per_element);
 
     for (int i = 0; i < mesh.get_num_elements(); i++) {
       // Get the element node locations
@@ -96,7 +103,7 @@ class GalerkinAnalysis final {
 
   void residual(const T x[], const T dof[], T res[]) const {
     T xq = 0.0;
-    std::vector<T> element_x(max_nnodes_per_element);
+    std::vector<T> element_x = std::vector<T>(max_nnodes_per_element);
 
     for (int i = 0; i < mesh.get_num_elements(); i++) {
       // Get the element node locations
@@ -168,14 +175,22 @@ class GalerkinAnalysis final {
                            coef_grad_ref, element_res);
       }
 
-      add_element_res<T, dof_per_node, Mesh, Basis>(mesh, i, element_res, res);
+      int nodes[Mesh::max_nnodes_per_element];
+      int nnodes;
+      if constexpr (grid_is_mesh) {
+        nnodes = mesh.get_cell_dof_verts(mesh.get_elem_cell(i), nodes);
+      } else {
+        nnodes = mesh.get_elem_dof_nodes(i, nodes);
+      }
+
+      add_element_res<T, dof_per_node, Basis>(nnodes, nodes, element_res, res);
     }
   }
 
   void jacobian_product(const T x[], const T dof[], const T direct[],
                         T res[]) const {
     T xq = 0.0;
-    std::vector<T> element_x(max_nnodes_per_element);
+    std::vector<T> element_x = std::vector<T>(max_nnodes_per_element);
 
     for (int i = 0; i < mesh.get_num_elements(); i++) {
       // Get the element node locations
@@ -276,7 +291,7 @@ class GalerkinAnalysis final {
   void jacobian_adjoint_product(const T x[], const T dof[], const T psi[],
                                 T dfdx[]) const {
     T xq = 0.0;
-    std::vector<T> element_x(max_nnodes_per_element);
+    std::vector<T> element_x = std::vector<T>(max_nnodes_per_element);
 
     for (int i = 0; i < mesh.get_num_elements(); i++) {
       // Get the element node locations
@@ -369,7 +384,7 @@ class GalerkinAnalysis final {
     }
 
     T xq = 0.0;
-    std::vector<T> element_x(max_nnodes_per_element);
+    std::vector<T> element_x = std::vector<T>(max_nnodes_per_element);
 
     std::vector<T> element_jac(
         mesh.get_num_elements() * max_dof_per_element * max_dof_per_element,
@@ -449,7 +464,19 @@ class GalerkinAnalysis final {
 
     for (int i = 0; i < mesh.get_num_elements(); i++) {
       int element_jac_offset = i * max_dof_per_element * max_dof_per_element;
-      mat->add_block_values(i, mesh, element_jac.data() + element_jac_offset);
+
+      // mat->add_block_values(i, mesh, element_jac.data() +
+      // element_jac_offset);
+
+      int nodes[Mesh::max_nnodes_per_element];
+      int nnodes;
+      if constexpr (grid_is_mesh) {
+        nnodes = mesh.get_cell_dof_verts(mesh.get_elem_cell(i), nodes);
+      } else {
+        nnodes = mesh.get_elem_dof_nodes(i, nodes);
+      }
+      mat->template add_block_values<Mesh::max_nnodes_per_element>(
+          nnodes, nodes, element_jac.data() + element_jac_offset);
     }
   }
 
@@ -475,7 +502,7 @@ class GalerkinAnalysis final {
       T element_dof[max_dof_per_element], element_psi[max_dof_per_element];
       get_element_vars<T, dof_per_node, Mesh, Basis>(mesh, i, dof, element_dof);
       get_element_vars<T, dof_per_node, Mesh, Basis>(mesh, i, psi, element_psi);
-
+      //
       // Create the element dfdphi
       std::vector<T> element_dfdphi(max_nnodes_per_element, 0.0);
 

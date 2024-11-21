@@ -186,6 +186,17 @@ void add_element_res(const Mesh &mesh, int e, const T element_res[], T res[]) {
   }
 }
 
+template <typename T, int dim, class Basis>
+void add_element_res(int nnodes, int *nodes, const T element_res[], T res[]) {
+  int constexpr max_nnodes_per_element = Basis::max_nnodes_per_element;
+  int constexpr spatial_dim = Basis::spatial_dim;
+  for (int j = 0; j < nnodes; j++) {
+    for (int k = 0; k < dim; k++, element_res++) {
+      res[dim * nodes[j] + k] += element_res[0];
+    }
+  }
+}
+
 template <typename T, class Mesh, class Basis>
 void add_element_dfdx(const Mesh &mesh, int e, const T element_dfdx[],
                       T dfdx[]) {

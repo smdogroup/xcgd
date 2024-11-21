@@ -143,6 +143,30 @@ class GalerkinBSRMat final : public SparseUtils::BSRMat<T, M, M> {
       }
     }
   }
+
+  template <int max_nnodes_per_element>
+  void add_block_values(int nnodes, int *nodes, T mat[]) {
+    constexpr int N = M;
+
+    for (int ii = 0; ii < nnodes; ii++) {
+      int block_row = nodes[ii];
+
+      for (int jj = 0; jj < nnodes; jj++) {
+        int block_col = nodes[jj];
+
+        int jp = this->find_value_index(block_row, block_col);
+        if (jp != SparseUtils::NO_INDEX) {
+          for (int local_row = 0; local_row < M; local_row++) {
+            for (int local_col = 0; local_col < N; local_col++) {
+              this->vals[M * N * jp + N * local_row + local_col] +=
+                  mat[(M * ii + local_row) * max_nnodes_per_element * N +
+                      N * jj + local_col];
+            }
+          }
+        }
+      }
+    }
+  }
 };
 
 #endif  // XCGD_LINALG_H
