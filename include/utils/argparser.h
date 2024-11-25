@@ -15,7 +15,9 @@
 #include <string>
 #include <variant>
 
+#ifndef PATH_MAX
 #define PATH_MAX 4096
+#endif
 
 std::map<std::string, std::string> get_cmd_args(int argc, char* argv[]) {
   std::map<std::string, std::string> keyvals;
