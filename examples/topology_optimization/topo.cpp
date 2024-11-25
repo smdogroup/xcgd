@@ -42,8 +42,7 @@ class TopoAnalysis {
         return ret;
       };
 
-  using StaticElastic =
-      StaticElastic<T, Mesh, Quadrature, Basis, typeof(int_func)>;
+  using Elastic = StaticElastic<T, Mesh, Quadrature, Basis, typeof(int_func)>;
   using Volume = VolumePhysics<T, Basis::spatial_dim>;
   using Penalization = GradPenalization<T, Basis::spatial_dim>;
   using VolAnalysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Volume>;
@@ -341,7 +340,7 @@ class TopoAnalysis {
   Basis basis;
 
   Filter filter;
-  StaticElastic elastic;
+  Elastic elastic;
   Volume vol;
   VolAnalysis vol_analysis;
   Penalization pen;

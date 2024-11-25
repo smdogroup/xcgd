@@ -3,15 +3,15 @@
 
 #include "physics_commons.h"
 
-template <typename T, int spatial_dim>
-class GradPenalization final : public PhysicsBase<T, spatial_dim, 0, 1> {
+template <typename T, int spatial_dim_>
+class GradPenalization final : public PhysicsBase<T, spatial_dim_, 0, 1> {
  private:
-  using PhysicsBase = PhysicsBase<T, spatial_dim, 0, 1>;
+  using PhysicsBase_s = PhysicsBase<T, spatial_dim_, 0, 1>;
 
  public:
-  using PhysicsBase::data_per_node;
-  using PhysicsBase::dof_per_node;
-  using PhysicsBase::spatial_dim;
+  using PhysicsBase_s::data_per_node;
+  using PhysicsBase_s::dof_per_node;
+  using PhysicsBase_s::spatial_dim;
 
   GradPenalization(T coeff) : coeff(coeff) {}
 

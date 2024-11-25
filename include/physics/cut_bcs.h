@@ -6,17 +6,17 @@
  * @brief The Dirichlet boundary condition for scalar problem (such as
  * Poisson's equation) applied on the cut boundary using Nitsche's method.
  */
-template <typename T, int spatial_dim, class BCFunc>
-class CutDirichlet final : public PhysicsBase<T, spatial_dim, 0, 1> {
+template <typename T, int spatial_dim_, class BCFunc>
+class CutDirichlet final : public PhysicsBase<T, spatial_dim_, 0, 1> {
  private:
-  static_assert(spatial_dim == 2,
+  static_assert(spatial_dim_ == 2,
                 "This is only implemented for 2d problems for now");
-  using PhysicsBase = PhysicsBase<T, spatial_dim, 0, 1>;
+  using PhysicsBase_s = PhysicsBase<T, spatial_dim_, 0, 1>;
 
  public:
-  using PhysicsBase::data_per_node;
-  using PhysicsBase::dof_per_node;
-  using PhysicsBase::spatial_dim;
+  using PhysicsBase_s::data_per_node;
+  using PhysicsBase_s::dof_per_node;
+  using PhysicsBase_s::spatial_dim;
 
   /**
    * @param eta Nitsche parameter
@@ -198,17 +198,17 @@ class CutDirichlet final : public PhysicsBase<T, spatial_dim, 0, 1> {
  * @brief The Dirichlet boundary condition for vector problem (such as
  * elasticity problem) applied on the cut boundary using Nitsche's method.
  */
-template <typename T, int spatial_dim, int dim, class BCFunc>
-class VectorCutDirichlet final : public PhysicsBase<T, spatial_dim, 0, dim> {
+template <typename T, int spatial_dim_, int dim, class BCFunc>
+class VectorCutDirichlet final : public PhysicsBase<T, spatial_dim_, 0, dim> {
  private:
-  static_assert(spatial_dim == 2,
+  static_assert(spatial_dim_ == 2,
                 "This is only implemented for 2d problems for now");
-  using PhysicsBase = PhysicsBase<T, spatial_dim, 0, dim>;
+  using PhysicsBase_s = PhysicsBase<T, spatial_dim_, 0, dim>;
 
  public:
-  using PhysicsBase::data_per_node;
-  using PhysicsBase::dof_per_node;
-  using PhysicsBase::spatial_dim;
+  using PhysicsBase_s::data_per_node;
+  using PhysicsBase_s::dof_per_node;
+  using PhysicsBase_s::spatial_dim;
 
   /**
    * @param eta Nitsche parameter

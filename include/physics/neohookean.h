@@ -7,16 +7,16 @@
 
 /* Neohookean physics implemented using A2D, i.e. residual and Jacobian are
 automatically differentiated */
-template <typename T, int spatial_dim>
+template <typename T, int spatial_dim_>
 class NeohookeanPhysics final
-    : public PhysicsBase<T, spatial_dim, 0, spatial_dim> {
+    : public PhysicsBase<T, spatial_dim_, 0, spatial_dim_> {
  private:
-  using PhysicsBase = PhysicsBase<T, spatial_dim, 0, spatial_dim>;
+  using PhysicsBase_s = PhysicsBase<T, spatial_dim_, 0, spatial_dim_>;
 
  public:
-  using PhysicsBase::data_per_node;
-  using PhysicsBase::dof_per_node;
-  using PhysicsBase::spatial_dim;
+  using PhysicsBase_s::data_per_node;
+  using PhysicsBase_s::dof_per_node;
+  using PhysicsBase_s::spatial_dim;
 
   NeohookeanPhysics(T C1, T D1) : C1(C1), D1(D1) {}
 

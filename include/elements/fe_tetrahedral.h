@@ -46,12 +46,12 @@ class TetrahedralQuadrature final : public QuadratureBase<T> {
 template <typename T>
 class TetrahedralBasis final : public BasisBase<T, FEMesh<T, 3, 10>> {
  private:
-  using BasisBase = BasisBase<T, FEMesh<T, 3, 10>>;
+  using BasisBase_s = BasisBase<T, FEMesh<T, 3, 10>>;
 
  public:
-  using BasisBase::max_nnodes_per_element;
-  using BasisBase::spatial_dim;
-  using typename BasisBase::Mesh;
+  using BasisBase_s::max_nnodes_per_element;
+  using BasisBase_s::spatial_dim;
+  using typename BasisBase_s::Mesh;
 
   void eval_basis_grad(int _, const std::vector<T>& pts, std::vector<T>& N,
                        std::vector<T>& Nxi) const {

@@ -6,12 +6,12 @@
 template <typename T>
 class LinearElasticity2DVonMisesStress final : public PhysicsBase<T, 2, 0, 2> {
  private:
-  using PhysicsBase = PhysicsBase<T, 2, 0, 2>;
+  using PhysicsBase_s = PhysicsBase<T, 2, 0, 2>;
 
  public:
-  using PhysicsBase::data_per_node;
-  using PhysicsBase::dof_per_node;
-  using PhysicsBase::spatial_dim;
+  using PhysicsBase_s::data_per_node;
+  using PhysicsBase_s::dof_per_node;
+  using PhysicsBase_s::spatial_dim;
 
   LinearElasticity2DVonMisesStress(T E, T nu)
       : mu(0.5 * E / (1.0 + nu)), lambda(E * nu / ((1.0 + nu) * (1.0 - nu))) {}
@@ -49,12 +49,12 @@ template <typename T>
 class LinearElasticity2DVonMisesStressAggregation final
     : public PhysicsBase<T, 2, 0, 2> {
  private:
-  using PhysicsBase = PhysicsBase<T, 2, 0, 2>;
+  using PhysicsBase_s = PhysicsBase<T, 2, 0, 2>;
 
  public:
-  using PhysicsBase::data_per_node;
-  using PhysicsBase::dof_per_node;
-  using PhysicsBase::spatial_dim;
+  using PhysicsBase_s::data_per_node;
+  using PhysicsBase_s::dof_per_node;
+  using PhysicsBase_s::spatial_dim;
 
   LinearElasticity2DVonMisesStressAggregation(double ksrho, T E, T nu, T vm_max)
       : ksrho(ksrho),

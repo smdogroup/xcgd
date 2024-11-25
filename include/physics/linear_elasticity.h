@@ -4,18 +4,18 @@
 #include "physics_commons.h"
 
 // IntFunc: type of the internal (body) force functor
-template <typename T, int spatial_dim, class IntFunc>
+template <typename T, int spatial_dim_, class IntFunc>
 class LinearElasticity final
-    : public PhysicsBase<T, spatial_dim, 1, spatial_dim> {
+    : public PhysicsBase<T, spatial_dim_, 1, spatial_dim_> {
  private:
-  using PhysicsBase = PhysicsBase<T, spatial_dim, 1, spatial_dim>;
-  static_assert(spatial_dim == 3 or spatial_dim == 2,
+  using PhysicsBase_s = PhysicsBase<T, spatial_dim_, 1, spatial_dim_>;
+  static_assert(spatial_dim_ == 3 or spatial_dim_ == 2,
                 "LinearElasticity is only implemented for 2D and 3D problems");
 
  public:
-  using PhysicsBase::data_per_node;
-  using PhysicsBase::dof_per_node;
-  using PhysicsBase::spatial_dim;
+  using PhysicsBase_s::data_per_node;
+  using PhysicsBase_s::dof_per_node;
+  using PhysicsBase_s::spatial_dim;
 
   LinearElasticity(T E, T nu, const IntFunc& int_func)
       : mu(0.5 * E / (1.0 + nu)),
@@ -128,18 +128,18 @@ class LinearElasticity final
   const IntFunc& int_func;
 };
 
-template <typename T, int spatial_dim, class LoadFunc>
+template <typename T, int spatial_dim_, class LoadFunc>
 class ElasticityExternalLoad final
-    : public PhysicsBase<T, spatial_dim, 1, spatial_dim> {
+    : public PhysicsBase<T, spatial_dim_, 1, spatial_dim_> {
  private:
-  using PhysicsBase = PhysicsBase<T, spatial_dim, 1, spatial_dim>;
-  static_assert(spatial_dim == 3 or spatial_dim == 2,
+  using PhysicsBase_s = PhysicsBase<T, spatial_dim_, 1, spatial_dim_>;
+  static_assert(spatial_dim_ == 3 or spatial_dim_ == 2,
                 "LinearElasticity is only implemented for 2D and 3D problems");
 
  public:
-  using PhysicsBase::data_per_node;
-  using PhysicsBase::dof_per_node;
-  using PhysicsBase::spatial_dim;
+  using PhysicsBase_s::data_per_node;
+  using PhysicsBase_s::dof_per_node;
+  using PhysicsBase_s::spatial_dim;
 
   ElasticityExternalLoad(const LoadFunc& load_func) : load_func(load_func) {}
 
