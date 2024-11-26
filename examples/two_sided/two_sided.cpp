@@ -204,20 +204,21 @@ void test_two_sided_app() {
   auto int_func = [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
     return A2D::Vec<T, Basis::spatial_dim>{};
   };
-  using StaticApp = StaticElasticTwoSided<T, Mesh, Quadrature, Basis,
-                                          typeof(int_func), typeof(int_func)>;
+  using StaticApp =
+      StaticElasticErsatz<T, Mesh, Quadrature, Basis, typeof(int_func)>;
 
-  T E_l = 100.0, nu_l = 0.3;
-  T E_r = 1.0, nu_r = 0.2;
+  T E = 100.0, nu = 0.3;
 
   int nxy[2] = {100, 20};
   T lxy[2] = {5.0, 1.0};
   Grid grid(nxy, lxy);
   Mesh mesh(grid, [](T* xloc) { return xloc[0] + xloc[1] - 3.0; });
-  StaticApp static_app(E_l, nu_l, E_r, nu_r, mesh, int_func, int_func);
+  Quadrature quadrature(mesh);
+  Basis basis(mesh);
+  StaticApp static_app(E, nu, mesh, quadrature, basis, int_func, 1e-3);
 
-  write_vtk<T>("app_mesh_left.vtk", static_app.get_mesh_l());
-  write_vtk<T>("app_mesh_right.vtk", static_app.get_mesh_r());
+  write_vtk<T>("app_mesh_left.vtk", static_app.get_mesh());
+  write_vtk<T>("app_mesh_right.vtk", static_app.get_mesh_ersatz());
 
   // BC
   std::vector<int> bc_nodes = mesh.get_left_boundary_nodes();
@@ -225,10 +226,10 @@ void test_two_sided_app() {
   std::transform(bc_nodes.begin(), bc_nodes.end(), bc_verts.begin(),
                  [mesh](int n) { return mesh.get_node_vert(n); });
   std::vector<int> bc_dof;
-  bc_dof.reserve(StaticApp::PhysicsL::dof_per_node * bc_verts.size());
+  bc_dof.reserve(StaticApp::Physics::dof_per_node * bc_verts.size());
   for (int vert : bc_verts) {
-    for (int d = 0; d < StaticApp::PhysicsL::dof_per_node; d++) {
-      bc_dof.push_back(StaticApp::PhysicsL::dof_per_node * vert + d);
+    for (int d = 0; d < StaticApp::Physics::dof_per_node; d++) {
+      bc_dof.push_back(StaticApp::Physics::dof_per_node * vert + d);
     }
   }
 
@@ -249,11 +250,11 @@ void test_two_sided_app() {
   std::set<int> load_elements;
   for (int iy = 0; iy < nxy[1]; iy++) {
     int c = grid.get_coords_cell(nxy[0] - 1, iy);
-    load_elements.insert(static_app.get_mesh_r().get_cell_elems().at(c));
+    load_elements.insert(static_app.get_mesh_ersatz().get_cell_elems().at(c));
   }
-  LoadQuadrature load_quadrature(static_app.get_mesh_r(), load_elements);
-  LoadAnalysis load_analysis(static_app.get_mesh_r(), load_quadrature,
-                             static_app.get_basis_r(), load_physics);
+  LoadQuadrature load_quadrature(static_app.get_mesh_ersatz(), load_elements);
+  LoadAnalysis load_analysis(static_app.get_mesh_ersatz(), load_quadrature,
+                             static_app.get_basis_ersatz(), load_physics);
 
   // Solve
   std::vector<T> sol =

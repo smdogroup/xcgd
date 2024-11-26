@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <set>
+#include <string>
 
 #include "ParOptOptimizer.h"
 #include "analysis.h"
@@ -22,7 +23,7 @@
 
 using fspath = std::filesystem::path;
 
-template <typename T, int Np_1d, int Np_1d_filter>
+template <typename T, int Np_1d, int Np_1d_filter, bool use_ersatz = false>
 class TopoAnalysis {
  private:
   using Grid = StructuredGrid2D<T>;
@@ -42,7 +43,10 @@ class TopoAnalysis {
         return ret;
       };
 
-  using Elastic = StaticElastic<T, Mesh, Quadrature, Basis, typeof(int_func)>;
+  using Elastic = typename std::conditional<
+      use_ersatz,
+      StaticElasticErsatz<T, Mesh, Quadrature, Basis, typeof(int_func)>,
+      StaticElastic<T, Mesh, Quadrature, Basis, typeof(int_func)>>::type;
   using Volume = VolumePhysics<T, Basis::spatial_dim>;
   using Penalization = GradPenalization<T, Basis::spatial_dim>;
   using VolAnalysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Volume>;
@@ -154,6 +158,17 @@ class TopoAnalysis {
     // Update mesh based on new LSF
     filter.apply(x.data(), phi.data());
     mesh.update_mesh();
+
+    if constexpr (use_ersatz) {
+      int nverts = grid.get_num_verts();
+      auto& lsf_mesh = elastic.get_mesh_ersatz();
+      auto& lsf_ersatz = lsf_mesh.get_lsf_dof();
+      for (int i = 0; i < nverts; i++) {
+        lsf_ersatz[i] = -phi[i];
+      }
+      lsf_mesh.update_mesh();
+    }
+
     const std::unordered_map<int, int>& vert_nodes = mesh.get_vert_nodes();
 
     // Update bc dof
@@ -189,6 +204,17 @@ class TopoAnalysis {
       std::vector<T> sol =
           elastic.solve(bc_dof, std::vector<T>(bc_dof.size(), T(0.0)),
                         std::tuple<LoadAnalysis>(load_analysis));
+      if constexpr (use_ersatz) {
+        std::vector<T> sol_grid = std::move(sol);
+        int nnodes = mesh.get_num_nodes();
+        sol.resize(spatial_dim * nnodes);
+        for (int n = 0; n < nnodes; n++) {
+          int v = mesh.get_node_vert(n);
+          for (int d = 0; d < spatial_dim; d++) {
+            sol[spatial_dim * n + d] = sol_grid[spatial_dim * v + d];
+          }
+        }
+      }
       return sol;
     } catch (const StencilConstructionFailed& e) {
       std::printf(
@@ -284,9 +310,18 @@ class TopoAnalysis {
 
   void write_cut_vtk(const std::string vtk_path, const std::vector<T>& x,
                      const std::vector<T>& phi, const std::vector<T>& u) {
-    if (x.size() != phi.size() or
-        u.size() != spatial_dim * mesh.get_num_nodes()) {
-      throw std::runtime_error("sizes don't match");
+    if (x.size() != phi.size()) {
+      throw std::runtime_error("size doesn't match for x and phi, dim(x): " +
+                               std::to_string(x.size()) +
+                               ", dim(phi): " + std::to_string(phi.size()));
+    }
+
+    if (u.size() != spatial_dim * mesh.get_num_nodes()) {
+      throw std::runtime_error(
+          "size doesn't match for u, dim(u): " + std::to_string(u.size()) +
+          ", spatial dim: " + std::to_string(spatial_dim) +
+          ", number of nodes in the mesh: " +
+          std::to_string(mesh.get_num_nodes()));
     }
 
     ToVTK<T, Mesh> vtk(elastic.get_mesh(), vtk_path);
@@ -529,7 +564,9 @@ void execute(int argc, char* argv[]) {
   MPI_Init(&argc, &argv);
 
   using T = double;
-  using TopoAnalysis = TopoAnalysis<T, Np_1d, Np_1d_filter>;
+  constexpr bool use_ersatz =
+      true;  // TODO: take this from cfg instead of hard code it
+  using TopoAnalysis = TopoAnalysis<T, Np_1d, Np_1d_filter, use_ersatz>;
 
   bool smoke_test = false;
   if (argc > 2 and "--smoke" == std::string(argv[2])) {

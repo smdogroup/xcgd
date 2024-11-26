@@ -212,40 +212,38 @@ class StaticElastic final {
   Analysis analysis;
 };
 
-// App class for the elastic problem using a main mesh (mesh_l) and a conjugate
-// mesh (mesh_r), an important assumption is that mesh_l + mesh_r = grid
-template <typename T, class Mesh, class Quadrature, class Basis, class IntFuncL,
-          class IntFuncR>
-class StaticElasticTwoSided final {
+// App class for the elastic problem using a main mesh and a conjugate
+// mesh for ersatz material, where
+// (conjucate mesh) U (main mesh) = grid
+template <typename T, class Mesh, class Quadrature, class Basis, class IntFunc>
+class StaticElasticErsatz final {
  public:
-  using PhysicsL = LinearElasticity<T, Basis::spatial_dim, IntFuncL>;
-  using PhysicsR = LinearElasticity<T, Basis::spatial_dim, IntFuncR>;
+  using Physics = LinearElasticity<T, Basis::spatial_dim, IntFunc>;
 
  private:
-  static_assert(Mesh::is_cut_mesh,
-                "StaticElasticTwoSided only takes a cut mesh");
+  static_assert(Mesh::is_cut_mesh, "StaticElasticErsatz only takes a cut mesh");
   using Grid = StructuredGrid2D<T>;
-  using AnalysisL =
-      GalerkinAnalysis<T, Mesh, Quadrature, Basis, PhysicsL, true>;
-  using AnalysisR =
-      GalerkinAnalysis<T, Mesh, Quadrature, Basis, PhysicsR, true>;
-  using BSRMat = GalerkinBSRMat<T, PhysicsL::dof_per_node>;
+  static constexpr bool grid_is_mesh = true;
+  using Analysis =
+      GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics, grid_is_mesh>;
+  using BSRMat = GalerkinBSRMat<T, Physics::dof_per_node>;
   using CSCMat = SparseUtils::CSCMat<T>;
   static int constexpr max_nnodes_per_element =
       2 * Mesh::max_nnodes_per_element;
 
  public:
-  StaticElasticTwoSided(T E_l, T nu_l, T E_r, T nu_r, Mesh& mesh_l,
-                        const IntFuncL& int_func_l, const IntFuncR& int_func_r)
-      : grid(mesh_l.get_grid()),
-        mesh_l(mesh_l),
+  StaticElasticErsatz(T E, T nu, Mesh& mesh, Quadrature& quadrature,
+                      Basis& basis, const IntFunc& int_func,
+                      double ersatz_ratio = 1e-6)
+      : grid(mesh.get_grid()),
+        mesh_l(mesh),
         mesh_r(grid),
-        quadrature_l(mesh_l),
+        quadrature_l(quadrature),
         quadrature_r(mesh_r),
-        basis_l(mesh_l),
+        basis_l(basis),
         basis_r(mesh_r),
-        physics_l(E_l, nu_l, int_func_l),
-        physics_r(E_r, nu_r, int_func_r),
+        physics_l(E, nu, int_func),
+        physics_r(E * ersatz_ratio, nu, int_func),
         analysis_l(mesh_l, quadrature_l, basis_l, physics_l),
         analysis_r(mesh_r, quadrature_r, basis_r, physics_r) {
     for (int i = 0; i < grid.get_num_verts(); i++) {
@@ -254,11 +252,11 @@ class StaticElasticTwoSided final {
     mesh_r.update_mesh();
   }
 
-  ~StaticElasticTwoSided() = default;
+  ~StaticElasticErsatz() = default;
 
   // Compute Jacobian matrix without boundary conditions
   BSRMat* jacobian() {
-    int ndof = PhysicsL::dof_per_node * grid.get_num_verts();
+    int ndof = Physics::dof_per_node * grid.get_num_verts();
 
     // Set up Jacobian matrix
     int *rowp = nullptr, *cols = nullptr;
@@ -310,7 +308,7 @@ class StaticElasticTwoSided final {
 
   std::vector<T> solve(const std::vector<int>& bc_dof,
                        const std::vector<T>& bc_vals) {
-    int ndof = PhysicsL::dof_per_node * grid.get_num_verts();
+    int ndof = Physics::dof_per_node * grid.get_num_verts();
 
     // Compute Jacobian matrix
     BSRMat* jac_bsr = jacobian();
@@ -378,7 +376,7 @@ class StaticElasticTwoSided final {
   std::vector<T> solve(const std::vector<int>& bc_dof,
                        const std::vector<T>& bc_vals,
                        const std::tuple<LoadAnalyses...>& load_analyses) {
-    int ndof = PhysicsL::dof_per_node * grid.get_num_verts();
+    int ndof = Physics::dof_per_node * grid.get_num_verts();
 
     // Compute Jacobian matrix
     BSRMat* jac_bsr = jacobian();
@@ -451,25 +449,24 @@ class StaticElasticTwoSided final {
     return sol;
   }
 
-  const Mesh& get_mesh_l() const { return mesh_l; }
-  const Mesh& get_mesh_r() const { return mesh_r; }
-  const Quadrature& get_quadrature_l() const { return quadrature_l; }
-  const Quadrature& get_quadrature_r() const { return quadrature_r; }
-  const Basis& get_basis_l() const { return basis_l; }
-  const Basis& get_basis_r() const { return basis_r; }
-  const AnalysisL& get_analysis_l() const { return analysis_l; }
-  const AnalysisR& get_analysis_r() const { return analysis_r; }
+  Mesh& get_mesh() { return mesh_l; }
+  Mesh& get_mesh_ersatz() { return mesh_r; }
+
+  Quadrature& get_quadrature() { return quadrature_l; }
+  Quadrature& get_quadrature_ersatz() { return quadrature_r; }
+  Basis& get_basis() { return basis_l; }
+  Basis& get_basis_ersatz() { return basis_r; }
+  Analysis& get_analysis() { return analysis_l; }
+  Analysis& get_analysis_ersatz() { return analysis_r; }
 
  private:
   const Grid& grid;
   Mesh &mesh_l, mesh_r;
-  const Quadrature quadrature_l, quadrature_r;
-  const Basis basis_l, basis_r;
+  Quadrature &quadrature_l, quadrature_r;
+  Basis &basis_l, basis_r;
 
-  const PhysicsL physics_l;
-  const PhysicsR physics_r;
-  const AnalysisL analysis_l;
-  const AnalysisR analysis_r;
+  Physics physics_l, physics_r;
+  Analysis analysis_l, analysis_r;
 };
 
 #endif  // XCGD_STATIC_ELASTIC_H
