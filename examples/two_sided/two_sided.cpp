@@ -30,7 +30,7 @@ void write_vtk(std::string name, Mesh mesh, std::vector<T> sol = {}) {
   to_vtk.write_cell_sol("cell", cells.data());
 }
 
-int main() {
+void test_two_sided_problem() {
   using T = double;
   int constexpr Np_1d = 2;
   using Grid = StructuredGrid2D<T>;
@@ -51,7 +51,7 @@ int main() {
 
   using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics, true>;
 
-  int nxy[2] = {125, 25};
+  int nxy[2] = {100, 20};
   T lxy[2] = {5.0, 1.0};
   Grid grid(nxy, lxy);
 
@@ -141,7 +141,6 @@ int main() {
   auto load_func = [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
     A2D::Vec<T, Basis::spatial_dim> intf;
     intf(0) = 1.0;
-    // intf(1) = -1.0;
     return intf;
   };
   using LoadPhysics =
@@ -158,7 +157,6 @@ int main() {
     load_elements.insert(mesh_r.get_cell_elems().at(c));
   }
   LoadQuadrature load_quadrature(mesh_r, load_elements);
-
   LoadAnalysis load_analysis(mesh_r, load_quadrature, basis_r, load_physics);
 
   // Compute rhs
@@ -193,4 +191,83 @@ int main() {
   to_vtk.write_mesh();
   to_vtk.write_vec("rhs", rhs.data());
   to_vtk.write_vec("sol", sol.data());
+}
+
+void test_two_sided_app() {
+  using T = double;
+  int constexpr Np_1d = 2;
+  using Grid = StructuredGrid2D<T>;
+  using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
+  using Mesh = CutMesh<T, Np_1d>;
+  using Basis = GDBasis2D<T, Mesh>;
+
+  auto int_func = [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
+    return A2D::Vec<T, Basis::spatial_dim>{};
+  };
+  using StaticApp = StaticElasticTwoSided<T, Mesh, Quadrature, Basis,
+                                          typeof(int_func), typeof(int_func)>;
+
+  T E_l = 100.0, nu_l = 0.3;
+  T E_r = 1.0, nu_r = 0.2;
+
+  int nxy[2] = {100, 20};
+  T lxy[2] = {5.0, 1.0};
+  Grid grid(nxy, lxy);
+  Mesh mesh(grid, [](T* xloc) { return xloc[0] + xloc[1] - 3.0; });
+  StaticApp static_app(E_l, nu_l, E_r, nu_r, mesh, int_func, int_func);
+
+  write_vtk<T>("app_mesh_left.vtk", static_app.get_mesh_l());
+  write_vtk<T>("app_mesh_right.vtk", static_app.get_mesh_r());
+
+  // BC
+  std::vector<int> bc_nodes = mesh.get_left_boundary_nodes();
+  std::vector<int> bc_verts(bc_nodes.size());
+  std::transform(bc_nodes.begin(), bc_nodes.end(), bc_verts.begin(),
+                 [mesh](int n) { return mesh.get_node_vert(n); });
+  std::vector<int> bc_dof;
+  bc_dof.reserve(StaticApp::PhysicsL::dof_per_node * bc_verts.size());
+  for (int vert : bc_verts) {
+    for (int d = 0; d < StaticApp::PhysicsL::dof_per_node; d++) {
+      bc_dof.push_back(StaticApp::PhysicsL::dof_per_node * vert + d);
+    }
+  }
+
+  // Load
+  auto load_func = [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
+    A2D::Vec<T, Basis::spatial_dim> intf;
+    intf(0) = 1.0;
+    return intf;
+  };
+  using LoadPhysics =
+      ElasticityExternalLoad<T, Basis::spatial_dim, typeof(load_func)>;
+  using LoadQuadrature =
+      GDGaussQuadrature2D<T, Np_1d, QuadPtType::SURFACE, SurfQuad::RIGHT, Mesh>;
+  using LoadAnalysis =
+      GalerkinAnalysis<T, Mesh, LoadQuadrature, Basis, LoadPhysics, true>;
+
+  LoadPhysics load_physics(load_func);
+  std::set<int> load_elements;
+  for (int iy = 0; iy < nxy[1]; iy++) {
+    int c = grid.get_coords_cell(nxy[0] - 1, iy);
+    load_elements.insert(static_app.get_mesh_r().get_cell_elems().at(c));
+  }
+  LoadQuadrature load_quadrature(static_app.get_mesh_r(), load_elements);
+  LoadAnalysis load_analysis(static_app.get_mesh_r(), load_quadrature,
+                             static_app.get_basis_r(), load_physics);
+
+  // Solve
+  std::vector<T> sol =
+      static_app.solve(bc_dof, std::vector<T>(bc_dof.size(), T(0.0)),
+                       std::tuple<LoadAnalysis>{load_analysis});
+
+  // Export to vtk
+  GridMesh<T, Np_1d> gmesh(grid);
+  ToVTK<T, typeof(gmesh)> to_vtk(gmesh, "app_combined.vtk");
+  to_vtk.write_mesh();
+  to_vtk.write_vec("sol", sol.data());
+}
+
+int main() {
+  test_two_sided_problem();
+  test_two_sided_app();
 }
