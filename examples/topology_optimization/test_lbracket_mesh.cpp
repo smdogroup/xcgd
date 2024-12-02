@@ -129,7 +129,7 @@ TEST(lbracket_mesh, LbracketGrid2D) {
   }
   for (int ey = 3; ey < 5; ey++) {
     for (int ex = 0; ex < 3; ex++, cell++) {
-      coords_vert[{ex, ey}] = cell;
+      coords_cell[{ex, ey}] = cell;
       EXPECT_EQ(cell, grid.get_coords_cell(ex, ey));
       EXPECT_EQ(cell, grid.get_coords_cell(std::vector<int>{ex, ey}.data()));
     }
@@ -142,8 +142,8 @@ TEST(lbracket_mesh, LbracketGrid2D) {
     int cell = it->second;
     int exy[2];
     grid.get_cell_coords(cell, exy);
-    EXPECT_EQ(ex, exy[0]);
-    EXPECT_EQ(ey, exy[1]);
+    EXPECT_EQ(ex, exy[0]) << "cell: " << std::to_string(cell);
+    EXPECT_EQ(ey, exy[1]) << "cell: " << std::to_string(cell);
   }
 
   // Cell -> verts
@@ -218,6 +218,49 @@ TEST(lbracket_mesh, LbracketGrid2D) {
 
     for (int i = 0; i < 8; i++) {
       EXPECT_DOUBLE_EQ(xloc_expect[i], xloc[i]);
+    }
+  }
+
+  // Cell vert ranges
+  for (auto it = coords_cell.begin(); it != coords_cell.end(); it++) {
+    int ex = (it->first).first;
+    int ey = (it->first).second;
+    int cell = it->second;
+
+    T xloc_min[2], xloc_max[2];
+    T xloc_min_expect[2], xloc_max_expect[2];
+
+    grid.get_cell_vert_ranges(cell, xloc_min, xloc_max);
+
+    xloc_min_expect[0] = ex * hx;
+    xloc_min_expect[1] = ey * hy;
+
+    xloc_max_expect[0] = (ex + 1.0) * hx;
+    xloc_max_expect[1] = (ey + 1.0) * hy;
+
+    for (int i = 0; i < 2; i++) {
+      EXPECT_DOUBLE_EQ(xloc_min_expect[i], xloc_min[i]);
+      EXPECT_DOUBLE_EQ(xloc_max_expect[i], xloc_max[i]);
+    }
+  }
+
+  // Cell ground stencil
+  constexpr int Np_1d = 2;
+
+  std::vector<std::array<int, Grid::nverts_per_cell>> nodes_expect = {
+      {0, 1, 6, 7},     {1, 2, 7, 8},     {2, 3, 8, 9},     {3, 4, 9, 10},
+      {4, 5, 10, 11},   {6, 7, 12, 13},   {7, 8, 13, 14},   {8, 9, 14, 15},
+      {9, 10, 15, 16},  {10, 11, 16, 17}, {12, 13, 18, 19}, {13, 14, 19, 20},
+      {14, 15, 20, 21}, {15, 16, 21, 22}, {16, 17, 22, 23}, {18, 19, 24, 25},
+      {19, 20, 25, 26}, {20, 21, 26, 27}, {24, 25, 28, 29}, {25, 26, 29, 30},
+      {26, 27, 30, 31}};
+
+  for (int cell = 0; cell < num_cells; cell++) {
+    int verts[Grid::nverts_per_cell];
+    grid.get_cell_ground_stencil<Np_1d>(cell, verts);
+
+    for (int i = 0; i < Grid::nverts_per_cell; i++) {
+      EXPECT_EQ(nodes_expect[cell][i], verts[i]);
     }
   }
 }

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <vector>
+#include <array>
 
 #include "elements/gd_mesh.h"
 
@@ -32,10 +32,11 @@ class LbracketGrid2D {
         ny2(ny2),
         lx1(lx1),
         ly1(ly1),
-        grid1(std::vector<int>{nx1, ny1}.data(),
-              std::vector<T>{lx1, ly1}.data()),
-        grid2(std::vector<int>{nx2, ny2}.data(),
-              std::vector<T>{lx1 * (T)nx2 / (T)nx1, ly1 * T(ny2) / T(ny1)}
+        grid1(std::array<int, spatial_dim>{nx1, ny1}.data(),
+              std::array<T, spatial_dim>{lx1, ly1}.data()),
+        grid2(std::array<int, spatial_dim>{nx2, ny2}.data(),
+              std::array<T, spatial_dim>{lx1 * (T)nx2 / (T)nx1,
+                                         ly1 * T(ny2) / T(ny1)}
                   .data()),
         cell_offset(grid1.get_num_cells()),
         vert_offset(grid1.get_num_verts() - nx2 - 1) {
@@ -105,8 +106,9 @@ class LbracketGrid2D {
     if (cell < grid1.get_num_cells()) {
       return grid1.get_cell_coords(cell, exy);
     } else {
-      return grid2.get_cell_coords(cell - grid1.get_num_cells(), exy);
+      grid2.get_cell_coords(cell - grid1.get_num_cells(), exy);
       exy[1] += ny1;
+      return;
     }
   }
 
