@@ -31,18 +31,19 @@ class ProbMeshBase {
 
   ProbMeshBase(int nxy[2], T lxy[2]) : grid(nxy, lxy), mesh(grid) {}
 
+  virtual T get_domain_area() = 0;
+  virtual int get_nvars() = 0;
   virtual std::set<int> get_loaded_cells() = 0;
   virtual std::vector<int> get_bc_nodes() = 0;
   virtual std::vector<T> expand(std::vector<T> x) = 0;  // expand xr -> x
   virtual std::vector<T> reduce(std::vector<T> x) = 0;  // reduce x -> xr
-  virtual int get_nvars() = 0;
 
   Grid grid;
   Mesh mesh;
 };
 
 template <typename T, int Np_1d>
-struct CantileverMesh : public ProbMeshBase<T, Np_1d> {
+class CantileverMesh final : public ProbMeshBase<T, Np_1d> {
  private:
   using Base = ProbMeshBase<T, Np_1d>;
 
@@ -87,6 +88,8 @@ struct CantileverMesh : public ProbMeshBase<T, Np_1d> {
     }
   }
 
+  T get_domain_area() { return lxy[0] * lxy[1]; }
+
   std::set<int> get_loaded_cells() { return loaded_cells; }
 
   std::vector<int> get_bc_nodes() {
@@ -116,6 +119,106 @@ struct CantileverMesh : public ProbMeshBase<T, Np_1d> {
   std::array<T, Grid::spatial_dim> lxy;
   double loaded_frac;
   std::set<int> loaded_cells, loaded_verts;
+  int N, Nr;
+  std::vector<int> reduce_mapping, expand_mapping;
+};
+
+template <typename T, int Np_1d>
+class LbracketMesh final : public ProbMeshBase<T, Np_1d> {
+ private:
+  using Base = ProbMeshBase<T, Np_1d>;
+
+ public:
+  using typename Base::Grid;
+  using typename Base::Mesh;
+
+  LbracketMesh(std::array<int, Grid::spatial_dim> nxy,
+               std::array<T, Grid::spatial_dim> lxy, double loaded_frac,
+               double lbracket_frac)
+      : Base(nxy.data(), lxy.data()),
+        nxy(nxy),
+        lxy(lxy),
+        loaded_frac(loaded_frac),
+        domain_area(lxy[0] * lxy[1] *
+                    (1.0 - (1.0 - lbracket_frac) * (1.0 - lbracket_frac))) {
+    T ty = lxy[1] * lbracket_frac;
+
+    // Find loaded cells and verts
+    for (int iy = 0; iy < nxy[1]; iy++) {
+      T xloc[Grid::spatial_dim];
+      int c = this->grid.get_coords_cell(nxy[0] - 1, iy);
+      this->grid.get_cell_xloc(c, xloc);
+      if (xloc[1] >= ty - lxy[1] * loaded_frac and xloc[1] <= ty) {
+        loaded_cells.insert(c);
+      }
+    }
+
+    for (int cell : loaded_cells) {
+      int verts[Grid::nverts_per_cell];
+      this->grid.get_cell_verts(cell, verts);
+      loaded_verts.insert(verts[1]);
+      loaded_verts.insert(verts[2]);
+    }
+
+    // Find inactive verts
+    T tx = lxy[0] * lbracket_frac;
+    inactive_verts = loaded_verts;
+    for (int v = 0; v < this->grid.get_num_verts(); v++) {
+      T xloc[Grid::spatial_dim];
+      this->grid.get_vert_xloc(v, xloc);
+      if (xloc[0] > tx and xloc[1] > ty) {
+        inactive_verts.insert(v);
+      }
+    }
+
+    N = this->grid.get_num_verts();
+    Nr = N - inactive_verts.size();
+
+    // Find xr -> x mapping
+    expand_mapping.reserve(Nr);  // xr -> x
+    for (int i = 0; i < N; i++) {
+      if (!inactive_verts.count(i)) {
+        expand_mapping.push_back(i);
+      }
+    }
+  }
+
+  T get_domain_area() { return domain_area; }
+
+  std::set<int> get_loaded_cells() { return loaded_cells; }
+
+  std::vector<int> get_bc_nodes() {
+    return this->mesh.get_upper_boundary_nodes();
+  }
+
+  std::vector<T> expand(std::vector<T> xr) {
+    std::vector<T> x(N, 1.0);
+    for (int i = 0; i < Nr; i++) {
+      x[expand_mapping[i]] = xr[i];
+    }
+
+    for (int i : loaded_verts) {
+      x[i] = -1.0;
+    }
+    return x;
+  }
+
+  std::vector<T> reduce(std::vector<T> x) {
+    std::vector<T> xr(Nr);
+    for (int i = 0; i < Nr; i++) {
+      xr[i] = x[expand_mapping[i]];
+    }
+    return xr;
+  }
+
+  int get_nvars() { return Nr; }
+
+ private:
+  std::array<int, Grid::spatial_dim> nxy;
+  std::array<T, Grid::spatial_dim> lxy;
+  double loaded_frac, domain_area;
+  std::set<int> loaded_cells, loaded_verts;
+  std::set<int> inactive_cells, inactive_verts;
   int N, Nr;
   std::vector<int> reduce_mapping, expand_mapping;
 };
@@ -461,6 +564,12 @@ class TopoAnalysis {
     }
     vtk.write_sol("x", mesh.get_lsf_nodes(x).data());
     vtk.write_sol("phi", mesh.get_lsf_nodes().data());
+    std::vector<T> bc_nodes_v(mesh.get_num_nodes(), 0.0);
+    const auto& bc_nodes = prob_mesh.get_bc_nodes();
+    for (int n : bc_nodes) {
+      bc_nodes_v[n] = 1.0;
+    }
+    vtk.write_sol("bc_nodes", bc_nodes_v.data());
 
     // Node vectors
     for (auto [name, vals] : node_vecs) {
@@ -472,9 +581,6 @@ class TopoAnalysis {
       }
       vtk.write_vec(name, vals.data());
     }
-    std::vector<T> dof_bcs(spatial_dim * mesh.get_num_nodes(), 0.0);
-    for (int i : bc_dof) dof_bcs[i] = 1.0;
-    vtk.write_vec("bc-dof", dof_bcs.data());
 
     // Cell solutions
     for (auto [name, vals] : cell_sols) {
@@ -558,8 +664,8 @@ class TopoAnalysis {
 template <typename T, class TopoAnalysis>
 class TopoProb : public ParOptProblem {
  public:
-  TopoProb(TopoAnalysis& topo, double domain_area, double area_frac,
-           std::string prefix, const ConfigParser& parser)
+  TopoProb(TopoAnalysis& topo, double area_frac, std::string prefix,
+           const ConfigParser& parser)
       : ParOptProblem(MPI_COMM_SELF),
         nvars(topo.get_prob_mesh().get_nvars()),
         ncon(1),
@@ -567,7 +673,7 @@ class TopoProb : public ParOptProblem {
         topo(topo),
         prefix(prefix),
         parser(parser),
-        domain_area(domain_area),
+        domain_area(topo.get_prob_mesh().get_domain_area()),
         area_frac(area_frac) {
     setProblemSizes(nvars, ncon, 0);
     setNumInequalities(nineq, 0);
@@ -673,13 +779,15 @@ class TopoProb : public ParOptProblem {
       topo.write_quad_pts_to_vtk(fspath(prefix) / fspath(vtk_name));
 
       vtk_name = "fdcheck_grid_" + std::to_string(counter) + ".vtk";
+      std::vector<T> dvr(nvars, 0.0);
+      std::vector<T> dv = topo.get_prob_mesh().expand(dvr);
       if constexpr (TopoAnalysis::use_ersatz) {
         topo.write_grid_vtk(fspath(prefix) / fspath(vtk_name), x,
-                            topo.get_phi(), {}, {},
+                            topo.get_phi(), {{"dv", dv}}, {},
                             {{"displacement", u}, {"rhs", topo.get_rhs()}}, {});
       } else {
         topo.write_grid_vtk(fspath(prefix) / fspath(vtk_name), x,
-                            topo.get_phi(), {}, {}, {}, {});
+                            topo.get_phi(), {{"dv", dv}}, {}, {}, {});
       }
 
       vtk_name = "fdcheck_cut_" + std::to_string(counter) + ".vtk";
@@ -791,7 +899,6 @@ void execute(int argc, char* argv[]) {
   // Set up grid
   std::array<int, 2> nxy = {parser.get_int_option("nx"),
                             parser.get_int_option("ny")};
-  double loaded_frac = parser.get_double_option("loaded_frac");
   if (smoke_test) {
     nxy[0] = 9;
     nxy[1] = 5;
@@ -806,9 +913,17 @@ void execute(int argc, char* argv[]) {
         "expect lbracket or cantilever for option instance, got " + instance);
   }
 
-  // TODO: lift this once lbracket is implemented
-  if (instance == "lbracket") {
-    throw std::runtime_error("lbracket is WIP");
+  std::shared_ptr<ProbMeshBase<T, Np_1d>> prob_mesh;
+  double loaded_frac = parser.get_double_option("loaded_frac");
+  if (instance == "cantilever") {
+    prob_mesh =
+        std::make_shared<CantileverMesh<T, Np_1d>>(nxy, lxy, loaded_frac);
+  } else if (instance == "lbracket") {
+    double lbracket_frac = parser.get_double_option("lbracket_frac");
+    prob_mesh = std::make_shared<LbracketMesh<T, Np_1d>>(nxy, lxy, loaded_frac,
+                                                         lbracket_frac);
+  } else {
+    throw std::runtime_error("invalid instance " + instance);
   }
 
   T r0 = parser.get_double_option("helmholtz_r0");
@@ -819,9 +934,7 @@ void execute(int argc, char* argv[]) {
   double robust_proj_eta = parser.get_double_option("robust_proj_eta");
   T penalty = parser.get_double_option("grad_penalty_coeff");
 
-  CantileverMesh<T, Np_1d> prob_mesh(nxy, lxy, loaded_frac);
-
-  TopoAnalysis topo{prob_mesh,
+  TopoAnalysis topo{*prob_mesh,
                     r0,
                     E,
                     nu,
@@ -831,10 +944,9 @@ void execute(int argc, char* argv[]) {
                     robust_proj_eta,
                     prefix};
 
-  double domain_area = lxy[0] * lxy[1];
   double area_frac = parser.get_double_option("area_frac");
-  TopoProb<T, TopoAnalysis>* prob = new TopoProb<T, TopoAnalysis>(
-      topo, domain_area, area_frac, prefix, parser);
+  TopoProb<T, TopoAnalysis>* prob =
+      new TopoProb<T, TopoAnalysis>(topo, area_frac, prefix, parser);
   prob->incref();
 
   prob->check_gradients(1e-6);
