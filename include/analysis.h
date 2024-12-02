@@ -13,12 +13,13 @@
 
 /**
  *  ...
- * @param cell_is_elem if true, then the entire grid is considered the mesh, and
- * the mesh passed in might be only part of the global mesh, useful when we have
- * multiple cut meshes that are patching together
+ * @param from_to_grid_mesh if true, then the global vectors (dof, rhs, phi,
+ * etc) and global matrices (Jacobian, etc) are defined on the grid mesh,
+ * regardless if the Mesh itself is a cut mesh or not. This is useful for
+ * two-sided problems such as the elasticity with ersatz material.
  */
 template <typename T, class Mesh, class Quadrature, class Basis, class Physics,
-          bool grid_is_mesh = false>
+          bool from_to_grid_mesh = false>
 class GalerkinAnalysis final {
  public:
   // Static data taken from the element basis
@@ -42,18 +43,27 @@ class GalerkinAnalysis final {
     std::vector<T> element_x = std::vector<T>(max_nnodes_per_element);
 
     for (int i = 0; i < mesh.get_num_elements(); i++) {
+      // Get nodes associated to this element
+      int nodes[Mesh::max_nnodes_per_element];
+      int nnodes;
+      if constexpr (from_to_grid_mesh) {
+        nnodes = mesh.get_cell_dof_verts(mesh.get_elem_cell(i), nodes);
+      } else {
+        nnodes = mesh.get_elem_dof_nodes(i, nodes);
+      }
+
       // Get the element node locations
       T element_xloc[spatial_dim * max_nnodes_per_element];
       get_element_xloc<T, Mesh, Basis>(mesh, i, element_xloc);
 
       // Get element design variable if needed
       if (x) {
-        get_element_vars<T, 1, Mesh, Basis>(mesh, i, x, element_x.data());
+        get_element_vars<T, 1, Basis>(nnodes, nodes, x, element_x.data());
       }
 
       // Get the element degrees of freedom
       T element_dof[max_dof_per_element];
-      get_element_vars<T, dof_per_node, Mesh, Basis>(mesh, i, dof, element_dof);
+      get_element_vars<T, dof_per_node, Basis>(nnodes, nodes, dof, element_dof);
 
       std::vector<T> pts, wts, ns;
       int num_quad_pts = quadrature.get_quadrature_pts(i, pts, wts, ns);
@@ -106,17 +116,26 @@ class GalerkinAnalysis final {
     std::vector<T> element_x = std::vector<T>(max_nnodes_per_element);
 
     for (int i = 0; i < mesh.get_num_elements(); i++) {
+      // Get nodes associated to this element
+      int nodes[Mesh::max_nnodes_per_element];
+      int nnodes;
+      if constexpr (from_to_grid_mesh) {
+        nnodes = mesh.get_cell_dof_verts(mesh.get_elem_cell(i), nodes);
+      } else {
+        nnodes = mesh.get_elem_dof_nodes(i, nodes);
+      }
+
       // Get the element node locations
       T element_xloc[spatial_dim * max_nnodes_per_element];
       get_element_xloc<T, Mesh, Basis>(mesh, i, element_xloc);
 
       // Get the element degrees of freedom
       T element_dof[max_dof_per_element];
-      get_element_vars<T, dof_per_node, Mesh, Basis>(mesh, i, dof, element_dof);
+      get_element_vars<T, dof_per_node, Basis>(nnodes, nodes, dof, element_dof);
 
       // Get element design variable if needed
       if (x) {
-        get_element_vars<T, 1, Mesh, Basis>(mesh, i, x, element_x.data());
+        get_element_vars<T, 1, Basis>(nnodes, nodes, x, element_x.data());
       }
 
       // Create the element residual
@@ -175,14 +194,6 @@ class GalerkinAnalysis final {
                            coef_grad_ref, element_res);
       }
 
-      int nodes[Mesh::max_nnodes_per_element];
-      int nnodes;
-      if constexpr (grid_is_mesh) {
-        nnodes = mesh.get_cell_dof_verts(mesh.get_elem_cell(i), nodes);
-      } else {
-        nnodes = mesh.get_elem_dof_nodes(i, nodes);
-      }
-
       add_element_res<T, dof_per_node, Basis>(nnodes, nodes, element_res, res);
     }
   }
@@ -193,23 +204,32 @@ class GalerkinAnalysis final {
     std::vector<T> element_x = std::vector<T>(max_nnodes_per_element);
 
     for (int i = 0; i < mesh.get_num_elements(); i++) {
+      // Get nodes associated to this element
+      int nodes[Mesh::max_nnodes_per_element];
+      int nnodes;
+      if constexpr (from_to_grid_mesh) {
+        nnodes = mesh.get_cell_dof_verts(mesh.get_elem_cell(i), nodes);
+      } else {
+        nnodes = mesh.get_elem_dof_nodes(i, nodes);
+      }
+
       // Get the element node locations
       T element_xloc[spatial_dim * max_nnodes_per_element];
       get_element_xloc<T, Mesh, Basis>(mesh, i, element_xloc);
 
       // Get element design variable if needed
       if (x) {
-        get_element_vars<T, 1, Mesh, Basis>(mesh, i, x, element_x.data());
+        get_element_vars<T, 1, Basis>(nnodes, nodes, x, element_x.data());
       }
 
       // Get the element degrees of freedom
       T element_dof[max_dof_per_element];
-      get_element_vars<T, dof_per_node, Mesh, Basis>(mesh, i, dof, element_dof);
+      get_element_vars<T, dof_per_node, Basis>(nnodes, nodes, dof, element_dof);
 
       // Get the element directions for the Jacobian-vector product
       T element_direct[max_dof_per_element];
-      get_element_vars<T, dof_per_node, Mesh, Basis>(mesh, i, direct,
-                                                     element_direct);
+      get_element_vars<T, dof_per_node, Basis>(nnodes, nodes, direct,
+                                               element_direct);
 
       // Create the element residual
       T element_res[max_dof_per_element];
@@ -280,7 +300,7 @@ class GalerkinAnalysis final {
                            coef_grad_ref, element_res);
       }
 
-      add_element_res<T, dof_per_node, Mesh, Basis>(mesh, i, element_res, res);
+      add_element_res<T, dof_per_node, Basis>(nnodes, nodes, element_res, res);
     }
   }
 
@@ -294,22 +314,31 @@ class GalerkinAnalysis final {
     std::vector<T> element_x = std::vector<T>(max_nnodes_per_element);
 
     for (int i = 0; i < mesh.get_num_elements(); i++) {
+      // Get nodes associated to this element
+      int nodes[Mesh::max_nnodes_per_element];
+      int nnodes;
+      if constexpr (from_to_grid_mesh) {
+        nnodes = mesh.get_cell_dof_verts(mesh.get_elem_cell(i), nodes);
+      } else {
+        nnodes = mesh.get_elem_dof_nodes(i, nodes);
+      }
+
       // Get the element node locations
       T element_xloc[spatial_dim * max_nnodes_per_element];
       get_element_xloc<T, Mesh, Basis>(mesh, i, element_xloc);
 
       // Get element design variable if needed
       if (x) {
-        get_element_vars<T, 1, Mesh, Basis>(mesh, i, x, element_x.data());
+        get_element_vars<T, 1, Basis>(nnodes, nodes, x, element_x.data());
       }
 
       // Get the element degrees of freedom
       T element_dof[max_dof_per_element];
-      get_element_vars<T, dof_per_node, Mesh, Basis>(mesh, i, dof, element_dof);
+      get_element_vars<T, dof_per_node, Basis>(nnodes, nodes, dof, element_dof);
 
       // Get the element psi for the Jacobian-vector product
       T element_psi[max_dof_per_element];
-      get_element_vars<T, dof_per_node, Mesh, Basis>(mesh, i, psi, element_psi);
+      get_element_vars<T, dof_per_node, Basis>(nnodes, nodes, psi, element_psi);
 
       // Create the element residual
       T element_dfdx[max_nnodes_per_element];
@@ -372,7 +401,7 @@ class GalerkinAnalysis final {
         add_jac_adj_product<T, Basis>(&N[offset_n], dv_val, element_dfdx);
       }
 
-      add_element_dfdx<T, Mesh, Basis>(mesh, i, element_dfdx, dfdx);
+      add_element_dfdx<T, Basis>(nnodes, nodes, element_dfdx, dfdx);
     }
   }
 
@@ -392,6 +421,15 @@ class GalerkinAnalysis final {
 
 #pragma omp parallel for
     for (int i = 0; i < mesh.get_num_elements(); i++) {
+      // Get nodes associated to this element
+      int nodes[Mesh::max_nnodes_per_element];
+      int nnodes;
+      if constexpr (from_to_grid_mesh) {
+        nnodes = mesh.get_cell_dof_verts(mesh.get_elem_cell(i), nodes);
+      } else {
+        nnodes = mesh.get_elem_dof_nodes(i, nodes);
+      }
+
       int element_jac_offset = i * max_dof_per_element * max_dof_per_element;
 
       // Get the element node locations
@@ -400,12 +438,12 @@ class GalerkinAnalysis final {
 
       // Get element design variable if needed
       if (x) {
-        get_element_vars<T, 1, Mesh, Basis>(mesh, i, x, element_x.data());
+        get_element_vars<T, 1, Basis>(nnodes, nodes, x, element_x.data());
       }
 
       // Get the element degrees of freedom
       T element_dof[max_dof_per_element];
-      get_element_vars<T, dof_per_node, Mesh, Basis>(mesh, i, dof, element_dof);
+      get_element_vars<T, dof_per_node, Basis>(nnodes, nodes, dof, element_dof);
 
       std::vector<T> pts, wts, ns;
       int num_quad_pts = quadrature.get_quadrature_pts(i, pts, wts, ns);
@@ -463,18 +501,16 @@ class GalerkinAnalysis final {
     }
 
     for (int i = 0; i < mesh.get_num_elements(); i++) {
-      int element_jac_offset = i * max_dof_per_element * max_dof_per_element;
-
-      // mat->add_block_values(i, mesh, element_jac.data() +
-      // element_jac_offset);
-
+      // Get nodes associated to this element
       int nodes[Mesh::max_nnodes_per_element];
       int nnodes;
-      if constexpr (grid_is_mesh) {
+      if constexpr (from_to_grid_mesh) {
         nnodes = mesh.get_cell_dof_verts(mesh.get_elem_cell(i), nodes);
       } else {
         nnodes = mesh.get_elem_dof_nodes(i, nodes);
       }
+
+      int element_jac_offset = i * max_dof_per_element * max_dof_per_element;
       mat->template add_block_values<Mesh::max_nnodes_per_element>(
           nnodes, nodes, element_jac.data() + element_jac_offset);
     }
@@ -494,14 +530,23 @@ class GalerkinAnalysis final {
                   "This method requires a level-set-cut mesh");
 
     for (int i = 0; i < mesh.get_num_elements(); i++) {
+      // Get nodes associated to this element
+      int nodes[Mesh::max_nnodes_per_element];
+      int nnodes;
+      if constexpr (from_to_grid_mesh) {
+        nnodes = mesh.get_cell_dof_verts(mesh.get_elem_cell(i), nodes);
+      } else {
+        nnodes = mesh.get_elem_dof_nodes(i, nodes);
+      }
+
       // Get the element node locations
       T element_xloc[spatial_dim * max_nnodes_per_element];
       get_element_xloc<T, Mesh, Basis>(mesh, i, element_xloc);
 
       // Get the element states and adjoints
       T element_dof[max_dof_per_element], element_psi[max_dof_per_element];
-      get_element_vars<T, dof_per_node, Mesh, Basis>(mesh, i, dof, element_dof);
-      get_element_vars<T, dof_per_node, Mesh, Basis>(mesh, i, psi, element_psi);
+      get_element_vars<T, dof_per_node, Basis>(nnodes, nodes, dof, element_dof);
+      get_element_vars<T, dof_per_node, Basis>(nnodes, nodes, psi, element_psi);
       //
       // Create the element dfdphi
       std::vector<T> element_dfdphi(max_nnodes_per_element, 0.0);
@@ -640,14 +685,23 @@ class GalerkinAnalysis final {
     std::vector<T> xloc_q, vals_q;
 
     for (int i = 0; i < mesh.get_num_elements(); i++) {
+      // Get nodes associated to this element
+      int nodes[Mesh::max_nnodes_per_element];
+      int nnodes;
+      if constexpr (from_to_grid_mesh) {
+        nnodes = mesh.get_cell_dof_verts(mesh.get_elem_cell(i), nodes);
+      } else {
+        nnodes = mesh.get_elem_dof_nodes(i, nodes);
+      }
+
       // Get the element node locations
       T element_xloc[spatial_dim * max_nnodes_per_element];
       get_element_xloc<T, Mesh, Basis>(mesh, i, element_xloc);
 
       // Get the element degrees of freedom
       T element_vals[max_nnodes_per_element * ncomp_per_node];
-      get_element_vars<T, ncomp_per_node, Mesh, Basis>(mesh, i, vals,
-                                                       element_vals);
+      get_element_vars<T, ncomp_per_node, Basis>(nnodes, nodes, vals,
+                                                 element_vals);
 
       std::vector<T> pts, wts, ns;
       int num_quad_pts = quadrature.get_quadrature_pts(i, pts, wts, ns);
@@ -697,13 +751,22 @@ class GalerkinAnalysis final {
     std::vector<T> xloc_q, energy_q;
 
     for (int i = 0; i < mesh.get_num_elements(); i++) {
+      // Get nodes associated to this element
+      int nodes[Mesh::max_nnodes_per_element];
+      int nnodes;
+      if constexpr (from_to_grid_mesh) {
+        nnodes = mesh.get_cell_dof_verts(mesh.get_elem_cell(i), nodes);
+      } else {
+        nnodes = mesh.get_elem_dof_nodes(i, nodes);
+      }
+
       // Get the element node locations
       T element_xloc[spatial_dim * max_nnodes_per_element];
       get_element_xloc<T, Mesh, Basis>(mesh, i, element_xloc);
 
       // Get the element degrees of freedom
       T element_dof[max_dof_per_element];
-      get_element_vars<T, dof_per_node, Mesh, Basis>(mesh, i, dof, element_dof);
+      get_element_vars<T, dof_per_node, Basis>(nnodes, nodes, dof, element_dof);
 
       std::vector<T> pts, wts, ns;
       int num_quad_pts = quadrature.get_quadrature_pts(i, pts, wts, ns);

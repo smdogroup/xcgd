@@ -173,6 +173,17 @@ void get_element_vars(const Mesh &mesh, int e, const T dof[], T element_dof[]) {
   }
 }
 
+template <typename T, int dim, class Basis>
+void get_element_vars(int nnodes, int *nodes, const T dof[], T element_dof[]) {
+  int constexpr max_nnodes_per_element = Basis::max_nnodes_per_element;
+  std::fill(element_dof, element_dof + max_nnodes_per_element * dim, T(0.0));
+  for (int j = 0; j < nnodes; j++) {
+    for (int k = 0; k < dim; k++, element_dof++) {
+      element_dof[0] = dof[dim * nodes[j] + k];
+    }
+  }
+}
+
 template <typename T, int dim, class Mesh, class Basis>
 void add_element_res(const Mesh &mesh, int e, const T element_res[], T res[]) {
   int constexpr max_nnodes_per_element = Basis::max_nnodes_per_element;
@@ -188,8 +199,6 @@ void add_element_res(const Mesh &mesh, int e, const T element_res[], T res[]) {
 
 template <typename T, int dim, class Basis>
 void add_element_res(int nnodes, int *nodes, const T element_res[], T res[]) {
-  int constexpr max_nnodes_per_element = Basis::max_nnodes_per_element;
-  int constexpr spatial_dim = Basis::spatial_dim;
   for (int j = 0; j < nnodes; j++) {
     for (int k = 0; k < dim; k++, element_res++) {
       res[dim * nodes[j] + k] += element_res[0];
@@ -204,6 +213,14 @@ void add_element_dfdx(const Mesh &mesh, int e, const T element_dfdx[],
   int nodes[max_nnodes_per_element];
   int nnodes = mesh.get_elem_dof_nodes(e, nodes);
 
+  for (int j = 0; j < nnodes; j++) {
+    dfdx[nodes[j]] += element_dfdx[j];
+  }
+}
+
+template <typename T, class Basis>
+void add_element_dfdx(int nnodes, int *nodes, const T element_dfdx[],
+                      T dfdx[]) {
   for (int j = 0; j < nnodes; j++) {
     dfdx[nodes[j]] += element_dfdx[j];
   }

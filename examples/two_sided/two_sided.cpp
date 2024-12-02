@@ -7,7 +7,52 @@
 #include "elements/gd_vandermonde.h"
 #include "physics/linear_elasticity.h"
 #include "physics/poisson.h"
+#include "utils/argparser.h"
+#include "utils/json.h"
 #include "utils/vtk.h"
+
+// Create nodal design variables for a domain with periodic holes
+template <typename T, class Mesh>
+std::vector<T> create_initial_topology(const Mesh& mesh, int nholes_x,
+                                       int nholes_y, double r,
+                                       bool cell_center = true) {
+  const T* lxy = mesh.get_grid().get_lxy();
+  int nverts = mesh.get_grid().get_num_verts();
+  std::vector<T> lsf(nverts, 0.0);
+  for (int i = 0; i < nverts; i++) {
+    T xloc[Mesh::spatial_dim];
+    mesh.get_grid().get_vert_xloc(i, xloc);
+    T x = xloc[0];
+    T y = xloc[1];
+
+    std::vector<T> lsf_vals;
+    for (int ix = 0; ix < nholes_x; ix++) {
+      for (int iy = 0; iy < nholes_y; iy++) {
+        if (cell_center) {
+          T x0 = lxy[0] / nholes_x / 2.0 * (2.0 * ix + 1.0);
+          T y0 = lxy[1] / nholes_y / 2.0 * (2.0 * iy + 1.0);
+          lsf_vals.push_back(r -
+                             sqrt((x - x0) * (x - x0) + (y - y0) * (y - y0)));
+        } else {
+          T x0 = lxy[0] / (nholes_x - 1.0) * ix;
+          T y0 = lxy[1] / (nholes_y - 1.0) * iy;
+          lsf_vals.push_back(r -
+                             sqrt((x - x0) * (x - x0) + (y - y0) * (y - y0)));
+        }
+      }
+    }
+    lsf[i] = hard_max(lsf_vals);
+  }
+
+  // Normalize lsf so values are within [-1, 1]
+  T lsf_max = hard_max(lsf);
+  T lsf_min = hard_min(lsf);
+  for (int i = 0; i < nverts; i++) {
+    lsf[i] = (lsf[i] - lsf_min) / (lsf_max - lsf_min) * 2.0 - 1.0;
+  }
+
+  return lsf;
+}
 
 template <typename T, class Mesh>
 void write_vtk(std::string name, Mesh mesh, std::vector<T> sol = {}) {
@@ -30,7 +75,7 @@ void write_vtk(std::string name, Mesh mesh, std::vector<T> sol = {}) {
   to_vtk.write_cell_sol("cell", cells.data());
 }
 
-void test_two_sided_problem() {
+void test_two_sided_problem(std::string prob_json = "") {
   using T = double;
   int constexpr Np_1d = 2;
   using Grid = StructuredGrid2D<T>;
@@ -53,9 +98,31 @@ void test_two_sided_problem() {
 
   int nxy[2] = {100, 20};
   T lxy[2] = {5.0, 1.0};
+
+  if (!prob_json.empty()) {
+    auto j = read_json(prob_json);
+    nxy[0] = j["nx"];
+    nxy[1] = j["ny"];
+    lxy[0] = j["lx"];
+    lxy[1] = j["ly"];
+  }
   Grid grid(nxy, lxy);
 
   Mesh mesh_l(grid, [](T* xloc) { return xloc[0] + xloc[1] - 3.0; });
+
+  if (!prob_json.empty()) {
+    auto j = read_json(prob_json);
+    auto& old_lsf = mesh_l.get_lsf_dof();
+    auto& new_lsf = j["lsf_dof"];
+    if (old_lsf.size() != new_lsf.size()) {
+      throw std::runtime_error("lsf dimension mismatch");
+    }
+    for (int i = 0; i < old_lsf.size(); i++) {
+      old_lsf[i] = new_lsf[i];
+    }
+    mesh_l.update_mesh();
+  }
+
   Mesh mesh_r(grid);
   for (int i = 0; i < grid.get_num_verts(); i++) {
     mesh_r.get_lsf_dof()[i] = -mesh_l.get_lsf_dof()[i];
@@ -140,7 +207,7 @@ void test_two_sided_problem() {
 
   auto load_func = [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
     A2D::Vec<T, Basis::spatial_dim> intf;
-    intf(0) = 1.0;
+    intf(1) = -1.0;
     return intf;
   };
   using LoadPhysics =
@@ -152,10 +219,18 @@ void test_two_sided_problem() {
 
   LoadPhysics load_physics(load_func);
   std::set<int> load_elements;
-  for (int iy = 0; iy < nxy[1]; iy++) {
-    int c = grid.get_coords_cell(nxy[0] - 1, iy);
-    load_elements.insert(mesh_r.get_cell_elems().at(c));
+  if (!prob_json.empty()) {
+    std::vector<int> loaded_cells = read_json(prob_json)["loaded_cells"];
+    for (auto c : loaded_cells) {
+      load_elements.insert(mesh_l.get_cell_elems().at(c));
+    }
+  } else {
+    for (int iy = 0; iy < nxy[1]; iy++) {
+      int c = grid.get_coords_cell(nxy[0] - 1, iy);
+      load_elements.insert(mesh_r.get_cell_elems().at(c));
+    }
   }
+
   LoadQuadrature load_quadrature(mesh_r, load_elements);
   LoadAnalysis load_analysis(mesh_r, load_quadrature, basis_r, load_physics);
 
@@ -209,13 +284,17 @@ void test_two_sided_app() {
 
   T E = 100.0, nu = 0.3;
 
-  int nxy[2] = {100, 20};
-  T lxy[2] = {5.0, 1.0};
+  int nxy[2] = {128, 64};
+  T lxy[2] = {2.0, 1.0};
   Grid grid(nxy, lxy);
-  Mesh mesh(grid, [](T* xloc) { return xloc[0] + xloc[1] - 3.0; });
+  Mesh mesh(grid);
+
+  mesh.get_lsf_dof() = create_initial_topology<T, Mesh>(mesh, 4, 2, 0.1);
+  mesh.update_mesh();
+
   Quadrature quadrature(mesh);
   Basis basis(mesh);
-  StaticApp static_app(E, nu, mesh, quadrature, basis, int_func, 1e-3);
+  StaticApp static_app(E, nu, mesh, quadrature, basis, int_func, 1e-6);
 
   write_vtk<T>("app_mesh_left.vtk", static_app.get_mesh());
   write_vtk<T>("app_mesh_right.vtk", static_app.get_mesh_ersatz());
@@ -236,7 +315,7 @@ void test_two_sided_app() {
   // Load
   auto load_func = [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
     A2D::Vec<T, Basis::spatial_dim> intf;
-    intf(0) = 1.0;
+    intf(1) = -1.0;
     return intf;
   };
   using LoadPhysics =
@@ -246,15 +325,29 @@ void test_two_sided_app() {
   using LoadAnalysis =
       GalerkinAnalysis<T, Mesh, LoadQuadrature, Basis, LoadPhysics, true>;
 
+  // Set loaded cells
+  std::set<int> loaded_cells;
+  double loaded_frac = 0.1;
+  for (int iy = 0; iy < nxy[1]; iy++) {
+    T xloc[Grid::spatial_dim];
+    int c = grid.get_coords_cell(nxy[0] - 1, iy);
+    grid.get_cell_xloc(c, xloc);
+    if (xloc[1] >= lxy[1] * (1.0 - loaded_frac) / 2.0 and
+        xloc[1] <= lxy[1] * (1.0 + loaded_frac) / 2.0) {
+      loaded_cells.insert(c);
+    }
+  }
+
   LoadPhysics load_physics(load_func);
   std::set<int> load_elements;
-  for (int iy = 0; iy < nxy[1]; iy++) {
-    int c = grid.get_coords_cell(nxy[0] - 1, iy);
-    load_elements.insert(static_app.get_mesh_ersatz().get_cell_elems().at(c));
+  for (int i = 0; i < mesh.get_num_elements(); i++) {
+    if (loaded_cells.count(mesh.get_elem_cell(i))) {
+      load_elements.insert(i);
+    }
   }
-  LoadQuadrature load_quadrature(static_app.get_mesh_ersatz(), load_elements);
-  LoadAnalysis load_analysis(static_app.get_mesh_ersatz(), load_quadrature,
-                             static_app.get_basis_ersatz(), load_physics);
+  LoadQuadrature load_quadrature(static_app.get_mesh(), load_elements);
+  LoadAnalysis load_analysis(static_app.get_mesh(), load_quadrature,
+                             static_app.get_basis(), load_physics);
 
   // Solve
   std::vector<T> sol =
@@ -265,10 +358,18 @@ void test_two_sided_app() {
   GridMesh<T, Np_1d> gmesh(grid);
   ToVTK<T, typeof(gmesh)> to_vtk(gmesh, "app_combined.vtk");
   to_vtk.write_mesh();
+  to_vtk.write_sol("lsf", mesh.get_lsf_dof().data());
   to_vtk.write_vec("sol", sol.data());
+  to_vtk.write_vec("rhs", static_app.get_rhs().data());
 }
 
-int main() {
-  test_two_sided_problem();
+int main(int argc, char* argv[]) {
+  ArgParser p;
+  p.add_argument<std::string>("--prob-json", {});
+  p.parse_args(argc, argv);
+
+  std::string prob_json = p.get<std::string>("prob-json");
+  test_two_sided_problem(prob_json);
+
   test_two_sided_app();
 }

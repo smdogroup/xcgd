@@ -23,8 +23,11 @@
 
 using fspath = std::filesystem::path;
 
-template <typename T, int Np_1d, int Np_1d_filter, bool use_ersatz = false>
+template <typename T, int Np_1d, int Np_1d_filter, bool use_ersatz_ = true>
 class TopoAnalysis {
+ public:
+  static constexpr bool use_ersatz = use_ersatz_;
+
  private:
   using Grid = StructuredGrid2D<T>;
   using Mesh = CutMesh<T, Np_1d>;
@@ -58,7 +61,7 @@ class TopoAnalysis {
   using LoadQuadrature =
       GDGaussQuadrature2D<T, Np_1d, QuadPtType::SURFACE, SurfQuad::RIGHT, Mesh>;
   using LoadAnalysis =
-      GalerkinAnalysis<T, Mesh, LoadQuadrature, Basis, LoadPhysics>;
+      GalerkinAnalysis<T, Mesh, LoadQuadrature, Basis, LoadPhysics, use_ersatz>;
 
   int constexpr static spatial_dim = Grid::spatial_dim;
 
@@ -78,17 +81,6 @@ class TopoAnalysis {
                      filter.get_basis(), pen),
         phi(mesh.get_lsf_dof()),
         prefix(prefix) {
-    // Get bc verts, i.e. vertices that we apply boundary condition if there is
-    // material
-    double tol = 1e-10;
-    for (int i = 0; i < grid.get_num_verts(); i++) {
-      T xloc[spatial_dim];
-      grid.get_vert_xloc(i, xloc);
-      if (xloc[0] < tol) {
-        bc_verts.push_back(i);
-      }
-    }
-
     // Set loaded cells
     for (int iy = 0; iy < nxy[1]; iy++) {
       T xloc[Grid::spatial_dim];
@@ -144,7 +136,11 @@ class TopoAnalysis {
     T lsf_max = hard_max(lsf);
     T lsf_min = hard_min(lsf);
     for (int i = 0; i < nverts; i++) {
-      lsf[i] = (lsf[i] - lsf_min) / (lsf_max - lsf_min) * 2.0 - 1.0;
+      if (lsf[i] < 0.0) {
+        lsf[i] /= -lsf_min;
+      } else {
+        lsf[i] /= lsf_max;
+      }
     }
 
     return lsf;
@@ -173,11 +169,13 @@ class TopoAnalysis {
 
     // Update bc dof
     bc_dof.clear();
-    for (int bc_vert : bc_verts) {
-      if (vert_nodes.count(bc_vert)) {
-        for (int d = 0; d < spatial_dim; d++) {
-          bc_dof.push_back(spatial_dim * vert_nodes.at(bc_vert) + d);
-        }
+    std::vector<int> bc_nodes = mesh.get_left_boundary_nodes();
+    for (int n : bc_nodes) {
+      if constexpr (use_ersatz) {
+        n = mesh.get_node_vert(n);
+      }
+      for (int d = 0; d < spatial_dim; d++) {
+        bc_dof.push_back(spatial_dim * n + d);
       }
     }
   }
@@ -204,17 +202,7 @@ class TopoAnalysis {
       std::vector<T> sol =
           elastic.solve(bc_dof, std::vector<T>(bc_dof.size(), T(0.0)),
                         std::tuple<LoadAnalysis>(load_analysis));
-      if constexpr (use_ersatz) {
-        std::vector<T> sol_grid = std::move(sol);
-        int nnodes = mesh.get_num_nodes();
-        sol.resize(spatial_dim * nnodes);
-        for (int n = 0; n < nnodes; n++) {
-          int v = mesh.get_node_vert(n);
-          for (int d = 0; d < spatial_dim; d++) {
-            sol[spatial_dim * n + d] = sol_grid[spatial_dim * v + d];
-          }
-        }
-      }
+
       return sol;
     } catch (const StencilConstructionFailed& e) {
       std::printf(
@@ -243,6 +231,10 @@ class TopoAnalysis {
     std::vector<T> dummy(mesh.get_num_nodes(), 0.0);
     // WARNING: this holds only when body force is zero!
     comp = 2.0 * elastic.get_analysis().energy(nullptr, sol.data());
+    // if constexpr (use_ersatz) {
+    //   comp += 2.0 * elastic.get_analysis_ersatz().energy(nullptr,
+    //   sol.data());
+    // }
     area = vol_analysis.energy(nullptr, dummy.data());
 
     return sol;
@@ -269,6 +261,10 @@ class TopoAnalysis {
     std::fill(gcomp.begin(), gcomp.end(), 0.0);
     elastic.get_analysis().LSF_jacobian_adjoint_product(sol.data(), psi.data(),
                                                         gcomp.data());
+    // if constexpr (use_ersatz) {
+    //   elastic.get_analysis_ersatz().LSF_jacobian_adjoint_product(
+    //       sol.data(), psi.data(), gcomp.data());
+    // }
     filter.applyGradient(x.data(), gcomp.data(), gcomp.data());
 
     garea.resize(x.size());
@@ -277,63 +273,139 @@ class TopoAnalysis {
     filter.applyGradient(x.data(), garea.data(), garea.data());
   }
 
+  std::vector<T> grid_sol_to_cut_sol(const std::vector<T>& grid_sol) {
+    int nnodes = mesh.get_num_nodes();
+    std::vector<T> cut_sol(spatial_dim * nnodes);
+    for (int n = 0; n < nnodes; n++) {
+      int v = mesh.get_node_vert(n);
+      for (int d = 0; d < spatial_dim; d++) {
+        cut_sol[spatial_dim * n + d] = grid_sol[spatial_dim * v + d];
+      }
+    }
+    return cut_sol;
+  }
+
   void write_quad_pts_to_vtk(const std::string vtk_path) {
     Interpolator<T, Quadrature, Basis> interp{mesh, quadrature, basis};
     interp.to_vtk(vtk_path);
   }
 
   void write_grid_vtk(const std::string vtk_path, const std::vector<T>& x,
-                      const std::vector<T>& phi, bool essential_only = false) {
+                      const std::vector<T>& phi,
+                      std::map<std::string, std::vector<T>&> node_sols = {},
+                      std::map<std::string, std::vector<T>&> cell_sols = {},
+                      std::map<std::string, std::vector<T>&> node_vecs = {},
+                      std::map<std::string, std::vector<T>&> cell_vecs = {}) {
     if (x.size() != phi.size()) {
       throw std::runtime_error("sizes don't match");
     }
 
     ToVTK<T, typename Filter::Mesh> vtk(filter.get_mesh(), vtk_path);
     vtk.write_mesh();
+
+    // Node solutions
+    for (auto [name, vals] : node_sols) {
+      if (vals.size() != grid.get_num_verts()) {
+        throw std::runtime_error(
+            "[TopoAnalysis::write_grid_vtk()]node sol size doesn't match "
+            "number of verts");
+      }
+      vtk.write_sol(name, vals.data());
+    }
+
     vtk.write_sol("x", x.data());
     vtk.write_sol("phi", phi.data());
 
-    if (!essential_only) {
-      std::vector<T> bcs(x.size(), 0.0);
-      for (int v : bc_verts) bcs[v] = 1.0;
-      vtk.write_sol("bc-verts", bcs.data());
+    std::vector<T> loaded_verts_v(mesh.get_grid().get_num_verts(), 0.0);
+    for (int v : loaded_verts) loaded_verts_v[v] = 1.0;
+    vtk.write_sol("loaded_verts", loaded_verts_v.data());
 
-      std::vector<T> loaded_verts_v(mesh.get_grid().get_num_verts(), 0.0);
-      for (int v : loaded_verts) loaded_verts_v[v] = 1.0;
-      vtk.write_sol("loaded_verts", loaded_verts_v.data());
+    // Node vectors
+    for (auto [name, vals] : node_vecs) {
+      if (vals.size() != spatial_dim * grid.get_num_verts()) {
+        throw std::runtime_error(
+            "[TopoAnalysis::write_grid_vtk()]node vec size doesn't match "
+            "number of verts * spatial_dim");
+      }
+      vtk.write_vec(name, vals.data());
+    }
 
-      std::vector<T> loaded_cells_v(mesh.get_grid().get_num_cells(), 0.0);
-      for (int c : loaded_cells) loaded_cells_v[c] = 1.0;
-      vtk.write_cell_sol("loaded_cells", loaded_cells_v.data());
+    // Cell solutions
+    for (auto [name, vals] : cell_sols) {
+      if (vals.size() != grid.get_num_cells()) {
+        throw std::runtime_error(
+            "[TopoAnalysis::write_grid_vtk()]cell sol size doesn't match "
+            "number of cells");
+      }
+      vtk.write_cell_sol(name, vals.data());
+    }
+
+    std::vector<T> loaded_cells_v(mesh.get_grid().get_num_cells(), 0.0);
+    for (int c : loaded_cells) loaded_cells_v[c] = 1.0;
+    vtk.write_cell_sol("loaded_cells", loaded_cells_v.data());
+
+    // Cell vectors
+    for (auto [name, vals] : cell_vecs) {
+      if (vals.size() != spatial_dim * grid.get_num_cells()) {
+        throw std::runtime_error(
+            "[TopoAnalysis::write_grid_vtk()]cell vec size doesn't match "
+            "number of cells * spatial_dim");
+      }
+      vtk.write_cell_vec(name, vals.data());
     }
   }
 
   void write_cut_vtk(const std::string vtk_path, const std::vector<T>& x,
-                     const std::vector<T>& phi, const std::vector<T>& u) {
+                     const std::vector<T>& phi,
+                     std::map<std::string, std::vector<T>&> node_sols = {},
+                     std::map<std::string, std::vector<T>&> cell_sols = {},
+                     std::map<std::string, std::vector<T>&> node_vecs = {},
+                     std::map<std::string, std::vector<T>&> cell_vecs = {}) {
     if (x.size() != phi.size()) {
       throw std::runtime_error("size doesn't match for x and phi, dim(x): " +
                                std::to_string(x.size()) +
                                ", dim(phi): " + std::to_string(phi.size()));
     }
 
-    if (u.size() != spatial_dim * mesh.get_num_nodes()) {
-      throw std::runtime_error(
-          "size doesn't match for u, dim(u): " + std::to_string(u.size()) +
-          ", spatial dim: " + std::to_string(spatial_dim) +
-          ", number of nodes in the mesh: " +
-          std::to_string(mesh.get_num_nodes()));
-    }
-
-    ToVTK<T, Mesh> vtk(elastic.get_mesh(), vtk_path);
+    const Mesh& mesh = elastic.get_mesh();
+    ToVTK<T, Mesh> vtk(mesh, vtk_path);
     vtk.write_mesh();
-    vtk.write_vec("displacement", u.data());
+
+    // Node solutions
+    for (auto [name, vals] : node_sols) {
+      if (vals.size() != mesh.get_num_nodes()) {
+        throw std::runtime_error(
+            "[TopoAnalysis::write_cut_vtk()]node sol size doesn't match "
+            "number of nodes");
+      }
+      vtk.write_sol(name, vals.data());
+    }
     vtk.write_sol("x", mesh.get_lsf_nodes(x).data());
     vtk.write_sol("phi", mesh.get_lsf_nodes().data());
 
+    // Node vectors
+    for (auto [name, vals] : node_vecs) {
+      if (vals.size() != spatial_dim * mesh.get_num_nodes()) {
+        throw std::runtime_error("[TopoAnalysis::write_cut_vtk()]node vec " +
+                                 name +
+                                 " size doesn't match "
+                                 "number of nodes * spatial_dim");
+      }
+      vtk.write_vec(name, vals.data());
+    }
     std::vector<T> dof_bcs(spatial_dim * mesh.get_num_nodes(), 0.0);
-
     for (int i : bc_dof) dof_bcs[i] = 1.0;
     vtk.write_vec("bc-dof", dof_bcs.data());
+
+    // Cell solutions
+    for (auto [name, vals] : cell_sols) {
+      if (vals.size() != mesh.get_num_elements()) {
+        throw std::runtime_error(
+            "[TopoAnalysis::write_cut_vtk()]cell sol size doesn't match "
+            "number of elements");
+      }
+      vtk.write_cell_sol(name, vals.data());
+    }
 
     std::vector<double> conds(mesh.get_num_elements());
     for (int elem = 0; elem < mesh.get_num_elements(); elem++) {
@@ -349,6 +421,16 @@ class TopoAnalysis {
       nstencils[elem] = e.second.size();
     }
     vtk.write_cell_sol("nstencils", nstencils.data());
+
+    // Cell vectors
+    for (auto [name, vals] : cell_vecs) {
+      if (vals.size() != mesh.get_num_elements()) {
+        throw std::runtime_error(
+            "[TopoAnalysis::write_cut_vtk()]cell vec size doesn't match "
+            "number of elements * spatial_dim");
+      }
+      vtk.write_cell_vec(name, vals.data());
+    }
   }
 
   void write_prob_json(const std::string json_path,
@@ -363,10 +445,12 @@ class TopoAnalysis {
     j["ly"] = parser.get_double_option("ly");
     j["lsf_dof"] = mesh.get_lsf_dof();
     j["bc_dof"] = bc_dof;
+    j["loaded_cells"] = loaded_cells;
     write_json(json_path, j);
   }
 
   std::vector<T>& get_phi() { return phi; }
+  std::vector<T>& get_rhs() { return elastic.get_rhs(); }
 
  private:
   Grid grid;
@@ -385,7 +469,6 @@ class TopoAnalysis {
 
   std::string prefix;
 
-  std::vector<int> bc_verts;
   std::vector<int> bc_dof;
 
   std::set<int> loaded_cells;
@@ -461,8 +544,6 @@ class TopoProb : public ParOptProblem {
   }
 
   int evalObjCon(ParOptVec* xvec, ParOptScalar* fobj, ParOptScalar* cons) {
-    counter++;
-
     // Save the elastic problem instance to json
     if (counter % parser.get_int_option("save_prob_json_every") == 0) {
       std::string json_path = fspath(prefix) / fspath("json") /
@@ -484,13 +565,24 @@ class TopoProb : public ParOptProblem {
     if (counter % parser.get_int_option("write_vtk_every") == 0) {
       // Write design to vtk
       std::string vtk_name = "grid_" + std::to_string(counter) + ".vtk";
-      topo.write_grid_vtk(fspath(prefix) / fspath(vtk_name), x, topo.get_phi(),
-                          true);
+      if constexpr (TopoAnalysis::use_ersatz) {
+        topo.write_grid_vtk(fspath(prefix) / fspath(vtk_name), x,
+                            topo.get_phi(), {}, {},
+                            {{"displacement", u}, {"rhs", topo.get_rhs()}}, {});
+      } else {
+        topo.write_grid_vtk(fspath(prefix) / fspath(vtk_name), x,
+                            topo.get_phi(), {}, {}, {}, {});
+      }
 
       // Write cut mesh to vtk
       vtk_name = "cut_" + std::to_string(counter) + ".vtk";
-      topo.write_cut_vtk(fspath(prefix) / fspath(vtk_name), x, topo.get_phi(),
-                         u);
+      if constexpr (TopoAnalysis::use_ersatz) {
+        topo.write_cut_vtk(fspath(prefix) / fspath(vtk_name), x, topo.get_phi(),
+                           {}, {}, {}, {});
+      } else {
+        topo.write_cut_vtk(fspath(prefix) / fspath(vtk_name), x, topo.get_phi(),
+                           {}, {}, {{"displacement", u}}, {});
+      }
     }
 
     // write quadrature to vtk for gradient check
@@ -499,15 +591,29 @@ class TopoProb : public ParOptProblem {
       topo.write_quad_pts_to_vtk(fspath(prefix) / fspath(vtk_name));
 
       vtk_name = "fdcheck_grid_" + std::to_string(counter) + ".vtk";
-      topo.write_grid_vtk(fspath(prefix) / fspath(vtk_name), x, topo.get_phi());
+      if constexpr (TopoAnalysis::use_ersatz) {
+        topo.write_grid_vtk(fspath(prefix) / fspath(vtk_name), x,
+                            topo.get_phi(), {}, {},
+                            {{"displacement", u}, {"rhs", topo.get_rhs()}}, {});
+      } else {
+        topo.write_grid_vtk(fspath(prefix) / fspath(vtk_name), x,
+                            topo.get_phi(), {}, {}, {}, {});
+      }
 
       vtk_name = "fdcheck_cut_" + std::to_string(counter) + ".vtk";
-      topo.write_cut_vtk(fspath(prefix) / fspath(vtk_name), x, topo.get_phi(),
-                         u);
+      if constexpr (TopoAnalysis::use_ersatz) {
+        topo.write_cut_vtk(fspath(prefix) / fspath(vtk_name), x, topo.get_phi(),
+                           {}, {}, {}, {});
+      } else {
+        topo.write_cut_vtk(fspath(prefix) / fspath(vtk_name), x, topo.get_phi(),
+                           {}, {}, {{"displacement", u}}, {});
+      }
     }
 
     // print optimization progress
     print_progress(comp, pterm, area / domain_area);
+
+    counter++;
 
     return 0;
   }
@@ -564,9 +670,7 @@ void execute(int argc, char* argv[]) {
   MPI_Init(&argc, &argv);
 
   using T = double;
-  constexpr bool use_ersatz =
-      true;  // TODO: take this from cfg instead of hard code it
-  using TopoAnalysis = TopoAnalysis<T, Np_1d, Np_1d_filter, use_ersatz>;
+  using TopoAnalysis = TopoAnalysis<T, Np_1d, Np_1d_filter>;
 
   bool smoke_test = false;
   if (argc > 2 and "--smoke" == std::string(argv[2])) {

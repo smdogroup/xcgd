@@ -4,6 +4,7 @@
 #include "elements/gd_mesh.h"
 #include "physics/linear_elasticity.h"
 #include "sparse_utils/sparse_utils.h"
+#include "utils/vtk.h"
 
 #ifndef XCGD_STATIC_ELASTIC_H
 #define XCGD_STATIC_ELASTIC_H
@@ -385,18 +386,19 @@ class StaticElasticErsatz final {
     jac_csc->zero_columns(bc_dof.size(), bc_dof.data());
 
     // Set right hand side (Dirichlet bcs and load)
-    std::vector<T> rhs(ndof, 0.0), t1(ndof, 0.0), t2(ndof, 0.0);
+    rhs = std::vector<T>(ndof, 0.0);
+    std::vector<T> t1(ndof, 0.0), t2(ndof, 0.0);
+
+    // Add external load contributions to the right-hand size
+    std::apply(
+        [&t1, this](auto&&... load_analysis) mutable {
+          (load_analysis.residual(nullptr, t1.data(), this->rhs.data()), ...);
+        },
+        load_analyses);
 
     // Add internal load contributions to the right-hand size
     analysis_l.residual(nullptr, t1.data(), rhs.data());
     analysis_r.residual(nullptr, t1.data(), rhs.data());
-
-    // Add external load contributions to the right-hand size
-    std::apply(
-        [&t1, &rhs](auto&&... load_analysis) mutable {
-          (load_analysis.residual(nullptr, t1.data(), rhs.data()), ...);
-        },
-        load_analyses);
 
     for (int i = 0; i < rhs.size(); i++) {
       rhs[i] *= -1.0;
@@ -449,6 +451,8 @@ class StaticElasticErsatz final {
     return sol;
   }
 
+  std::vector<T>& get_rhs() { return rhs; }
+
   Mesh& get_mesh() { return mesh_l; }
   Mesh& get_mesh_ersatz() { return mesh_r; }
 
@@ -467,6 +471,8 @@ class StaticElasticErsatz final {
 
   Physics physics_l, physics_r;
   Analysis analysis_l, analysis_r;
+
+  std::vector<T> rhs;
 };
 
 #endif  // XCGD_STATIC_ELASTIC_H
