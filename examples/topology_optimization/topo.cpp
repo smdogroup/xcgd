@@ -23,7 +23,7 @@
 
 using fspath = std::filesystem::path;
 
-template <typename T, int Np_1d, int Np_1d_filter, bool use_ersatz_ = true>
+template <typename T, int Np_1d, int Np_1d_filter, bool use_ersatz_>
 class TopoAnalysis {
  public:
   static constexpr bool use_ersatz = use_ersatz_;
@@ -665,12 +665,13 @@ class TopoProb : public ParOptProblem {
   bool is_gradient_check = false;
 };
 
-template <int Np_1d, int Np_1d_filter>
+template <int Np_1d, bool use_ersatz>
 void execute(int argc, char* argv[]) {
+  constexpr int Np_1d_filter = Np_1d > 2 ? 4 : 2;
   MPI_Init(&argc, &argv);
 
   using T = double;
-  using TopoAnalysis = TopoAnalysis<T, Np_1d, Np_1d_filter>;
+  using TopoAnalysis = TopoAnalysis<T, Np_1d, Np_1d_filter, use_ersatz>;
 
   bool smoke_test = false;
   if (argc > 2 and "--smoke" == std::string(argv[2])) {
@@ -807,100 +808,43 @@ int main(int argc, char* argv[]) {
   std::string cfg_path{argv[1]};
   ConfigParser parser{cfg_path};
   int Np_1d = parser.get_int_option("Np_1d");
-  int Np_1d_filter = parser.get_int_option("Np_1d_filter");
+  bool use_ersatz = parser.get_bool_option("use_ersatz");
 
   if (Np_1d % 2) {
     std::printf("[Error]Invalid input, expect even Np_1d, got %d\n", Np_1d);
     exit(-1);
   }
-  if (Np_1d_filter % 2) {
-    std::printf("[Error]Invalid input, expect even Np_1d_filter, got %d\n",
-                Np_1d_filter);
-    exit(-1);
-  }
 
   switch (Np_1d) {
     case 2:
-      switch (Np_1d_filter) {
-        case 2:
-          execute<2, 2>(argc, argv);
-          break;
-
-        case 4:
-          execute<2, 4>(argc, argv);
-          break;
-
-        case 6:
-          execute<2, 6>(argc, argv);
-          break;
-
-        default:
-          std::printf(
-              "(Np_1d, Np_1d_filter) = (%d, %d) and not pre-compiled, "
-              "enumerate it in the source code if you intend to use this "
-              "combination.\n",
-              Np_1d, Np_1d_filter);
-          exit(-1);
-          break;
+      if (use_ersatz) {
+        execute<2, true>(argc, argv);
+      } else {
+        execute<2, false>(argc, argv);
       }
       break;
 
     case 4:
-      switch (Np_1d_filter) {
-        case 2:
-          execute<4, 2>(argc, argv);
-          break;
-
-        case 4:
-          execute<4, 4>(argc, argv);
-          break;
-
-        case 6:
-          execute<4, 6>(argc, argv);
-          break;
-
-        default:
-          std::printf(
-              "(Np_1d, Np_1d_filter) = (%d, %d) and not pre-compiled, "
-              "enumerate it in the source code if you intend to use this "
-              "combination.\n",
-              Np_1d, Np_1d_filter);
-          exit(-1);
-          break;
+      if (use_ersatz) {
+        execute<4, true>(argc, argv);
+      } else {
+        execute<4, false>(argc, argv);
       }
       break;
 
     case 6:
-      switch (Np_1d_filter) {
-        case 2:
-          execute<6, 2>(argc, argv);
-          break;
-
-        case 4:
-          execute<6, 4>(argc, argv);
-          break;
-
-        case 6:
-          execute<6, 6>(argc, argv);
-          break;
-
-        default:
-          std::printf(
-              "(Np_1d, Np_1d_filter) = (%d, %d) and not pre-compiled, "
-              "enumerate it in the source code if you intend to use this "
-              "combination.\n",
-              Np_1d, Np_1d_filter);
-          exit(-1);
-          break;
+      if (use_ersatz) {
+        execute<6, true>(argc, argv);
+      } else {
+        execute<6, false>(argc, argv);
       }
       break;
 
     default:
       std::printf(
-          "(Np_1d, Np_1d_filter) = (%d, %d) and not pre-compiled, "
-          "enumerate it in the source code if you intend to use this "
-          "combination.\n",
-          Np_1d, Np_1d_filter);
+          "Np_1d = %d is not pre-compiled, enumerate it in the source code if "
+          "you intend to use this combination.\n",
+          Np_1d);
       exit(-1);
       break;
   }
