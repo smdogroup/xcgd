@@ -103,10 +103,6 @@ class PoissonApp final {
     // Write Jacobian matrix to a file
     jac_csc->write_mtx("K_bcs.mtx");
 
-    ToVTK<T, Mesh> vtk(mesh, "debug.vtk");
-    vtk.write_mesh();
-    vtk.write_sol("rhs", rhs.data());
-
     // Check error
     // res = Ku - rhs
     std::vector<T> Ku(sol.size());

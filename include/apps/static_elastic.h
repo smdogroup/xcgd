@@ -216,14 +216,15 @@ class StaticElastic final {
 // App class for the elastic problem using a main mesh and a conjugate
 // mesh for ersatz material, where
 // (conjucate mesh) U (main mesh) = grid
-template <typename T, class Mesh, class Quadrature, class Basis, class IntFunc>
+template <typename T, class Mesh, class Quadrature, class Basis, class IntFunc,
+          class Grid_ = StructuredGrid2D<T>>
 class StaticElasticErsatz final {
  public:
   using Physics = LinearElasticity<T, Basis::spatial_dim, IntFunc>;
 
  private:
   static_assert(Mesh::is_cut_mesh, "StaticElasticErsatz only takes a cut mesh");
-  using Grid = StructuredGrid2D<T>;
+  using Grid = Grid_;
   static constexpr bool grid_is_mesh = true;
   using Analysis =
       GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics, grid_is_mesh>;

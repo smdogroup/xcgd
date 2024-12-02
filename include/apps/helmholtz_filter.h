@@ -15,15 +15,16 @@
  * @tparam Np_1d GD degree, note that this can be different from the Np_1d used
  * for the analysis, if wished
  */
-template <typename T, int Np_1d>
+template <typename T, int Np_1d, class Grid_ = StructuredGrid2D<T>>
 class HelmholtzFilter final {
  public:
-  using Mesh = GridMesh<T, Np_1d>;
-  using Quadrature = GDGaussQuadrature2D<T, Np_1d>;
+  using Grid = Grid_;
+  using Mesh = GridMesh<T, Np_1d, Grid_>;
+  using Quadrature =
+      GDGaussQuadrature2D<T, Np_1d, QuadPtType::INNER, SurfQuad::NA, Mesh>;
   using Basis = GDBasis2D<T, Mesh>;
 
  private:
-  using Grid = StructuredGrid2D<T>;
   using Physics = HelmholtzPhysics<T, Basis::spatial_dim>;
   using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
   using BSRMat = GalerkinBSRMat<T, Physics::dof_per_node>;
@@ -66,9 +67,13 @@ class HelmholtzFilter final {
     chol = new SparseUtils::SparseCholesky<T>(jac_csc);
     chol->factor();
 
+#ifdef XCGD_DEBUG_MODE
+    jac_csc->write_mtx("Helmholtz_K.mtx");
+#endif
+
     // Set up the robust projector if specified
     if (use_robust_projection) {
-      proj = new Proj(proj_beta, proj_eta, mesh.get_num_nodes());
+      proj = new Proj(proj_beta, proj_eta, num_nodes);
     }
   }
 

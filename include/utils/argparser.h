@@ -188,7 +188,6 @@ class ArgParser {
 class ConfigParser {
  public:
   ConfigParser(std::string cfg_path) {
-    char abs_path[PATH_MAX];
     realpath(cfg_path.c_str(), abs_path);
     bool fail = false;
     std::string line;

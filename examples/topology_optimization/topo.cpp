@@ -10,6 +10,7 @@
 #include "apps/static_elastic.h"
 #include "elements/element_utils.h"
 #include "elements/gd_vandermonde.h"
+#include "lbracket_mesh.h"
 #include "physics/grad_penalization.h"
 #include "physics/volume.h"
 #include "utils/argparser.h"
@@ -23,13 +24,11 @@
 
 using fspath = std::filesystem::path;
 
-template <typename T, int Np_1d>
+template <typename T, int Np_1d, class Grid_>
 class ProbMeshBase {
  public:
-  using Grid = StructuredGrid2D<T>;
-  using Mesh = CutMesh<T, Np_1d>;
-
-  ProbMeshBase(int nxy[2], T lxy[2]) : grid(nxy, lxy), mesh(grid) {}
+  using Grid = Grid_;
+  using Mesh = CutMesh<T, Np_1d, Grid>;
 
   virtual T get_domain_area() = 0;
   virtual int get_nvars() = 0;
@@ -37,15 +36,15 @@ class ProbMeshBase {
   virtual std::vector<int> get_bc_nodes() = 0;
   virtual std::vector<T> expand(std::vector<T> x) = 0;  // expand xr -> x
   virtual std::vector<T> reduce(std::vector<T> x) = 0;  // reduce x -> xr
-
-  Grid grid;
-  Mesh mesh;
+  virtual Grid& get_grid() = 0;
+  virtual Mesh& get_mesh() = 0;
 };
 
 template <typename T, int Np_1d>
-class CantileverMesh final : public ProbMeshBase<T, Np_1d> {
+class CantileverMesh final
+    : public ProbMeshBase<T, Np_1d, StructuredGrid2D<T>> {
  private:
-  using Base = ProbMeshBase<T, Np_1d>;
+  using Base = ProbMeshBase<T, Np_1d, StructuredGrid2D<T>>;
 
  public:
   using typename Base::Grid;
@@ -53,9 +52,10 @@ class CantileverMesh final : public ProbMeshBase<T, Np_1d> {
 
   CantileverMesh(std::array<int, Grid::spatial_dim> nxy,
                  std::array<T, Grid::spatial_dim> lxy, double loaded_frac)
-      : Base(nxy.data(), lxy.data()),
-        nxy(nxy),
+      : nxy(nxy),
         lxy(lxy),
+        grid(nxy.data(), lxy.data()),
+        mesh(grid),
         loaded_frac(loaded_frac) {
     // Find loaded cells
     for (int iy = 0; iy < nxy[1]; iy++) {
@@ -88,6 +88,8 @@ class CantileverMesh final : public ProbMeshBase<T, Np_1d> {
     }
   }
 
+  int get_nvars() { return Nr; }
+
   T get_domain_area() { return lxy[0] * lxy[1]; }
 
   std::set<int> get_loaded_cells() { return loaded_cells; }
@@ -97,7 +99,7 @@ class CantileverMesh final : public ProbMeshBase<T, Np_1d> {
   }
 
   std::vector<T> expand(std::vector<T> xr) {
-    std::vector<T> x(N, -1.0);
+    std::vector<T> x(N, -1.0);  // lsf = -1.0 is material
     for (int i = 0; i < Nr; i++) {
       x[expand_mapping[i]] = xr[i];
     }
@@ -112,11 +114,16 @@ class CantileverMesh final : public ProbMeshBase<T, Np_1d> {
     return xr;
   }
 
-  int get_nvars() { return Nr; }
+  Grid& get_grid() { return grid; }
+
+  Mesh& get_mesh() { return mesh; }
 
  private:
   std::array<int, Grid::spatial_dim> nxy;
   std::array<T, Grid::spatial_dim> lxy;
+  Grid grid;
+  Mesh mesh;
+
   double loaded_frac;
   std::set<int> loaded_cells, loaded_verts;
   int N, Nr;
@@ -124,9 +131,9 @@ class CantileverMesh final : public ProbMeshBase<T, Np_1d> {
 };
 
 template <typename T, int Np_1d>
-class LbracketMesh final : public ProbMeshBase<T, Np_1d> {
+class LbracketMesh final : public ProbMeshBase<T, Np_1d, StructuredGrid2D<T>> {
  private:
-  using Base = ProbMeshBase<T, Np_1d>;
+  using Base = ProbMeshBase<T, Np_1d, StructuredGrid2D<T>>;
 
  public:
   using typename Base::Grid;
@@ -135,9 +142,10 @@ class LbracketMesh final : public ProbMeshBase<T, Np_1d> {
   LbracketMesh(std::array<int, Grid::spatial_dim> nxy,
                std::array<T, Grid::spatial_dim> lxy, double loaded_frac,
                double lbracket_frac)
-      : Base(nxy.data(), lxy.data()),
-        nxy(nxy),
+      : nxy(nxy),
         lxy(lxy),
+        grid(nxy.data(), lxy.data()),
+        mesh(grid),
         loaded_frac(loaded_frac),
         domain_area(lxy[0] * lxy[1] *
                     (1.0 - (1.0 - lbracket_frac) * (1.0 - lbracket_frac))) {
@@ -183,6 +191,8 @@ class LbracketMesh final : public ProbMeshBase<T, Np_1d> {
     }
   }
 
+  int get_nvars() { return Nr; }
+
   T get_domain_area() { return domain_area; }
 
   std::set<int> get_loaded_cells() { return loaded_cells; }
@@ -192,13 +202,13 @@ class LbracketMesh final : public ProbMeshBase<T, Np_1d> {
   }
 
   std::vector<T> expand(std::vector<T> xr) {
-    std::vector<T> x(N, 1.0);
+    std::vector<T> x(N, 1.0);  // lsf = 1.0 is void
     for (int i = 0; i < Nr; i++) {
       x[expand_mapping[i]] = xr[i];
     }
 
     for (int i : loaded_verts) {
-      x[i] = -1.0;
+      x[i] = -1.0;  // lsf = -1.0 is material
     }
     return x;
   }
@@ -211,11 +221,15 @@ class LbracketMesh final : public ProbMeshBase<T, Np_1d> {
     return xr;
   }
 
-  int get_nvars() { return Nr; }
+  Grid& get_grid() { return grid; }
+
+  Mesh& get_mesh() { return mesh; }
 
  private:
   std::array<int, Grid::spatial_dim> nxy;
   std::array<T, Grid::spatial_dim> lxy;
+  Grid grid;
+  Mesh mesh;
   double loaded_frac, domain_area;
   std::set<int> loaded_cells, loaded_verts;
   std::set<int> inactive_cells, inactive_verts;
@@ -223,18 +237,114 @@ class LbracketMesh final : public ProbMeshBase<T, Np_1d> {
   std::vector<int> reduce_mapping, expand_mapping;
 };
 
-template <typename T, int Np_1d, int Np_1d_filter, bool use_ersatz_>
+template <typename T, int Np_1d>
+class LbracketGridMesh final
+    : public ProbMeshBase<T, Np_1d, LbracketGrid2D<T>> {
+ private:
+  using Base = ProbMeshBase<T, Np_1d, LbracketGrid2D<T>>;
+
+ public:
+  using typename Base::Grid;
+  using typename Base::Mesh;
+
+  LbracketGridMesh(std::array<int, Grid::spatial_dim> nxy,
+                   std::array<T, Grid::spatial_dim> lxy, double loaded_frac,
+                   double lbracket_frac)
+      : nx1(nxy[0]),
+        nx2(static_cast<int>(nxy[0] * lbracket_frac)),
+        ny1(static_cast<int>(nxy[1] * lbracket_frac)),
+        ny2(nxy[1] - ny1),
+        lx1(lxy[0]),
+        ly1(lxy[1] * lbracket_frac),
+        grid(nx1, nx2, ny1, ny2, lx1, ly1),
+        mesh(grid),
+        loaded_frac(loaded_frac),
+        domain_area(lxy[0] * lxy[1] *
+                    (1.0 - (1.0 - lbracket_frac) * (1.0 - lbracket_frac))) {
+    // Find loaded cells and verts
+    for (int iy = 0; iy < ny1; iy++) {
+      T xloc[Grid::spatial_dim];
+      int c = this->grid.get_coords_cell(nx1 - 1, iy);
+      this->grid.get_cell_xloc(c, xloc);
+      if (xloc[1] >= ly1 - lxy[1] * loaded_frac and xloc[1] <= ly1) {
+        loaded_cells.insert(c);
+      }
+    }
+
+    for (int cell : loaded_cells) {
+      int verts[Grid::nverts_per_cell];
+      this->grid.get_cell_verts(cell, verts);
+      loaded_verts.insert(verts[1]);
+      loaded_verts.insert(verts[2]);
+    }
+
+    N = this->grid.get_num_verts();
+    Nr = N - loaded_verts.size();
+
+    // Find xr -> x mapping
+    expand_mapping.reserve(Nr);  // xr -> x
+    for (int i = 0; i < N; i++) {
+      if (!loaded_verts.count(i)) {
+        expand_mapping.push_back(i);
+      }
+    }
+  }
+
+  int get_nvars() { return Nr; }
+
+  T get_domain_area() { return domain_area; }
+
+  std::set<int> get_loaded_cells() { return loaded_cells; }
+
+  std::vector<int> get_bc_nodes() {
+    return this->mesh.get_upper_boundary_nodes();
+  }
+
+  std::vector<T> expand(std::vector<T> xr) {
+    std::vector<T> x(N, -1.0);  // lsf = -1.0 is material
+    for (int i = 0; i < Nr; i++) {
+      x[expand_mapping[i]] = xr[i];
+    }
+    return x;
+  }
+
+  std::vector<T> reduce(std::vector<T> x) {
+    std::vector<T> xr(Nr);
+    for (int i = 0; i < Nr; i++) {
+      xr[i] = x[expand_mapping[i]];
+    }
+    return xr;
+  }
+
+  Grid& get_grid() { return grid; }
+
+  Mesh& get_mesh() { return mesh; }
+
+ private:
+  int nx1, nx2, ny1, ny2;
+  T lx1, ly1;
+  Grid grid;
+  Mesh mesh;
+  double loaded_frac, domain_area;
+  std::set<int> loaded_cells, loaded_verts;
+  std::set<int> inactive_cells, inactive_verts;
+  int N, Nr;
+  std::vector<int> reduce_mapping, expand_mapping;
+};
+
+template <typename T, int Np_1d, int Np_1d_filter, bool use_ersatz_,
+          class Grid_>
 class TopoAnalysis {
  public:
   static constexpr bool use_ersatz = use_ersatz_;
 
  private:
-  using ProbMesh = ProbMeshBase<T, Np_1d>;
+  using ProbMesh = ProbMeshBase<T, Np_1d, Grid_>;
   using Grid = typename ProbMesh::Grid;
   using Mesh = typename ProbMesh::Mesh;
-  using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
+  using Quadrature = GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER, Grid>;
   using Basis = GDBasis2D<T, Mesh>;
-  using Filter = HelmholtzFilter<T, Np_1d_filter>;
+  using Filter = HelmholtzFilter<T, Np_1d_filter, Grid>;
 
   constexpr static auto int_func =
       [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
@@ -249,7 +359,7 @@ class TopoAnalysis {
 
   using Elastic = typename std::conditional<
       use_ersatz,
-      StaticElasticErsatz<T, Mesh, Quadrature, Basis, typeof(int_func)>,
+      StaticElasticErsatz<T, Mesh, Quadrature, Basis, typeof(int_func), Grid>,
       StaticElastic<T, Mesh, Quadrature, Basis, typeof(int_func)>>::type;
   using Volume = VolumePhysics<T, Basis::spatial_dim>;
   using Penalization = GradPenalization<T, Basis::spatial_dim>;
@@ -271,8 +381,8 @@ class TopoAnalysis {
                bool use_robust_projection, double proj_beta, double proj_eta,
                std::string prefix)
       : prob_mesh(prob_mesh),
-        grid(prob_mesh.grid),
-        mesh(prob_mesh.mesh),
+        grid(prob_mesh.get_grid()),
+        mesh(prob_mesh.get_mesh()),
         quadrature(mesh),
         basis(mesh),
         filter(r0, grid, use_robust_projection, proj_beta, proj_eta),
@@ -290,12 +400,12 @@ class TopoAnalysis {
   // Create nodal design variables for a domain with periodic holes
   std::vector<T> create_initial_topology(int nholes_x, int nholes_y, double r,
                                          bool cell_center = true) {
-    const T* lxy = mesh.get_grid().get_lxy();
-    int nverts = mesh.get_grid().get_num_verts();
+    const T* lxy = grid.get_lxy();
+    int nverts = grid.get_num_verts();
     std::vector<T> lsf(nverts, 0.0);
     for (int i = 0; i < nverts; i++) {
       T xloc[Mesh::spatial_dim];
-      mesh.get_grid().get_vert_xloc(i, xloc);
+      grid.get_vert_xloc(i, xloc);
       T x = xloc[0];
       T y = xloc[1];
 
@@ -522,7 +632,7 @@ class TopoAnalysis {
       vtk.write_cell_sol(name, vals.data());
     }
 
-    std::vector<T> loaded_cells_v(mesh.get_grid().get_num_cells(), 0.0);
+    std::vector<T> loaded_cells_v(grid.get_num_cells(), 0.0);
     for (int c : loaded_cells) loaded_cells_v[c] = 1.0;
     vtk.write_cell_sol("loaded_cells", loaded_cells_v.data());
 
@@ -860,13 +970,15 @@ class TopoProb : public ParOptProblem {
   bool is_gradient_check = false;
 };
 
-template <int Np_1d, bool use_ersatz>
+template <int Np_1d, bool use_ersatz, bool use_lbracket_grid>
 void execute(int argc, char* argv[]) {
   constexpr int Np_1d_filter = Np_1d > 2 ? 4 : 2;
   MPI_Init(&argc, &argv);
 
   using T = double;
-  using TopoAnalysis = TopoAnalysis<T, Np_1d, Np_1d_filter, use_ersatz>;
+  using Grid = typename std::conditional<use_lbracket_grid, LbracketGrid2D<T>,
+                                         StructuredGrid2D<T>>::type;
+  using TopoAnalysis = TopoAnalysis<T, Np_1d, Np_1d_filter, use_ersatz, Grid>;
 
   bool smoke_test = false;
   if (argc > 2 and "--smoke" == std::string(argv[2])) {
@@ -913,17 +1025,23 @@ void execute(int argc, char* argv[]) {
         "expect lbracket or cantilever for option instance, got " + instance);
   }
 
-  std::shared_ptr<ProbMeshBase<T, Np_1d>> prob_mesh;
+  std::shared_ptr<ProbMeshBase<T, Np_1d, Grid>> prob_mesh;
   double loaded_frac = parser.get_double_option("loaded_frac");
-  if (instance == "cantilever") {
-    prob_mesh =
-        std::make_shared<CantileverMesh<T, Np_1d>>(nxy, lxy, loaded_frac);
-  } else if (instance == "lbracket") {
+  if constexpr (use_lbracket_grid) {
     double lbracket_frac = parser.get_double_option("lbracket_frac");
-    prob_mesh = std::make_shared<LbracketMesh<T, Np_1d>>(nxy, lxy, loaded_frac,
-                                                         lbracket_frac);
+    prob_mesh = std::make_shared<LbracketGridMesh<T, Np_1d>>(
+        nxy, lxy, loaded_frac, lbracket_frac);
   } else {
-    throw std::runtime_error("invalid instance " + instance);
+    if (instance == "cantilever") {
+      prob_mesh =
+          std::make_shared<CantileverMesh<T, Np_1d>>(nxy, lxy, loaded_frac);
+    } else if (instance == "lbracket") {
+      double lbracket_frac = parser.get_double_option("lbracket_frac");
+      prob_mesh = std::make_shared<LbracketMesh<T, Np_1d>>(
+          nxy, lxy, loaded_frac, lbracket_frac);
+    } else {
+      throw std::runtime_error("invalid instance " + instance);
+    }
   }
 
   T r0 = parser.get_double_option("helmholtz_r0");
@@ -1010,6 +1128,7 @@ int main(int argc, char* argv[]) {
   ConfigParser parser{cfg_path};
   int Np_1d = parser.get_int_option("Np_1d");
   bool use_ersatz = parser.get_bool_option("use_ersatz");
+  bool use_lbracket_grid = parser.get_bool_option("use_lbracket_grid");
 
   if (Np_1d % 2) {
     std::printf("[Error]Invalid input, expect even Np_1d, got %d\n", Np_1d);
@@ -1019,25 +1138,32 @@ int main(int argc, char* argv[]) {
   switch (Np_1d) {
     case 2:
       if (use_ersatz) {
-        execute<2, true>(argc, argv);
+        if (use_lbracket_grid) {
+          execute<2, true, true>(argc, argv);
+        } else {
+          execute<2, true, false>(argc, argv);
+        }
       } else {
-        execute<2, false>(argc, argv);
+        if (use_lbracket_grid) {
+          execute<2, false, true>(argc, argv);
+        }
       }
       break;
 
     case 4:
       if (use_ersatz) {
-        execute<4, true>(argc, argv);
-      } else {
-        execute<4, false>(argc, argv);
-      }
-      break;
+        if (use_lbracket_grid) {
+          execute<4, true, true>(argc, argv);
+        } else {
+          execute<4, true, false>(argc, argv);
+        }
 
-    case 6:
-      if (use_ersatz) {
-        execute<6, true>(argc, argv);
       } else {
-        execute<6, false>(argc, argv);
+        if (use_lbracket_grid) {
+          execute<4, false, true>(argc, argv);
+        } else {
+          execute<4, false, false>(argc, argv);
+        }
       }
       break;
 
