@@ -22,7 +22,7 @@ class HelmholtzPhysics final : public PhysicsBase<T, spatial_dim_, 1, 1> {
     T detJ, dot;
     A2D::MatDet(J, detJ);
     A2D::VecDot(grad, grad, dot);
-    return 0.5 * weight * detJ * (r0square * dot + val * val - 2.0 * val * x);
+    return weight * detJ * (0.5 * r0square * dot + val * (val - x));
   }
 
   void residual(T weight, T x, A2D::Vec<T, spatial_dim>& _,
@@ -37,10 +37,9 @@ class HelmholtzPhysics final : public PhysicsBase<T, spatial_dim_, 1, 1> {
 
     auto stack = A2D::MakeStack(
         A2D::MatDet(J_obj, detJ_obj), A2D::VecDot(grad_obj, grad_obj, dot_obj),
-        A2D::Eval(
-            0.5 * weight * detJ_obj *
-                (r0square * dot_obj + u_obj * u_obj - 2.0 * u_obj * x_obj),
-            output_obj));
+        A2D::Eval(weight * detJ_obj *
+                      (0.5 * r0square * dot_obj + u_obj * (u_obj - x_obj)),
+                  output_obj));
 
     output_obj.bvalue() = 1.0;
     stack.reverse();
@@ -63,10 +62,9 @@ class HelmholtzPhysics final : public PhysicsBase<T, spatial_dim_, 1, 1> {
 
     auto stack = A2D::MakeStack(
         A2D::MatDet(J_obj, detJ_obj), A2D::VecDot(grad_obj, grad_obj, dot_obj),
-        A2D::Eval(
-            0.5 * weight * detJ_obj *
-                (r0square * dot_obj + u_obj * u_obj - 2.0 * u_obj * x_obj),
-            output_obj));
+        A2D::Eval(weight * detJ_obj *
+                      (0.5 * r0square * dot_obj + u_obj * (u_obj - x_obj)),
+                  output_obj));
 
     output_obj.bvalue() = 1.0;
     stack.hproduct();
@@ -90,10 +88,9 @@ class HelmholtzPhysics final : public PhysicsBase<T, spatial_dim_, 1, 1> {
 
     auto stack = A2D::MakeStack(
         A2D::MatDet(J_obj, detJ_obj), A2D::VecDot(grad_obj, grad_obj, dot_obj),
-        A2D::Eval(
-            0.5 * weight * detJ_obj *
-                (r0square * dot_obj + u_obj * u_obj - 2.0 * u_obj * x_obj),
-            output_obj));
+        A2D::Eval(weight * detJ_obj *
+                      (0.5 * r0square * dot_obj + u_obj * (u_obj - x_obj)),
+                  output_obj));
 
     output_obj.bvalue() = 1.0;
     stack.hproduct();
@@ -116,10 +113,9 @@ class HelmholtzPhysics final : public PhysicsBase<T, spatial_dim_, 1, 1> {
 
     auto stack = A2D::MakeStack(
         A2D::MatDet(J_obj, detJ_obj), A2D::VecDot(grad_obj, grad_obj, dot_obj),
-        A2D::Eval(
-            0.5 * weight * detJ_obj *
-                (r0square * dot_obj + u_obj * u_obj - 2.0 * u_obj * x_obj),
-            output_obj));
+        A2D::Eval(weight * detJ_obj *
+                      (0.5 * r0square * dot_obj + u_obj * (u_obj - x_obj)),
+                  output_obj));
 
     output_obj.bvalue() = 1.0;
     stack.hextract(pgrad, hgrad, jac_grad);

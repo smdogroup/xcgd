@@ -1,6 +1,8 @@
 #include <mpi.h>
 
 #include <filesystem>
+#include <fstream>
+#include <iostream>
 #include <set>
 #include <string>
 
@@ -12,6 +14,7 @@
 #include "elements/gd_vandermonde.h"
 #include "lbracket_mesh.h"
 #include "physics/grad_penalization.h"
+#include "physics/stress.h"
 #include "physics/volume.h"
 #include "utils/argparser.h"
 #include "utils/exceptions.h"
@@ -271,20 +274,20 @@ class LbracketGridMesh final
       }
     }
 
-    for (int cell : loaded_cells) {
-      int verts[Grid::nverts_per_cell];
-      this->grid.get_cell_verts(cell, verts);
-      loaded_verts.insert(verts[1]);
-      loaded_verts.insert(verts[2]);
-    }
+    // for (int cell : loaded_cells) {
+    //   int verts[Grid::nverts_per_cell];
+    //   this->grid.get_cell_verts(cell, verts);
+    //   non_design_verts.insert(verts[1]);
+    //   non_design_verts.insert(verts[2]);
+    // }
 
     N = this->grid.get_num_verts();
-    Nr = N - loaded_verts.size();
+    Nr = N - non_design_verts.size();
 
     // Find xr -> x mapping
     expand_mapping.reserve(Nr);  // xr -> x
     for (int i = 0; i < N; i++) {
-      if (!loaded_verts.count(i)) {
+      if (!non_design_verts.count(i)) {
         expand_mapping.push_back(i);
       }
     }
@@ -326,7 +329,7 @@ class LbracketGridMesh final
   Grid grid;
   Mesh mesh;
   double loaded_frac, domain_area;
-  std::set<int> loaded_cells, loaded_verts;
+  std::set<int> loaded_cells, non_design_verts;
   std::set<int> inactive_cells, inactive_verts;
   int N, Nr;
   std::vector<int> reduce_mapping, expand_mapping;
@@ -363,10 +366,16 @@ class TopoAnalysis {
       StaticElastic<T, Mesh, Quadrature, Basis, typeof(int_func)>>::type;
   using Volume = VolumePhysics<T, Basis::spatial_dim>;
   using Penalization = GradPenalization<T, Basis::spatial_dim>;
+  using Stress = LinearElasticity2DVonMisesStress<T>;
+  using StressKS = LinearElasticity2DVonMisesStressAggregation<T>;
   using VolAnalysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Volume>;
   using PenalizationAnalysis =
       GalerkinAnalysis<T, typename Filter::Mesh, typename Filter::Quadrature,
                        typename Filter::Basis, Penalization>;
+  using StressAnalysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Stress>;
+  using StressKSAnalysis =
+      GalerkinAnalysis<T, Mesh, Quadrature, Basis, StressKS>;
+
   using LoadPhysics =
       ElasticityExternalLoad<T, Basis::spatial_dim, typeof(load_func)>;
   using LoadQuadrature =
@@ -377,7 +386,7 @@ class TopoAnalysis {
   int constexpr static spatial_dim = Basis::spatial_dim;
 
  public:
-  TopoAnalysis(ProbMesh& prob_mesh, T r0, T E, T nu, T penalty,
+  TopoAnalysis(ProbMesh& prob_mesh, T r0, T E, T nu, T penalty, T ksrho,
                bool use_robust_projection, double proj_beta, double proj_eta,
                std::string prefix)
       : prob_mesh(prob_mesh),
@@ -391,6 +400,10 @@ class TopoAnalysis {
         pen(penalty),
         pen_analysis(filter.get_mesh(), filter.get_quadrature(),
                      filter.get_basis(), pen),
+        stress(E, nu),
+        stress_analysis(mesh, quadrature, basis, stress),
+        stress_ks(ksrho, E, nu),
+        stress_ks_analysis(mesh, quadrature, basis, stress_ks),
         phi(mesh.get_lsf_dof()),
         prefix(prefix) {
     // Get loaded cells
@@ -428,16 +441,16 @@ class TopoAnalysis {
       lsf[i] = hard_max(lsf_vals);
     }
 
-    // Normalize lsf so values are within [-1, 1]
-    T lsf_max = hard_max(lsf);
-    T lsf_min = hard_min(lsf);
-    for (int i = 0; i < nverts; i++) {
-      if (lsf[i] < 0.0) {
-        lsf[i] /= -lsf_min;
-      } else {
-        lsf[i] /= lsf_max;
-      }
-    }
+    // // Normalize lsf so values are within [-1, 1]
+    // T lsf_max = hard_max(lsf);
+    // T lsf_min = hard_min(lsf);
+    // for (int i = 0; i < nverts; i++) {
+    //   if (lsf[i] < 0.0) {
+    //     lsf[i] /= -lsf_min;
+    //   } else {
+    //     lsf[i] /= lsf_max;
+    //   }
+    // }
 
     return lsf;
   }
@@ -538,6 +551,18 @@ class TopoAnalysis {
 
   T eval_grad_penalization(const std::vector<T>& x) {
     return pen_analysis.energy(nullptr, x.data());
+  }
+
+  std::pair<std::vector<T>, std::vector<T>> eval_stress(
+      const std::vector<T>& u) {
+    return stress_analysis.interpolate_energy(u.data());
+  }
+
+  T eval_stress_ks(T max_stress, T area, const std::vector<T>& u) {
+    stress_ks.set_von_mises_max_stress(max_stress);
+    T ks = log(stress_ks.energy(u.data()) / area) / stress_ks.get_ksrho() +
+           max_stress;
+    return ks;
   }
 
   void eval_grad_penalization_grad(const std::vector<T>& x, std::vector<T>& g) {
@@ -761,6 +786,10 @@ class TopoAnalysis {
   VolAnalysis vol_analysis;
   Penalization pen;
   PenalizationAnalysis pen_analysis;
+  Stress stress;
+  StressAnalysis stress_analysis;
+  StressKS stress_ks;
+  StressKSAnalysis stress_ks_analysis;
 
   std::vector<T>& phi;  // LSF values (filtered design variables)
 
@@ -796,14 +825,23 @@ class TopoProb : public ParOptProblem {
   }
 
   void print_progress(T comp, T pterm, T vol_frac, int header_every = 10) {
+    std::ofstream progress_file(fspath(prefix) / fspath("optimization.log"));
     if (counter % header_every == 1) {
       char phead[30];
       std::snprintf(phead, 30, "gradx penalty(c:%9.2e)",
                     parser.get_double_option("grad_penalty_coeff"));
-      std::printf("\n%5s%20s%30s%20s\n", "iter", "comp", phead, "vol (\%)");
+      char line[2048];
+      std::snprintf(line, 2048, "\n%5s%20s%30s%20s\n", "iter", "comp", phead,
+                    "vol (\%)");
+      std::cout << line << "\n";
+      progress_file << line << "\n";
     }
-    std::printf("%5d%20.10e%30.10e%20.5f\n", counter, comp, pterm,
-                100.0 * vol_frac);
+    char line[2048];
+    std::snprintf(line, 2048, "%5d%20.10e%30.10e%20.5f\n", counter, comp, pterm,
+                  100.0 * vol_frac);
+    std::cout << line << "\n";
+    progress_file << line << "\n";
+    progress_file.close();
   }
 
   void check_gradients(double dh) {
@@ -1051,12 +1089,14 @@ void execute(int argc, char* argv[]) {
   double robust_proj_beta = parser.get_double_option("robust_proj_beta");
   double robust_proj_eta = parser.get_double_option("robust_proj_eta");
   T penalty = parser.get_double_option("grad_penalty_coeff");
+  T ksrho = parser.get_double_option("stress_ksrho");
 
   TopoAnalysis topo{*prob_mesh,
                     r0,
                     E,
                     nu,
                     penalty,
+                    ksrho,
                     use_robust_projection,
                     robust_proj_beta,
                     robust_proj_eta,

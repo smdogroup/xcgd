@@ -56,10 +56,15 @@ class LinearElasticity2DVonMisesStressAggregation final
   using PhysicsBase_s::dof_per_node;
   using PhysicsBase_s::spatial_dim;
 
-  LinearElasticity2DVonMisesStressAggregation(double ksrho, T E, T nu, T vm_max)
+  LinearElasticity2DVonMisesStressAggregation(double ksrho, T E, T nu,
+                                              T vm_max = 0.0)
       : ksrho(ksrho),
         mu(0.5 * E / (1.0 + nu)),
-        lambda(E * nu / ((1.0 + nu) * (1.0 - nu))) {}
+        lambda(E * nu / ((1.0 + nu) * (1.0 - nu))),
+        vm_max(vm_max) {}
+
+  void set_von_mises_max_stress(T vm_max_) { vm_max = vm_max_; }
+  double get_ksrho() { return ksrho; }
 
   T energy(T weight, T _, A2D::Vec<T, spatial_dim>& __,
            A2D::Vec<T, spatial_dim>& ___,
@@ -74,7 +79,7 @@ class LinearElasticity2DVonMisesStressAggregation final
     A2D::MatTrace(S, trS);
     A2D::MatDet(S, detS);
     von_mises = sqrt(trS * trS - 3.0 * detS);
-    return von_mises;
+    return weight * detJ * exp(ksrho * (von_mises - vm_max));
   }
 
   void residual(T weight, T _, A2D::Vec<T, spatial_dim>& xloc,
@@ -88,5 +93,5 @@ class LinearElasticity2DVonMisesStressAggregation final
  private:
   double ksrho;  // KS aggregation parameter
   T mu, lambda;  // Lame parameters
-  T vs_max;      // maximum Von Mises stress
+  T vm_max;      // maximum Von Mises stress
 };

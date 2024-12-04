@@ -22,7 +22,7 @@ class GradPenalization final : public PhysicsBase<T, spatial_dim_, 0, 1> {
     T detJ, dot;
     A2D::MatDet(J, detJ);
     A2D::VecDot(grad, grad, dot);
-    return 0.5 * coeff * weight * (dot - 1.0) * (dot - 1.0);
+    return 0.5 * coeff * weight * (sqrt(dot) - 1.0) * (sqrt(dot) - 1.0);
   }
 
   void residual(T weight, T _, A2D::Vec<T, spatial_dim>& __,
@@ -37,7 +37,8 @@ class GradPenalization final : public PhysicsBase<T, spatial_dim_, 0, 1> {
 
     auto stack = A2D::MakeStack(
         A2D::MatDet(J_obj, detJ_obj), A2D::VecDot(grad_obj, grad_obj, dot_obj),
-        A2D::Eval(0.5 * coeff * weight * (dot_obj - 1.0) * (dot_obj - 1.0),
+        A2D::Eval(0.5 * coeff * weight * (sqrt(dot_obj) - 1.0) *
+                      (sqrt(dot_obj) - 1.0),
                   output_obj));
 
     output_obj.bvalue() = 1.0;
