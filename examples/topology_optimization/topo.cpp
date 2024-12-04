@@ -36,6 +36,7 @@ class ProbMeshBase {
   virtual T get_domain_area() = 0;
   virtual int get_nvars() = 0;
   virtual std::set<int> get_loaded_cells() = 0;
+  virtual std::set<int> get_loaded_verts() = 0;
   virtual std::vector<int> get_bc_nodes() = 0;
   virtual std::vector<T> expand(std::vector<T> x) = 0;  // expand xr -> x
   virtual std::vector<T> reduce(std::vector<T> x) = 0;  // reduce x -> xr
@@ -96,6 +97,7 @@ class CantileverMesh final
   T get_domain_area() { return lxy[0] * lxy[1]; }
 
   std::set<int> get_loaded_cells() { return loaded_cells; }
+  std::set<int> get_loaded_verts() { return loaded_verts; }
 
   std::vector<int> get_bc_nodes() {
     return this->mesh.get_left_boundary_nodes();
@@ -199,6 +201,7 @@ class LbracketMesh final : public ProbMeshBase<T, Np_1d, StructuredGrid2D<T>> {
   T get_domain_area() { return domain_area; }
 
   std::set<int> get_loaded_cells() { return loaded_cells; }
+  std::set<int> get_loaded_verts() { return loaded_verts; }
 
   std::vector<int> get_bc_nodes() {
     return this->mesh.get_upper_boundary_nodes();
@@ -274,22 +277,21 @@ class LbracketGridMesh final
       }
     }
 
-    // for (int cell : loaded_cells) {
-    //   int verts[Grid::nverts_per_cell];
-    //   this->grid.get_cell_verts(cell, verts);
-    //   non_design_verts.insert(verts[1]);
-    //   non_design_verts.insert(verts[2]);
-    // }
+    for (int cell : loaded_cells) {
+      int verts[Grid::nverts_per_cell];
+      this->grid.get_cell_verts(cell, verts);
+      loaded_verts.insert(verts[1]);
+      loaded_verts.insert(verts[2]);
+    }
 
     N = this->grid.get_num_verts();
-    Nr = N - non_design_verts.size();
 
-    // Find xr -> x mapping
+    // Find xr -> x mapping, identical mapping since we don't have non-design
+    // verts any more
+    Nr = N;
     expand_mapping.reserve(Nr);  // xr -> x
     for (int i = 0; i < N; i++) {
-      if (!non_design_verts.count(i)) {
-        expand_mapping.push_back(i);
-      }
+      expand_mapping.push_back(i);
     }
   }
 
@@ -298,6 +300,7 @@ class LbracketGridMesh final
   T get_domain_area() { return domain_area; }
 
   std::set<int> get_loaded_cells() { return loaded_cells; }
+  std::set<int> get_loaded_verts() { return loaded_verts; }
 
   std::vector<int> get_bc_nodes() {
     return this->mesh.get_upper_boundary_nodes();
@@ -329,7 +332,7 @@ class LbracketGridMesh final
   Grid grid;
   Mesh mesh;
   double loaded_frac, domain_area;
-  std::set<int> loaded_cells, non_design_verts;
+  std::set<int> loaded_cells, loaded_verts;
   std::set<int> inactive_cells, inactive_verts;
   int N, Nr;
   std::vector<int> reduce_mapping, expand_mapping;
@@ -533,8 +536,8 @@ class TopoAnalysis {
     VandermondeCondLogger::disable();
   }
 
-  std::vector<T> eval_compliance_area(const std::vector<T>& x, T& comp,
-                                      T& area) {
+  std::vector<T> eval_compliance_area_penalization(const std::vector<T>& x,
+                                                   T& comp, T& area, T& pen) {
     std::vector<T> sol = update_mesh_and_solve(x);
 
     std::vector<T> dummy(mesh.get_num_nodes(), 0.0);
@@ -545,13 +548,14 @@ class TopoAnalysis {
     //   sol.data());
     // }
     area = vol_analysis.energy(nullptr, dummy.data());
+    pen = pen_analysis.energy(nullptr, phi.data());
 
     return sol;
   }
 
-  T eval_grad_penalization(const std::vector<T>& x) {
-    return pen_analysis.energy(nullptr, x.data());
-  }
+  // T eval_grad_penalization(const std::vector<T>& x) {
+  //   return pen_analysis.energy(nullptr, x.data());
+  // }
 
   std::pair<std::vector<T>, std::vector<T>> eval_stress(
       const std::vector<T>& u) {
@@ -565,13 +569,16 @@ class TopoAnalysis {
     return ks;
   }
 
-  void eval_grad_penalization_grad(const std::vector<T>& x, std::vector<T>& g) {
-    g.resize(x.size());
-    pen_analysis.residual(nullptr, x.data(), g.data());
-  }
+  // void eval_grad_penalization_grad(const std::vector<T>& x, std::vector<T>&
+  // g) {
+  //   g.resize(x.size());
+  //   pen_analysis.residual(nullptr, x.data(), g.data());
+  // }
 
-  void eval_compliance_area_grad(const std::vector<T>& x, std::vector<T>& gcomp,
-                                 std::vector<T>& garea) {
+  void eval_compliance_area_penalization_grad(const std::vector<T>& x,
+                                              std::vector<T>& gcomp,
+                                              std::vector<T>& garea,
+                                              std::vector<T>& gpen) {
     std::vector<T> sol = update_mesh_and_solve(x);
 
     // compliance is self-adjoint
@@ -592,6 +599,10 @@ class TopoAnalysis {
     std::fill(garea.begin(), garea.end(), 0.0);
     vol_analysis.LSF_volume_derivatives(garea.data());
     filter.applyGradient(x.data(), garea.data(), garea.data());
+
+    gpen.resize(x.size());
+    pen_analysis.residual(nullptr, phi.data(), gpen.data());
+    filter.applyGradient(x.data(), gpen.data(), gpen.data());
   }
 
   std::vector<T> grid_sol_to_cut_sol(const std::vector<T>& grid_sol) {
@@ -833,14 +844,14 @@ class TopoProb : public ParOptProblem {
       char line[2048];
       std::snprintf(line, 2048, "\n%5s%20s%30s%20s\n", "iter", "comp", phead,
                     "vol (\%)");
-      std::cout << line << "\n";
-      progress_file << line << "\n";
+      std::cout << line;
+      progress_file << line;
     }
     char line[2048];
     std::snprintf(line, 2048, "%5d%20.10e%30.10e%20.5f\n", counter, comp, pterm,
                   100.0 * vol_frac);
-    std::cout << line << "\n";
-    progress_file << line << "\n";
+    std::cout << line;
+    progress_file << line;
     progress_file.close();
   }
 
@@ -871,10 +882,17 @@ class TopoProb : public ParOptProblem {
     // update mesh and bc dof, but don't perform the linear solve
     topo.update_mesh(topo.get_prob_mesh().expand(x0));
 
+    double ubval = parser.get_double_option("opt_x_ub");
+    double lbval = parser.get_double_option("opt_x_lb");
     for (int i = 0; i < nvars; i++) {
       xr[i] = x0r[i];
-      lb[i] = -1.0;
-      ub[i] = 1.0;
+      ub[i] = ubval;
+      lb[i] = lbval;
+    }
+
+    const auto& loaded_verts = topo.get_prob_mesh().get_loaded_verts();
+    for (int i : loaded_verts) {
+      ub[i] = 1e-3;  // we prescribe x < 0 for loaded verts
     }
   }
 
@@ -893,8 +911,9 @@ class TopoProb : public ParOptProblem {
     std::vector<T> x = topo.get_prob_mesh().expand(xr);
 
     T comp, area, pterm;
-    std::vector<T> u = topo.eval_compliance_area(x, comp, area);
-    pterm = topo.eval_grad_penalization(x);
+    std::vector<T> u =
+        topo.eval_compliance_area_penalization(x, comp, area, pterm);
+    // pterm = topo.eval_grad_penalization(x);
     *fobj = comp + pterm;
     cons[0] = 1.0 - area / (domain_area * area_frac);  // >= 0
 
@@ -970,8 +989,8 @@ class TopoProb : public ParOptProblem {
     Ac[0]->zeroEntries();
 
     std::vector<T> gcomp, garea, gpen;
-    topo.eval_compliance_area_grad(x, gcomp, garea);
-    topo.eval_grad_penalization_grad(x, gpen);
+    topo.eval_compliance_area_penalization_grad(x, gcomp, garea, gpen);
+    // topo.eval_grad_penalization_grad(x, gpen);
 
     std::vector<T> gcompr = topo.get_prob_mesh().reduce(gcomp);
     std::vector<T> garear = topo.get_prob_mesh().reduce(garea);
