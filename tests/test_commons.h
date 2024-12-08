@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 
+#include <iomanip>
 #include <iostream>
 
 template <int n, class VecType>
