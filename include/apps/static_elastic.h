@@ -69,7 +69,8 @@ class StaticElastic final {
     jac_csc->zero_columns(bc_dof.size(), bc_dof.data());
 
     // Set right hand side (Dirichlet bcs and load)
-    std::vector<T> rhs(ndof, 0.0), t1(ndof, 0.0), t2(ndof, 0.0);
+    rhs = std::vector<T>(ndof, 0.0);
+    std::vector<T> t1(ndof, 0.0), t2(ndof, 0.0);
 
     analysis.residual(nullptr, t1.data(), rhs.data());
     for (int i = 0; i < rhs.size(); i++) {
@@ -136,15 +137,16 @@ class StaticElastic final {
     jac_csc->zero_columns(bc_dof.size(), bc_dof.data());
 
     // Set right hand side (Dirichlet bcs and load)
-    std::vector<T> rhs(ndof, 0.0), t1(ndof, 0.0), t2(ndof, 0.0);
+    rhs = std::vector<T>(ndof, 0.0);
+    std::vector<T> t1(ndof, 0.0), t2(ndof, 0.0);
 
     // Add internal load contributions to the right-hand size
     analysis.residual(nullptr, t1.data(), rhs.data());
 
     // Add external load contributions to the right-hand size
     std::apply(
-        [&t1, &rhs](auto&&... load_analysis) mutable {
-          (load_analysis.residual(nullptr, t1.data(), rhs.data()), ...);
+        [&t1, this](auto&&... load_analysis) mutable {
+          (load_analysis.residual(nullptr, t1.data(), this->rhs.data()), ...);
         },
         load_analyses);
 
@@ -199,6 +201,8 @@ class StaticElastic final {
     return sol;
   }
 
+  std::vector<T>& get_rhs() { return rhs; }
+
   Mesh& get_mesh() { return mesh; }
   Quadrature& get_quadrature() { return quadrature; }
   Basis& get_basis() { return basis; }
@@ -211,6 +215,8 @@ class StaticElastic final {
 
   Physics physics;
   Analysis analysis;
+
+  std::vector<T> rhs;
 };
 
 // App class for the elastic problem using a main mesh and a conjugate

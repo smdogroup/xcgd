@@ -1,5 +1,6 @@
 #include <mpi.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -540,13 +541,16 @@ class TopoAnalysis {
                                                    T& comp, T& area, T& pen) {
     std::vector<T> sol = update_mesh_and_solve(x);
 
-    std::vector<T> dummy(mesh.get_num_nodes(), 0.0);
-    // WARNING: this holds only when body force is zero!
-    comp = 2.0 * elastic.get_analysis().energy(nullptr, sol.data());
+    // // WARNING: this holds only when body force is zero!
+    // comp = 2.0 * elastic.get_analysis().energy(nullptr, sol.data());
     // if constexpr (use_ersatz) {
     //   comp += 2.0 * elastic.get_analysis_ersatz().energy(nullptr,
     //   sol.data());
     // }
+    comp = std::inner_product(sol.begin(), sol.end(), elastic.get_rhs().begin(),
+                              T(0.0));
+
+    std::vector<T> dummy(mesh.get_num_nodes(), 0.0);
     area = vol_analysis.energy(nullptr, dummy.data());
     pen = pen_analysis.energy(nullptr, phi.data());
 
@@ -589,10 +593,10 @@ class TopoAnalysis {
     std::fill(gcomp.begin(), gcomp.end(), 0.0);
     elastic.get_analysis().LSF_jacobian_adjoint_product(sol.data(), psi.data(),
                                                         gcomp.data());
-    // if constexpr (use_ersatz) {
-    //   elastic.get_analysis_ersatz().LSF_jacobian_adjoint_product(
-    //       sol.data(), psi.data(), gcomp.data());
-    // }
+    if constexpr (use_ersatz) {
+      elastic.get_analysis_ersatz().LSF_jacobian_adjoint_product(
+          sol.data(), sol.data() /*this is effectively -psi*/, gcomp.data());
+    }
     filter.applyGradient(x.data(), gcomp.data(), gcomp.data());
 
     garea.resize(x.size());
