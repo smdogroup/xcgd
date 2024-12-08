@@ -50,7 +50,8 @@ void generate_stiffness_matrix(int n, int l, double x0, double y0, double r,
     bc_dof.push_back(2 * node);
     bc_dof.push_back(2 * node + 1);
   }
-  BSRMat* bsr_mat = elastic.jacobian(bc_dof);
+  BSRMat* bsr_mat = elastic.jacobian();
+  bsr_mat->zero_rows(bc_dof.size(), bc_dof.data());
   CSCMat* csc_mat = SparseUtils::bsr_to_csc(bsr_mat);
   csc_mat->zero_columns(bc_dof.size(), bc_dof.data());
   csc_mat->write_mtx(std::filesystem::path(prefix) /
