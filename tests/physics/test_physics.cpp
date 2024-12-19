@@ -15,6 +15,7 @@
 #include "physics/linear_elasticity.h"
 #include "physics/neohookean.h"
 #include "physics/poisson.h"
+#include "physics/stress.h"
 #include "sparse_utils/sparse_utils.h"
 #include "test_commons.h"
 #include "utils/mesher.h"
@@ -24,7 +25,8 @@ using T = std::complex<double>;
 template <class Physics, class Mesh, class Quadrature, class Basis>
 void test_physics(std::tuple<Mesh *, Quadrature *, Basis *> tuple,
                   Physics &physics, double h = 1e-30, double tol = 1e-14,
-                  bool check_res_only = false) {
+                  bool check_res_only = false,
+                  bool check_res_and_Jp_only = false) {
   Mesh *mesh = std::get<0>(tuple);
   Quadrature *quadrature = std::get<1>(tuple);
   Basis *basis = std::get<2>(tuple);
@@ -91,6 +93,8 @@ void test_physics(std::tuple<Mesh *, Quadrature *, Basis *> tuple,
   std::printf("exact derivatives:        %25.15e\n", dJp_exact);
   std::printf("relative error:           %25.15e\n", dJp_relerr);
   EXPECT_NEAR(dJp_relerr, 0.0, tol);
+
+  if (check_res_and_Jp_only) return;
 
   int *rowp = nullptr, *cols = nullptr;
   SparseUtils::CSRFromConnectivityFunctor(
@@ -174,6 +178,33 @@ create_gd_basis() {
   return {mesh, new Quadrature(*mesh), new Basis(*mesh)};
 }
 
+template <int Np_1d = 4>
+std::tuple<CutMesh<T, Np_1d> *,
+           GDLSFQuadrature2D<T, Np_1d, QuadPtType::SURFACE> *,
+           GDBasis2D<T, CutMesh<T, Np_1d>> *>
+create_gd_lsf_surf_basis() {
+  int constexpr nx = 8, ny = 8;
+  using Grid = StructuredGrid2D<T>;
+  using Quadrature = GDLSFQuadrature2D<T, Np_1d, QuadPtType::SURFACE>;
+  using Mesh = CutMesh<T, Np_1d>;
+  using Basis = GDBasis2D<T, Mesh>;
+
+  int nxy[2] = {nx, ny};
+  T lxy[2] = {3.0, 3.0};
+  T pt0[2] = {1.5, 1.5};
+  T r0 = 1.0;
+  Grid *grid = new Grid(nxy, lxy);
+  Mesh *mesh = new Mesh(*grid, [pt0, r0](T x[]) {
+    return (x[0] - pt0[0]) * (x[0] - pt0[0]) +
+           (x[1] - pt0[1]) * (x[1] - pt0[1]) - r0 * r0;
+  });
+
+  // ToVTK<T, Mesh> vtk(*mesh, "lsf_surf.vtk");
+  // vtk.write_mesh();
+  // vtk.write_sol("lsf", mesh->get_lsf_nodes().data());
+  return {mesh, new Quadrature(*mesh), new Basis(*mesh)};
+}
+
 template <class Quadrature, class Basis>
 void test_neohookean(
     std::tuple<typename Basis::Mesh *, Quadrature *, Basis *> tuple,
@@ -250,6 +281,19 @@ void test_grad_penalization(
   test_physics(tuple, physics, h, tol, true);
 }
 
+template <class Quadrature, class Basis>
+void test_stress_aggregation(
+    std::tuple<typename Basis::Mesh *, Quadrature *, Basis *> tuple,
+    double h = 1e-30, double tol = 1e-14) {
+  using Physics = LinearElasticity2DVonMisesStressAggregation<T>;
+  double ksrho = 45.23;
+  T E = 15.6, nu = 5.6;
+
+  Physics physics(ksrho, E, nu);
+  test_physics(tuple, physics, h, tol, true);  // TODO: delete
+  // test_physics(tuple, physics, h, tol, false, true);
+}
+
 TEST(physics, NeohookeanQuad) { test_neohookean(create_quad_basis()); }
 TEST(physics, NeohookeanTet) { test_neohookean(create_tet_basis()); }
 TEST(physics, NeohookeanGD) { test_neohookean(create_gd_basis(), 1e-8, 1e-6); }
@@ -292,4 +336,11 @@ TEST(physics, GradPenalizationTet) {
 }
 TEST(physics, GradPenalizationGD) {
   test_grad_penalization(create_gd_basis(), 1e-8, 1e-8);
+}
+
+TEST(physics, StressAggregation2DQuad) {
+  test_stress_aggregation(create_quad_basis());
+}
+TEST(physics, StressAggregation2DGD) {
+  test_stress_aggregation(create_gd_basis(), 1e-8, 1e-8);
 }

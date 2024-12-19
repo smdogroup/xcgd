@@ -58,8 +58,9 @@ class StaticElastic final {
     return jac_bsr;
   }
 
-  std::vector<T> solve(const std::vector<int>& bc_dof,
-                       const std::vector<T>& bc_vals) {
+  std::vector<T> solve(
+      const std::vector<int>& bc_dof, const std::vector<T>& bc_vals,
+      std::shared_ptr<SparseUtils::SparseCholesky<T>>* chol_out = nullptr) {
     int ndof = Physics::dof_per_node * mesh.get_num_nodes();
 
     // Compute Jacobian matrix
@@ -95,11 +96,15 @@ class StaticElastic final {
 
     // Factorize Jacobian matrix
     SparseUtils::CholOrderingType order = SparseUtils::CholOrderingType::ND;
-    SparseUtils::SparseCholesky<T>* chol =
-        new SparseUtils::SparseCholesky<T>(jac_csc);
+    std::shared_ptr<SparseUtils::SparseCholesky<T>> chol =
+        std::make_shared<SparseUtils::SparseCholesky<T>>(jac_csc);
     chol->factor();
     std::vector<T> sol = t2;
     chol->solve(sol.data());
+
+    if (chol_out) {
+      *chol_out = chol;
+    }
 
 #ifdef XCGD_DEBUG_MODE
     // Write Jacobian matrix to a file
@@ -119,15 +124,17 @@ class StaticElastic final {
 
     if (jac_bsr) delete jac_bsr;
     if (jac_csc) delete jac_csc;
-    if (chol) delete chol;
 
     return sol;
   }
 
   template <class... LoadAnalyses>
-  std::vector<T> solve(const std::vector<int>& bc_dof,
-                       const std::vector<T>& bc_vals,
-                       const std::tuple<LoadAnalyses...>& load_analyses) {
+  std::vector<T> solve(
+      const std::vector<int>& bc_dof, const std::vector<T>& bc_vals,
+      const std::tuple<LoadAnalyses...>& load_analyses,
+      std::shared_ptr<SparseUtils::SparseCholesky<T>>* chol_out = nullptr,
+      std::vector<T> rhs_manual = {} /*TODO: delete this*/
+  ) {
     int ndof = Physics::dof_per_node * mesh.get_num_nodes();
 
     // Compute Jacobian matrix
@@ -139,9 +146,6 @@ class StaticElastic final {
     // Set right hand side (Dirichlet bcs and load)
     rhs = std::vector<T>(ndof, 0.0);
     std::vector<T> t1(ndof, 0.0), t2(ndof, 0.0);
-
-    // Add internal load contributions to the right-hand size
-    analysis.residual(nullptr, t1.data(), rhs.data());
 
     // Add external load contributions to the right-hand size
     std::apply(
@@ -150,6 +154,20 @@ class StaticElastic final {
         },
         load_analyses);
 
+    // TODO: delete
+    if (rhs_manual.size()) {
+      if (rhs_manual.size() != rhs.size()) {
+        throw std::runtime_error("rhs_manual have different dimension (" +
+                                 std::to_string(rhs_manual.size()) +
+                                 ") than rhs (" + std::to_string(rhs.size()) +
+                                 ")");
+      }
+
+      for (int i = 0; i < rhs.size(); i++) {
+        rhs[i] = rhs_manual[i];
+      }
+    }
+
     for (int i = 0; i < rhs.size(); i++) {
       rhs[i] *= -1.0;
     }
@@ -172,11 +190,16 @@ class StaticElastic final {
 
     // Factorize Jacobian matrix
     SparseUtils::CholOrderingType order = SparseUtils::CholOrderingType::ND;
-    SparseUtils::SparseCholesky<T>* chol =
-        new SparseUtils::SparseCholesky<T>(jac_csc);
+    std::shared_ptr<SparseUtils::SparseCholesky<T>> chol =
+        std::make_shared<SparseUtils::SparseCholesky<T>>(jac_csc);
     chol->factor();
     std::vector<T> sol = t2;
+
     chol->solve(sol.data());
+
+    if (chol_out) {
+      *chol_out = chol;
+    }
 
 #ifdef XCGD_DEBUG_MODE
     // Write Jacobian matrix to a file
@@ -196,7 +219,6 @@ class StaticElastic final {
 
     if (jac_bsr) delete jac_bsr;
     if (jac_csc) delete jac_csc;
-    if (chol) delete chol;
 
     return sol;
   }
@@ -240,9 +262,10 @@ class StaticElasticErsatz final {
       2 * Mesh::max_nnodes_per_element;
 
  public:
-  StaticElasticErsatz(T E, T nu, Mesh& mesh, Quadrature& quadrature,
-                      Basis& basis, const IntFunc& int_func,
-                      double ersatz_ratio = 1e-6)
+  StaticElasticErsatz(
+      T E, T nu, Mesh& mesh, Quadrature& quadrature, Basis& basis,
+      const IntFunc& int_func,
+      double ersatz_ratio = 1.234)  // TODO: change it back to 1e-6
       : grid(mesh.get_grid()),
         mesh_l(mesh),
         mesh_r(grid),
@@ -314,8 +337,9 @@ class StaticElasticErsatz final {
     return jac_bsr;
   }
 
-  std::vector<T> solve(const std::vector<int>& bc_dof,
-                       const std::vector<T>& bc_vals) {
+  std::vector<T> solve(
+      const std::vector<int>& bc_dof, const std::vector<T>& bc_vals,
+      std::shared_ptr<SparseUtils::SparseCholesky<T>>* chol_out = nullptr) {
     int ndof = Physics::dof_per_node * grid.get_num_verts();
 
     // Compute Jacobian matrix
@@ -351,11 +375,15 @@ class StaticElasticErsatz final {
 
     // Factorize Jacobian matrix
     SparseUtils::CholOrderingType order = SparseUtils::CholOrderingType::ND;
-    SparseUtils::SparseCholesky<T>* chol =
-        new SparseUtils::SparseCholesky<T>(jac_csc);
+    std::shared_ptr<SparseUtils::SparseCholesky<T>> chol =
+        std::make_shared<SparseUtils::SparseCholesky<T>>(jac_csc);
     chol->factor();
     std::vector<T> sol = t2;
     chol->solve(sol.data());
+
+    if (chol_out) {
+      *chol_out = chol;
+    }
 
 #ifdef XCGD_DEBUG_MODE
     // Write Jacobian matrix to a file
@@ -375,15 +403,17 @@ class StaticElasticErsatz final {
 
     if (jac_bsr) delete jac_bsr;
     if (jac_csc) delete jac_csc;
-    if (chol) delete chol;
 
     return sol;
   }
 
   template <class... LoadAnalyses>
-  std::vector<T> solve(const std::vector<int>& bc_dof,
-                       const std::vector<T>& bc_vals,
-                       const std::tuple<LoadAnalyses...>& load_analyses) {
+  std::vector<T> solve(
+      const std::vector<int>& bc_dof, const std::vector<T>& bc_vals,
+      const std::tuple<LoadAnalyses...>& load_analyses,
+      std::shared_ptr<SparseUtils::SparseCholesky<T>>* chol_out = nullptr,
+      std::vector<T> rhs_manual = {} /*TODO: delete this*/
+  ) {
     int ndof = Physics::dof_per_node * grid.get_num_verts();
 
     // Compute Jacobian matrix
@@ -407,6 +437,20 @@ class StaticElasticErsatz final {
     analysis_l.residual(nullptr, t1.data(), rhs.data());
     analysis_r.residual(nullptr, t1.data(), rhs.data());
 
+    // TODO: delete
+    if (rhs_manual.size()) {
+      if (rhs_manual.size() != rhs.size()) {
+        throw std::runtime_error("rhs_manual have different dimension (" +
+                                 std::to_string(rhs_manual.size()) +
+                                 ") than rhs (" + std::to_string(rhs.size()) +
+                                 ")");
+      }
+
+      for (int i = 0; i < rhs.size(); i++) {
+        rhs[i] = rhs_manual[i];
+      }
+    }
+
     for (int i = 0; i < rhs.size(); i++) {
       rhs[i] *= -1.0;
     }
@@ -429,11 +473,17 @@ class StaticElasticErsatz final {
 
     // Factorize Jacobian matrix
     SparseUtils::CholOrderingType order = SparseUtils::CholOrderingType::ND;
-    SparseUtils::SparseCholesky<T>* chol =
-        new SparseUtils::SparseCholesky<T>(jac_csc);
+
+    std::shared_ptr<SparseUtils::SparseCholesky<T>> chol =
+        std::make_shared<SparseUtils::SparseCholesky<T>>(jac_csc);
     chol->factor();
     std::vector<T> sol = t2;
+
     chol->solve(sol.data());
+
+    if (chol_out) {
+      *chol_out = chol;
+    }
 
 #ifdef XCGD_DEBUG_MODE
     // Write Jacobian matrix to a file
@@ -453,7 +503,6 @@ class StaticElasticErsatz final {
 
     if (jac_bsr) delete jac_bsr;
     if (jac_csc) delete jac_csc;
-    if (chol) delete chol;
 
     return sol;
   }

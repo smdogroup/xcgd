@@ -517,7 +517,7 @@ class GalerkinAnalysis final {
   }
 
   /*
-    Evaluate the matrix vector product dR/dphi * psi, where phi are the
+    Evaluate the matrix vector product psi^T * dR/dphi, where phi are the
     LSF dof, psi are the adjoint variables
 
     Note: This only works for Galerkin Difference method combined with the
@@ -668,6 +668,75 @@ class GalerkinAnalysis final {
         int offset_wts = j * max_nnodes_per_element;
         for (int n = 0; n < max_nnodes_per_element; n++) {
           element_dfdphi[n] += wts_grad[offset_wts + n] * detJ;
+        }
+      }
+
+      const auto& lsf_mesh = mesh.get_lsf_mesh();
+      int c = mesh.get_elem_cell(i);
+      add_element_dfdphi<T, decltype(lsf_mesh), Basis>(
+          lsf_mesh, c, element_dfdphi.data(), dfdphi);
+    }
+  }
+
+  /*
+   * Evaluate df/dphi where f is an integration of the energy
+   * */
+  void LSF_energy_derivatives(const T dof[], T dfdphi[]) const {
+    static_assert(Basis::is_gd_basis, "This method only works with GD Basis");
+    static_assert(Mesh::is_cut_mesh,
+                  "This method requires a level-set-cut mesh");
+
+    for (int i = 0; i < mesh.get_num_elements(); i++) {
+      // Get nodes associated to this element
+      int nodes[Mesh::max_nnodes_per_element];
+      int nnodes;
+      if constexpr (from_to_grid_mesh) {
+        nnodes = mesh.get_cell_dof_verts(mesh.get_elem_cell(i), nodes);
+      } else {
+        nnodes = mesh.get_elem_dof_nodes(i, nodes);
+      }
+
+      // Get the element node locations
+      T element_xloc[spatial_dim * max_nnodes_per_element];
+      get_element_xloc<T, Mesh, Basis>(mesh, i, element_xloc);
+
+      // Get the element degrees of freedom
+      T element_dof[max_dof_per_element];
+      get_element_vars<T, dof_per_node, Basis>(nnodes, nodes, dof, element_dof);
+
+      // Create the element dfdphi
+      std::vector<T> element_dfdphi(max_nnodes_per_element, 0.0);
+
+      std::vector<T> pts, wts, ns, pts_grad, wts_grad;
+      int num_quad_pts = quadrature.get_quadrature_pts_grad(i, pts, wts, ns,
+                                                            pts_grad, wts_grad);
+
+      std::vector<T> N, Nxi;
+      basis.eval_basis_grad(i, pts, N, Nxi);
+
+      for (int j = 0; j < num_quad_pts; j++) {
+        int offset_n = j * max_nnodes_per_element;
+        int offset_nxi = j * max_nnodes_per_element * spatial_dim;
+
+        A2D::Vec<T, spatial_dim> xloc, nrm_ref;
+        A2D::Mat<T, spatial_dim, spatial_dim> J;
+
+        interp_val_grad<T, Basis, spatial_dim>(element_xloc, &N[offset_n],
+                                               &Nxi[offset_nxi], &xloc, &J);
+        // Evaluate the derivative of the dof in the computational coordinates
+        typename Physics::dof_t vals{};
+        typename Physics::grad_t grad{}, grad_ref{};
+        interp_val_grad<T, Basis>(element_dof, &N[offset_n], &Nxi[offset_nxi],
+                                  &vals, &grad_ref);
+
+        // Transform gradient from ref coordinates to physical coordinates
+        transform(J, grad_ref, grad);
+
+        T energy = physics.energy(1.0, 0.0, xloc, nrm_ref, J, vals, grad);
+
+        int offset_wts = j * max_nnodes_per_element;
+        for (int n = 0; n < max_nnodes_per_element; n++) {
+          element_dfdphi[n] += wts_grad[offset_wts + n] * energy;
         }
       }
 

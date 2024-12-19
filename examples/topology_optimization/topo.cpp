@@ -6,6 +6,7 @@
 #include <iostream>
 #include <set>
 #include <string>
+#include <variant>
 
 #include "ParOptOptimizer.h"
 #include "analysis.h"
@@ -344,6 +345,7 @@ template <typename T, int Np_1d, int Np_1d_filter, bool use_ersatz_,
 class TopoAnalysis {
  public:
   static constexpr bool use_ersatz = use_ersatz_;
+  static constexpr int get_spatial_dim() { return Grid_::spatial_dim; }
 
  private:
   using ProbMesh = ProbMeshBase<T, Np_1d, Grid_>;
@@ -378,7 +380,7 @@ class TopoAnalysis {
                        typename Filter::Basis, Penalization>;
   using StressAnalysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Stress>;
   using StressKSAnalysis =
-      GalerkinAnalysis<T, Mesh, Quadrature, Basis, StressKS>;
+      GalerkinAnalysis<T, Mesh, Quadrature, Basis, StressKS, use_ersatz>;
 
   using LoadPhysics =
       ElasticityExternalLoad<T, Basis::spatial_dim, typeof(load_func)>;
@@ -409,7 +411,8 @@ class TopoAnalysis {
         stress_ks(ksrho, E, nu),
         stress_ks_analysis(mesh, quadrature, basis, stress_ks),
         phi(mesh.get_lsf_dof()),
-        prefix(prefix) {
+        prefix(prefix),
+        cache({{"x", {}}, {"sol", {}}, {"chol", nullptr}}) {
     // Get loaded cells
     loaded_cells = prob_mesh.get_loaded_cells();
   }
@@ -493,7 +496,10 @@ class TopoAnalysis {
     }
   }
 
-  std::vector<T> update_mesh_and_solve(const std::vector<T>& x) {
+  std::vector<T> update_mesh_and_solve(
+      const std::vector<T>& x,
+      const std::vector<T>& fdv /*TODO: delete this fake design variable*/,
+      std::shared_ptr<SparseUtils::SparseCholesky<T>>* chol = nullptr) {
     // Solve the static problem
     update_mesh(x);
 
@@ -514,7 +520,7 @@ class TopoAnalysis {
       LoadAnalysis load_analysis(mesh, load_quadrature, basis, load_physics);
       std::vector<T> sol =
           elastic.solve(bc_dof, std::vector<T>(bc_dof.size(), T(0.0)),
-                        std::tuple<LoadAnalysis>(load_analysis));
+                        std::tuple<LoadAnalysis>(load_analysis), chol, fdv);
 
       return sol;
     } catch (const StencilConstructionFailed& e) {
@@ -537,16 +543,16 @@ class TopoAnalysis {
     VandermondeCondLogger::disable();
   }
 
-  std::vector<T> eval_compliance_area_penalization(const std::vector<T>& x,
-                                                   T& comp, T& area, T& pen) {
-    std::vector<T> sol = update_mesh_and_solve(x);
+  std::tuple<std::vector<T>, std::vector<T>, std::vector<T>> eval_obj_con(
+      const std::vector<T>& x, T& comp, T& area, T& pen, T& max_stress_val,
+      T& ks_stress_val,
+      std::vector<T> fdv = {} /*TODO: delete this fake design variable*/) {
+    std::shared_ptr<SparseUtils::SparseCholesky<T>> chol;
+    std::vector<T> sol = update_mesh_and_solve(x, fdv, &chol);
+    cache["x"] = x;
+    cache["sol"] = sol;
+    cache["chol"] = chol;
 
-    // // WARNING: this holds only when body force is zero!
-    // comp = 2.0 * elastic.get_analysis().energy(nullptr, sol.data());
-    // if constexpr (use_ersatz) {
-    //   comp += 2.0 * elastic.get_analysis_ersatz().energy(nullptr,
-    //   sol.data());
-    // }
     comp = std::inner_product(sol.begin(), sol.end(), elastic.get_rhs().begin(),
                               T(0.0));
 
@@ -554,45 +560,139 @@ class TopoAnalysis {
     area = vol_analysis.energy(nullptr, dummy.data());
     pen = pen_analysis.energy(nullptr, phi.data());
 
-    return sol;
+    auto [xloc_q, stress_q] = eval_stress(sol);
+    max_stress_val = *std::max_element(stress_q.begin(), stress_q.end());
+
+    // ks_stress_val = eval_stress_ks(max_stress_val, area, sol);
+
+    // ks_stress_val =
+    //     0.5 * std::inner_product(sol.begin(), sol.end(), sol.begin(),
+    //                              T(0.0));  // TODO: delete
+    ks_stress_val = comp;  // TODO: delete
+
+    x_saved = x;  // TODO: delete
+    return {sol, xloc_q, stress_q};
   }
 
-  // T eval_grad_penalization(const std::vector<T>& x) {
-  //   return pen_analysis.energy(nullptr, x.data());
-  // }
+  // only useful if ersatz material is used
+  template <int dim>
+  std::vector<T> grid_dof_to_cut_dof(const std::vector<T> u) {
+    if (u.size() != mesh.get_grid().get_num_verts() * dim) {
+      throw std::runtime_error(
+          "grid_dof_to_cut_dof() only takes dof vectors of size nverts * dim "
+          "(" +
+          std::to_string(mesh.get_grid().get_num_verts() * dim) + "), got " +
+          std::to_string(u.size()));
+    }
+
+    int nnodes = mesh.get_num_nodes();
+    std::vector<T> u0(dim * nnodes);
+    for (int i = 0; i < nnodes; i++) {
+      int vert = mesh.get_node_vert(i);
+      for (int d = 0; d < dim; d++) {
+        u0[dim * i + d] = u[dim * vert + d];
+      }
+    }
+    return u0;
+  }
+
+  template <int dim>
+  std::vector<T> cut_dof_to_grid_dof(const std::vector<T> u0) {
+    if (u0.size() != mesh.get_num_nodes() * dim) {
+      throw std::runtime_error(
+          "cut_dof_to_grid_dof() only takes dof vectors of size nnodes * dim "
+          "(" +
+          std::to_string(mesh.get_num_nodes() * dim) + "), got " +
+          std::to_string(u0.size()));
+    }
+
+    int nnodes = mesh.get_num_nodes();
+    std::vector<T> u(dim * mesh.get_grid().get_num_verts(), T(0.0));
+    for (int i = 0; i < nnodes; i++) {
+      int vert = mesh.get_node_vert(i);
+      for (int d = 0; d < dim; d++) {
+        u[dim * vert + d] = u0[dim * i + d];
+      }
+    }
+    return u;
+  }
 
   std::pair<std::vector<T>, std::vector<T>> eval_stress(
       const std::vector<T>& u) {
-    return stress_analysis.interpolate_energy(u.data());
+    if constexpr (use_ersatz) {
+      return stress_analysis.interpolate_energy(
+          grid_dof_to_cut_dof<spatial_dim>(u).data());
+    } else {
+      return stress_analysis.interpolate_energy(u.data());
+    }
   }
 
-  T eval_stress_ks(T max_stress, T area, const std::vector<T>& u) {
-    stress_ks.set_von_mises_max_stress(max_stress);
-    T ks = log(stress_ks.energy(u.data()) / area) / stress_ks.get_ksrho() +
-           max_stress;
-    return ks;
+  T eval_stress_ks(T max_stress_val, T area, const std::vector<T>& u) {
+    stress_ks.set_von_mises_max_stress(max_stress_val);
+
+    return stress_ks_analysis.energy(nullptr, u.data());  // TODO: delete this
+    return log(stress_ks_analysis.energy(nullptr, u.data()) / area) /
+               stress_ks.get_ksrho() +
+           max_stress_val;
   }
 
-  // void eval_grad_penalization_grad(const std::vector<T>& x, std::vector<T>&
-  // g) {
-  //   g.resize(x.size());
-  //   pen_analysis.residual(nullptr, x.data(), g.data());
-  // }
+  void eval_obj_con_gradient(const std::vector<T>& x, std::vector<T>& gcomp,
+                             std::vector<T>& garea, std::vector<T>& gpen,
+                             std::vector<T>& gstress,
+                             /*TODO: delete the following arguments*/
+                             std::vector<T>& stress_adjoint_rhs,
+                             std::vector<T>& stress_adjoint,
+                             std::vector<T> fdv = {},
+                             std::vector<T>* gstress_fdv = nullptr,
+                             bool force_recompute = false /*TODO: delete*/) {
+    std::vector<T> sol;
+    std::shared_ptr<SparseUtils::SparseCholesky<T>> chol;
+    if (x == std::get<std::vector<T>>(cache["x"]) and !force_recompute) {
+      sol = std::get<std::vector<T>>(cache["sol"]);
+      chol = std::get<std::shared_ptr<SparseUtils::SparseCholesky<T>>>(
+          cache["chol"]);
+    } else {
+      sol = update_mesh_and_solve(x, fdv, &chol);
+    }
 
-  void eval_compliance_area_penalization_grad(const std::vector<T>& x,
-                                              std::vector<T>& gcomp,
-                                              std::vector<T>& garea,
-                                              std::vector<T>& gpen) {
-    std::vector<T> sol = update_mesh_and_solve(x);
+    // Adjoint variables for compliance is self-adjoint
+    std::vector<T> psi_comp = sol;
+    for (T& p : psi_comp) p *= -1.0;
 
-    // compliance is self-adjoint
-    std::vector<T> psi = sol;
-    for (T& p : psi) p *= -1.0;
+    // Prepare the rhs of the stress adjoint system of equations
+    std::vector<T> psi_stress(sol.size(), T(0.0));
+
+    // Evaluate the rhs
+    stress_ks_analysis.residual(nullptr, sol.data(), psi_stress.data());
+    // psi_stress = sol;  // TODO: delete
+    psi_stress = get_rhs();  // TODO: delete
+
+    // Apply boundary conditions to the rhs
+    for (int i : bc_dof) {
+      psi_stress[i] = 0.0;
+    }
+
+    // TODO: delete
+    stress_adjoint_rhs = psi_stress;
+
+    // Compute stress adjoints
+    chol->solve(psi_stress.data());
+
+    // Apply boundary conditions again to the adjoint variables
+    for (int i : bc_dof) {
+      psi_stress[i] = 0.0;
+    }
+
+    std::vector<T> psi_stress_neg = psi_stress;
+    for (T& p : psi_stress) p *= -1.0;
+
+    // TODO: delete
+    stress_adjoint = psi_stress;
 
     gcomp.resize(x.size());
     std::fill(gcomp.begin(), gcomp.end(), 0.0);
-    elastic.get_analysis().LSF_jacobian_adjoint_product(sol.data(), psi.data(),
-                                                        gcomp.data());
+    elastic.get_analysis().LSF_jacobian_adjoint_product(
+        sol.data(), psi_comp.data(), gcomp.data());
     if constexpr (use_ersatz) {
       elastic.get_analysis_ersatz().LSF_jacobian_adjoint_product(
           sol.data(), sol.data() /*this is effectively -psi*/, gcomp.data());
@@ -605,20 +705,42 @@ class TopoAnalysis {
     filter.applyGradient(x.data(), garea.data(), garea.data());
 
     gpen.resize(x.size());
+    std::fill(gpen.begin(), gpen.end(), 0.0);
     pen_analysis.residual(nullptr, phi.data(), gpen.data());
     filter.applyGradient(x.data(), gpen.data(), gpen.data());
-  }
 
-  std::vector<T> grid_sol_to_cut_sol(const std::vector<T>& grid_sol) {
-    int nnodes = mesh.get_num_nodes();
-    std::vector<T> cut_sol(spatial_dim * nnodes);
-    for (int n = 0; n < nnodes; n++) {
-      int v = mesh.get_node_vert(n);
-      for (int d = 0; d < spatial_dim; d++) {
-        cut_sol[spatial_dim * n + d] = grid_sol[spatial_dim * v + d];
+    gstress.resize(x.size());
+    std::fill(gstress.begin(), gstress.end(), 0.0);
+    elastic.get_analysis().LSF_jacobian_adjoint_product(
+        sol.data(), psi_stress.data(), gstress.data());
+    if constexpr (use_ersatz) {
+      elastic.get_analysis_ersatz().LSF_jacobian_adjoint_product(
+          sol.data(), psi_stress_neg.data(), gstress.data());
+    }
+
+    // TODO: revert the following lines
+    // // Add partials with respect to phi
+    // if constexpr (use_ersatz) {
+    //   std::vector<T> sol0 = grid_dof_to_cut_dof<spatial_dim>(sol);
+    //   stress_ks_analysis.LSF_energy_derivatives(sol0.data(), gstress.data());
+    // } else {
+    //   stress_ks_analysis.LSF_energy_derivatives(sol.data(), gstress.data());
+    // }
+
+    filter.applyGradient(x.data(), gstress.data(), gstress.data());
+
+    // TODO: delete
+    if (gstress_fdv) {
+      gstress_fdv->resize(fdv.size());
+      if (fdv.size() != psi_stress.size()) {
+        throw std::runtime_error("incompatible dimensions");
+      }
+      for (int i = 0; i < psi_stress.size(); i++) {
+        (*gstress_fdv)[i] = psi_stress[i];
       }
     }
-    return cut_sol;
+
+    x_saved = x;  // TODO: delete
   }
 
   void write_quad_pts_to_vtk(const std::string vtk_path) {
@@ -813,22 +935,32 @@ class TopoAnalysis {
   std::vector<int> bc_dof;
 
   std::set<int> loaded_cells;
+
+  std::map<std::string,
+           std::variant<std::vector<T>,
+                        std::shared_ptr<SparseUtils::SparseCholesky<T>>>>
+      cache;
+
+  // TODO: delete the following debug code
+ public:
+  std::vector<T> x_saved;
 };
 
 template <typename T, class TopoAnalysis>
 class TopoProb : public ParOptProblem {
  public:
-  TopoProb(TopoAnalysis& topo, double area_frac, std::string prefix,
-           const ConfigParser& parser)
+  TopoProb(TopoAnalysis& topo, double area_frac, double stress_target,
+           std::string prefix, const ConfigParser& parser)
       : ParOptProblem(MPI_COMM_SELF),
         nvars(topo.get_prob_mesh().get_nvars()),
-        ncon(1),
-        nineq(1),
+        ncon(2),
+        nineq(2),
         topo(topo),
         prefix(prefix),
         parser(parser),
         domain_area(topo.get_prob_mesh().get_domain_area()),
-        area_frac(area_frac) {
+        area_frac(area_frac),
+        stress_target(stress_target) {
     setProblemSizes(nvars, ncon, 0);
     setNumInequalities(nineq, 0);
 
@@ -839,21 +971,24 @@ class TopoProb : public ParOptProblem {
     reset_counter();
   }
 
-  void print_progress(T comp, T pterm, T vol_frac, int header_every = 10) {
-    std::ofstream progress_file(fspath(prefix) / fspath("optimization.log"));
+  void print_progress(T comp, T pterm, T vol_frac, T max_stress_val,
+                      T ks_stress_val, int header_every = 10) {
+    std::ofstream progress_file(fspath(prefix) / fspath("optimization.log"),
+                                std::ios::app);
     if (counter % header_every == 1) {
       char phead[30];
       std::snprintf(phead, 30, "gradx penalty(c:%9.2e)",
                     parser.get_double_option("grad_penalty_coeff"));
       char line[2048];
-      std::snprintf(line, 2048, "\n%5s%20s%30s%20s\n", "iter", "comp", phead,
-                    "vol (\%)");
+      std::snprintf(line, 2048, "\n%5s%20s%30s%20s%20s%20s\n", "iter", "comp",
+                    phead, "vol (\%)", "stress_max", "stress_ks");
       std::cout << line;
       progress_file << line;
     }
     char line[2048];
-    std::snprintf(line, 2048, "%5d%20.10e%30.10e%20.5f\n", counter, comp, pterm,
-                  100.0 * vol_frac);
+    std::snprintf(line, 2048, "%5d%20.10e%30.10e%20.5f%20.10e%20.10e\n",
+                  counter, comp, pterm, 100.0 * vol_frac, max_stress_val,
+                  ks_stress_val);
     std::cout << line;
     progress_file << line;
     progress_file.close();
@@ -914,34 +1049,42 @@ class TopoProb : public ParOptProblem {
     std::vector<T> xr(xptr, xptr + nvars);
     std::vector<T> x = topo.get_prob_mesh().expand(xr);
 
-    T comp, area, pterm;
-    std::vector<T> u =
-        topo.eval_compliance_area_penalization(x, comp, area, pterm);
-    // pterm = topo.eval_grad_penalization(x);
+    T comp, area, pterm, max_stress_val, ks_stress_val;
+    auto [u, xloc_q, stress_q] =
+        topo.eval_obj_con(x, comp, area, pterm, max_stress_val, ks_stress_val);
     *fobj = comp + pterm;
     cons[0] = 1.0 - area / (domain_area * area_frac);  // >= 0
+    cons[1] = 1.0 - ks_stress_val / stress_target;     // >= 0
 
     if (counter % parser.get_int_option("write_vtk_every") == 0) {
       // Write design to vtk
-      std::string vtk_name = "grid_" + std::to_string(counter) + ".vtk";
+      std::string vtk_path =
+          fspath(prefix) / fspath("grid_" + std::to_string(counter) + ".vtk");
       if constexpr (TopoAnalysis::use_ersatz) {
-        topo.write_grid_vtk(fspath(prefix) / fspath(vtk_name), x,
-                            topo.get_phi(), {}, {},
+        topo.write_grid_vtk(vtk_path, x, topo.get_phi(), {}, {},
                             {{"displacement", u}, {"rhs", topo.get_rhs()}}, {});
       } else {
-        topo.write_grid_vtk(fspath(prefix) / fspath(vtk_name), x,
-                            topo.get_phi(), {}, {}, {}, {});
+        topo.write_grid_vtk(vtk_path, x, topo.get_phi(), {}, {}, {}, {});
       }
 
       // Write cut mesh to vtk
-      vtk_name = "cut_" + std::to_string(counter) + ".vtk";
+      vtk_path =
+          fspath(prefix) / fspath("cut_" + std::to_string(counter) + ".vtk");
       if constexpr (TopoAnalysis::use_ersatz) {
-        topo.write_cut_vtk(fspath(prefix) / fspath(vtk_name), x, topo.get_phi(),
-                           {}, {}, {}, {});
+        topo.write_cut_vtk(vtk_path, x, topo.get_phi(), {}, {}, {}, {});
       } else {
-        topo.write_cut_vtk(fspath(prefix) / fspath(vtk_name), x, topo.get_phi(),
-                           {}, {}, {{"displacement", u}}, {});
+        topo.write_cut_vtk(vtk_path, x, topo.get_phi(), {}, {},
+                           {{"displacement", u}}, {});
       }
+
+      // Write quadrature-level data
+      vtk_path =
+          fspath(prefix) / fspath("quad_" + std::to_string(counter) + ".vtk");
+      FieldToVTKNew<T, TopoAnalysis::get_spatial_dim()> field_vtk(vtk_path);
+      field_vtk.add_mesh(xloc_q);
+      field_vtk.write_mesh();
+      field_vtk.add_sol("VonMises", stress_q);
+      field_vtk.write_sol("VonMises");
     }
 
     // write quadrature to vtk for gradient check
@@ -972,7 +1115,8 @@ class TopoProb : public ParOptProblem {
     }
 
     // print optimization progress
-    print_progress(comp, pterm, area / domain_area);
+    print_progress(comp, pterm, area / domain_area, max_stress_val,
+                   ks_stress_val);
 
     counter++;
 
@@ -985,25 +1129,48 @@ class TopoProb : public ParOptProblem {
     std::vector<T> xr(xptr, xptr + nvars);
     std::vector<T> x = topo.get_prob_mesh().expand(xr);
 
-    T *g, *c;
+    T *g, *c1, *c2;
     gvec->getArray(&g);
     gvec->zeroEntries();
 
-    Ac[0]->getArray(&c);
+    Ac[0]->getArray(&c1);
     Ac[0]->zeroEntries();
 
-    std::vector<T> gcomp, garea, gpen;
-    topo.eval_compliance_area_penalization_grad(x, gcomp, garea, gpen);
-    // topo.eval_grad_penalization_grad(x, gpen);
+    Ac[1]->getArray(&c2);
+    Ac[1]->zeroEntries();
+
+    std::vector<T> gcomp, garea, gpen, gstress;
+    std::vector<T> stress_adjoint_rhs, stress_adjoint;  // TODO: delete
+    topo.eval_obj_con_gradient(x, gcomp, garea, gpen, gstress,
+                               stress_adjoint_rhs, stress_adjoint);
 
     std::vector<T> gcompr = topo.get_prob_mesh().reduce(gcomp);
     std::vector<T> garear = topo.get_prob_mesh().reduce(garea);
     std::vector<T> gpenr = topo.get_prob_mesh().reduce(gpen);
+    std::vector<T> gstressr = topo.get_prob_mesh().reduce(gstress);
 
     for (int i = 0; i < nvars; i++) {
       g[i] = gcompr[i] + gpenr[i];
-      c[i] = -garear[i] / (domain_area * area_frac);
+      c1[i] = -garear[i] / (domain_area * area_frac);
+      c2[i] = -gstressr[i] / stress_target;
     }
+
+    // TODO: delete
+    std::string vtk_path =
+        fspath(prefix) /
+        fspath("adjoint_debug_" + std::to_string(counter) + ".vtk");
+    if constexpr (TopoAnalysis::use_ersatz) {
+      topo.write_grid_vtk(vtk_path, x, topo.get_phi(), {}, {},
+                          {{"stress_adjoint_rhs", stress_adjoint_rhs},
+                           {"stress_adjoint", stress_adjoint}},
+                          {});
+    } else {
+      topo.write_cut_vtk(vtk_path, x, topo.get_phi(), {}, {},
+                         {{"stress_adjoint_rhs", stress_adjoint_rhs},
+                          {"stress_adjoint", stress_adjoint}},
+                         {});
+    }
+
     return 0;
   }
 
@@ -1027,6 +1194,7 @@ class TopoProb : public ParOptProblem {
 
   double domain_area = 0.0;
   double area_frac = 0.0;
+  double stress_target = 0.0;
 
   bool is_gradient_check = false;
 };
@@ -1047,13 +1215,20 @@ void execute(int argc, char* argv[]) {
     smoke_test = true;
   }
 
-  // Make the prefix
-  std::string prefix = get_local_time();
-  if (smoke_test) {
-    prefix = "smoke_" + prefix;
-  } else {
-    prefix = "opt_" + prefix;
+  // Create config parser
+  std::string cfg_path{argv[1]};
+  ConfigParser parser{cfg_path};
+
+  std::string prefix = parser.get_str_option("prefix");
+  if (prefix.empty()) {
+    prefix = get_local_time();
+    if (smoke_test) {
+      prefix = "smoke_" + prefix;
+    } else {
+      prefix = "opt_" + prefix;
+    }
   }
+
   if (!std::filesystem::is_directory(prefix)) {
     std::filesystem::create_directory(prefix);
   }
@@ -1063,8 +1238,6 @@ void execute(int argc, char* argv[]) {
     std::filesystem::create_directory(json_dir);
   }
 
-  std::string cfg_path{argv[1]};
-  ConfigParser parser{cfg_path};
   std::filesystem::copy(
       cfg_path,
       fspath(prefix) / fspath(std::filesystem::absolute(cfg_path).filename()));
@@ -1126,11 +1299,58 @@ void execute(int argc, char* argv[]) {
                     prefix};
 
   double area_frac = parser.get_double_option("area_frac");
-  TopoProb<T, TopoAnalysis>* prob =
-      new TopoProb<T, TopoAnalysis>(topo, area_frac, prefix, parser);
+  double stress_target = parser.get_double_option("stress_target");
+  TopoProb<T, TopoAnalysis>* prob = new TopoProb<T, TopoAnalysis>(
+      topo, area_frac, stress_target, prefix, parser);
   prob->incref();
 
-  prob->check_gradients(1e-6);
+  double dh = parser.get_double_option("grad_check_fd_h");
+  prob->check_gradients(dh);
+
+  // TODO: delete the following
+  {
+    std::vector<T> fdv(topo.get_rhs().size(), T(0.0));
+    std::vector<T> p(fdv.size(), T(0.0));
+
+    // fdv[0] = 1.0;
+    // p[0] = 1.0;
+
+    for (int i = 0; i < fdv.size(); i++) {
+      fdv[i] = (T)rand() / RAND_MAX;
+      p[i] = (T)rand() / RAND_MAX;
+    }
+
+    T comp, area, pterm, max_stress_val, ks_stress_val_1, ks_stress_val_2;
+    topo.eval_obj_con(topo.x_saved, comp, area, pterm, max_stress_val,
+                      ks_stress_val_1, fdv);
+
+    std::vector<T> gcomp, garea, gpen, gstress, gstress_fdv;
+    std::vector<T> stress_adjoint_rhs, stress_adjoint;
+    topo.eval_obj_con_gradient(topo.x_saved, gcomp, garea, gpen, gstress,
+                               stress_adjoint_rhs, stress_adjoint, fdv,
+                               &gstress_fdv, true);
+
+    for (int i = 0; i < fdv.size(); i++) {
+      fdv[i] += p[i] * dh;
+    }
+    topo.eval_obj_con(topo.x_saved, comp, area, pterm, max_stress_val,
+                      ks_stress_val_2, fdv);
+
+    T stress_fd = (ks_stress_val_2 - ks_stress_val_1) / dh;
+    T stress_exact = 0.0;
+    for (int i = 0; i < fdv.size(); i++) {
+      stress_exact += p[i] * gstress_fdv[i];
+    }
+
+    std::printf("Gradient verification on a fake dv:\n");
+    std::printf("fake FD: %30.20e, Actual: %30.20e, Rel err: %20.10e\n",
+                stress_exact, stress_fd,
+                abs(stress_fd - stress_exact) / stress_exact);
+  }
+
+  if (parser.get_bool_option("check_grad_and_exit")) {
+    return;
+  }
 
   // Set options
   ParOptOptions* options = new ParOptOptions;

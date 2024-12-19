@@ -19,7 +19,7 @@
 #define PATH_MAX 4096
 #endif
 
-std::map<std::string, std::string> get_cmd_args(int argc, char* argv[]) {
+inline std::map<std::string, std::string> get_cmd_args(int argc, char* argv[]) {
   std::map<std::string, std::string> keyvals;
   for (int i = 0; i < argc - 1; i++) {
     std::string entry(argv[i + 1]);
@@ -239,7 +239,12 @@ class ConfigParser {
     if (cfg.count(key) == 0) {
       key_not_found(key);
     }
-    return cfg.at(key);
+    std::string str = cfg.at(key);
+    // Strip single and double quotes, if any
+    if (str.size() >= 2 && str.front() == '"' && str.back() == '"') {
+      str = str.substr(1, str.size() - 2);  // Remove the quotes
+    }
+    return str;
   }
   bool get_bool_option(std::string key) const {
     if (cfg.count(key) == 0) {
