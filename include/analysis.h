@@ -547,7 +547,7 @@ class GalerkinAnalysis final {
       T element_dof[max_dof_per_element], element_psi[max_dof_per_element];
       get_element_vars<T, dof_per_node, Basis>(nnodes, nodes, dof, element_dof);
       get_element_vars<T, dof_per_node, Basis>(nnodes, nodes, psi, element_psi);
-      //
+
       // Create the element dfdphi
       std::vector<T> element_dfdphi(max_nnodes_per_element, 0.0);
 
@@ -711,12 +711,14 @@ class GalerkinAnalysis final {
       int num_quad_pts = quadrature.get_quadrature_pts_grad(i, pts, wts, ns,
                                                             pts_grad, wts_grad);
 
-      std::vector<T> N, Nxi;
-      basis.eval_basis_grad(i, pts, N, Nxi);
+      std::vector<T> N, Nxi, Nxixi;
+      basis.eval_basis_grad(i, pts, N, Nxi, Nxixi);
 
       for (int j = 0; j < num_quad_pts; j++) {
         int offset_n = j * max_nnodes_per_element;
         int offset_nxi = j * max_nnodes_per_element * spatial_dim;
+        int offset_nxixi =
+            j * max_nnodes_per_element * spatial_dim * spatial_dim;
 
         A2D::Vec<T, spatial_dim> xloc, nrm_ref;
         A2D::Mat<T, spatial_dim, spatial_dim> J;
@@ -724,20 +726,39 @@ class GalerkinAnalysis final {
         interp_val_grad<T, Basis, spatial_dim>(element_xloc, &N[offset_n],
                                                &Nxi[offset_nxi], &xloc, &J);
         // Evaluate the derivative of the dof in the computational coordinates
-        typename Physics::dof_t vals{};
-        typename Physics::grad_t grad{}, grad_ref{};
+        typename Physics::dof_t uq{};
+        typename Physics::grad_t ugrad{}, ugrad_ref{};
+        typename Physics::hess_t uhess_ref{};  //(∇2_ξ)uq
         interp_val_grad<T, Basis>(element_dof, &N[offset_n], &Nxi[offset_nxi],
-                                  &vals, &grad_ref);
+                                  &uq, &ugrad_ref);
+        interp_hess<T, Basis>(element_dof, &Nxixi[offset_nxixi], uhess_ref);
 
         // Transform gradient from ref coordinates to physical coordinates
-        transform(J, grad_ref, grad);
+        transform(J, ugrad_ref, ugrad);
 
-        T energy = physics.energy(1.0, 0.0, xloc, nrm_ref, J, vals, grad);
+        typename Physics::dof_t coef_uq{};      // ∂e/∂uq
+        typename Physics::grad_t coef_ugrad{};  // ∂e/∂(∇_x)uq
+
+        T detJ;
+        A2D::MatDet(J, detJ);
+
+        T energy = physics.energy(1.0 / detJ, 0.0, xloc, nrm_ref, J, uq, ugrad);
+        physics.residual(1.0 / detJ, 0.0, xloc, nrm_ref, J, uq, ugrad, coef_uq,
+                         coef_ugrad);
+
+        typename Physics::grad_t coef_ugrad_ref{};  // ∂e/∂(∇_ξ)uq
+
+        // Transform gradient from physical coordinates back to ref
+        // coordinates
+        rtransform(J, coef_ugrad, coef_ugrad_ref);
 
         int offset_wts = j * max_nnodes_per_element;
-        for (int n = 0; n < max_nnodes_per_element; n++) {
-          element_dfdphi[n] += wts_grad[offset_wts + n] * energy;
-        }
+        int offset_pts = j * max_nnodes_per_element * spatial_dim;
+
+        add_energy_partial_deriv<T, Basis>(
+            wts[j], detJ, energy, &wts_grad[offset_wts], &pts_grad[offset_pts],
+            ugrad_ref, uhess_ref, coef_uq, coef_ugrad_ref,
+            element_dfdphi.data());
       }
 
       const auto& lsf_mesh = mesh.get_lsf_mesh();

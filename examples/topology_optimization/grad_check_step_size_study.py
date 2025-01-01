@@ -34,7 +34,7 @@ def execute(num_points: int):
     cfg_template_name = "topo.cfg"
 
     # h_list = [1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10]
-    h_list = np.logspace(-1, -10, num_points)
+    h_list = np.logspace(-3, -10, num_points)
 
     if not os.path.isdir(working_dir):
         os.mkdir(working_dir)

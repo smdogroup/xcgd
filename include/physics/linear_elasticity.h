@@ -206,6 +206,16 @@ class ElasticityExternalLoad final
     stack.reverse();
   }
 
+  void jacobian_product(
+      T weight, T _, A2D::Vec<T, spatial_dim>& __,
+      A2D::Vec<T, spatial_dim>& ___, A2D::Mat<T, spatial_dim, spatial_dim>& J,
+      A2D::Vec<T, dof_per_node>& vals,
+      A2D::Mat<T, dof_per_node, spatial_dim>& grad,
+      A2D::Vec<T, dof_per_node>& direct_vals,
+      A2D::Mat<T, dof_per_node, spatial_dim>& direct_grad,
+      A2D::Vec<T, dof_per_node>& coef_vals,
+      A2D::Mat<T, dof_per_node, spatial_dim>& coef_grad) const {}
+
  private:
   const LoadFunc& load_func;
 };

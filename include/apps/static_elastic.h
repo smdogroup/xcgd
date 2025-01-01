@@ -153,6 +153,9 @@ class StaticElastic final {
           (load_analysis.residual(nullptr, t1.data(), this->rhs.data()), ...);
         },
         load_analyses);
+    for (int i = 0; i < rhs.size(); i++) {
+      rhs[i] *= -1.0;
+    }
 
     // TODO: delete
     if (rhs_manual.size()) {
@@ -168,9 +171,6 @@ class StaticElastic final {
       }
     }
 
-    for (int i = 0; i < rhs.size(); i++) {
-      rhs[i] *= -1.0;
-    }
     for (int i = 0; i < bc_dof.size(); i++) {
       rhs[bc_dof[i]] = bc_vals[i];
     }
@@ -349,7 +349,8 @@ class StaticElasticErsatz final {
     jac_csc->zero_columns(bc_dof.size(), bc_dof.data());
 
     // Set right hand side (Dirichlet bcs and load)
-    std::vector<T> rhs(ndof, 0.0), t1(ndof, 0.0), t2(ndof, 0.0);
+    rhs = std::vector<T>(ndof, 0.0);
+    std::vector<T> t1(ndof, 0.0), t2(ndof, 0.0);
 
     analysis_l.residual(nullptr, t1.data(), rhs.data());
     analysis_r.residual(nullptr, t1.data(), rhs.data());
@@ -436,6 +437,9 @@ class StaticElasticErsatz final {
     // Add internal load contributions to the right-hand size
     analysis_l.residual(nullptr, t1.data(), rhs.data());
     analysis_r.residual(nullptr, t1.data(), rhs.data());
+    for (int i = 0; i < rhs.size(); i++) {
+      rhs[i] *= -1.0;
+    }
 
     // TODO: delete
     if (rhs_manual.size()) {
@@ -451,9 +455,6 @@ class StaticElasticErsatz final {
       }
     }
 
-    for (int i = 0; i < rhs.size(); i++) {
-      rhs[i] *= -1.0;
-    }
     for (int i = 0; i < bc_dof.size(); i++) {
       rhs[bc_dof[i]] = bc_vals[i];
     }
