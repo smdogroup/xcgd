@@ -71,9 +71,6 @@ class LinearElasticity2DVonMisesStressAggregation final
            A2D::Mat<T, spatial_dim, spatial_dim>& J,
            A2D::Vec<T, dof_per_node>& vals,
            A2D::Mat<T, dof_per_node, spatial_dim>& grad) const {
-    // return vals(0) * vals(0) + vals(1) * vals(1) +
-    //        vals(0) * exp(vals(1));  // TODO: delete
-
     T detJ, trS, detS, von_mises;
     A2D::SymMat<T, spatial_dim> E, S;
     A2D::MatDet(J, detJ);
@@ -82,9 +79,7 @@ class LinearElasticity2DVonMisesStressAggregation final
     A2D::MatTrace(S, trS);
     A2D::MatDet(S, detS);
     von_mises = sqrt(trS * trS - 3.0 * detS);
-    return weight * detJ * von_mises;  // TODO: delete
-    // return exp(ksrho * (von_mises - vm_max));  // TODO: delete
-    // return weight * detJ * exp(ksrho * (von_mises - vm_max));
+    return weight * detJ * exp(ksrho * (von_mises - vm_max));
   }
 
   void residual(T weight, T _, A2D::Vec<T, spatial_dim>& __,
@@ -94,11 +89,6 @@ class LinearElasticity2DVonMisesStressAggregation final
                 A2D::Mat<T, dof_per_node, spatial_dim>& grad,
                 A2D::Vec<T, dof_per_node>& coef_vals,
                 A2D::Mat<T, dof_per_node, spatial_dim>& coef_grad) const {
-    // // TODO: delete
-    // coef_vals(0) = 2.0 * vals(0) + exp(vals(1));
-    // coef_vals(1) = 2.0 * vals(1) + vals(0) * exp(vals(1));
-    // return;
-
     T detJ;
     A2D::MatDet(J, detJ);
 
@@ -111,11 +101,9 @@ class LinearElasticity2DVonMisesStressAggregation final
         A2D::MatGreenStrain<A2D::GreenStrainType::LINEAR>(grad_obj, E_obj),
         A2D::SymIsotropic(mu, lambda, E_obj, S_obj), A2D::MatTrace(S_obj, trS),
         A2D::MatDet(S_obj, detS),
-        A2D::Eval(weight * detJ * sqrt(trS * trS - 3.0 * detS), output)
-        // A2D::Eval(weight * detJ *
-        //               exp(ksrho * (sqrt(trS * trS - 3.0 * detS) - vm_max)),
-        //           output)
-    );
+        A2D::Eval(weight * detJ *
+                      exp(ksrho * (sqrt(trS * trS - 3.0 * detS) - vm_max)),
+                  output));
 
     output.bvalue() = 1.0;
     stack.reverse();

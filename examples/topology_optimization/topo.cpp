@@ -415,12 +415,6 @@ class TopoAnalysis {
         cache({{"x", {}}, {"sol", {}}, {"chol", nullptr}}) {
     // Get loaded cells
     loaded_cells = prob_mesh.get_loaded_cells();
-
-    // TODO: delete
-    coefs.resize(grid.get_num_verts() * Basis::spatial_dim);
-    for (int i = 0; i < coefs.size(); i++) {
-      coefs[i] = (T)rand() / RAND_MAX;
-    }
   }
 
   // Create nodal design variables for a domain with periodic holes
@@ -504,7 +498,6 @@ class TopoAnalysis {
 
   std::vector<T> update_mesh_and_solve(
       const std::vector<T>& x,
-      const std::vector<T>& fdv /*TODO: delete this fake design variable*/,
       std::shared_ptr<SparseUtils::SparseCholesky<T>>* chol = nullptr) {
     // Solve the static problem
     update_mesh(x);
@@ -525,15 +518,9 @@ class TopoAnalysis {
       LoadQuadrature load_quadrature(mesh, load_elements);
       LoadAnalysis load_analysis(mesh, load_quadrature, basis, load_physics);
 
-      std::vector<T> manual_rhs = fdv;
-      if (manual_rhs.size()) {
-        for (int i = 0; i < manual_rhs.size(); i++) {
-          manual_rhs[i] *= coefs[i];
-        }
-      }
-      std::vector<T> sol = elastic.solve(
-          bc_dof, std::vector<T>(bc_dof.size(), T(0.0)),
-          std::tuple<LoadAnalysis>(load_analysis), chol, manual_rhs);
+      std::vector<T> sol =
+          elastic.solve(bc_dof, std::vector<T>(bc_dof.size(), T(0.0)),
+                        std::tuple<LoadAnalysis>(load_analysis), chol);
 
       return sol;
     } catch (const StencilConstructionFailed& e) {
@@ -556,45 +543,33 @@ class TopoAnalysis {
     VandermondeCondLogger::disable();
   }
 
-  // TODO: delete
-  T eval_stress_for_partial(const std::vector<T> x, const std::vector<T> sol,
-                            T area, T max_stress_val) {
-    update_mesh(x);
-    return eval_stress_ks(max_stress_val, area, sol);
-  }
-
-  std::tuple<std::vector<T>, std::vector<T>, std::vector<T>> eval_obj_con(
-      const std::vector<T>& x, T& comp, T& area, T& pen, T& max_stress_val,
-      T& ks_stress_val,
-      std::vector<T> fdv = {} /*TODO: delete this fake design variable*/) {
+  auto eval_obj_con(const std::vector<T>& x) {
     std::shared_ptr<SparseUtils::SparseCholesky<T>> chol;
-    std::vector<T> sol = update_mesh_and_solve(x, fdv, &chol);
+    std::vector<T> sol = update_mesh_and_solve(x, &chol);
+
+    T comp = std::inner_product(sol.begin(), sol.end(),
+                                elastic.get_rhs().begin(), T(0.0));
+
+    std::vector<T> dummy(mesh.get_num_nodes(), 0.0);
+    T area = vol_analysis.energy(nullptr, dummy.data());
+    T pterm = pen_analysis.energy(nullptr, phi.data());
+
+    auto [xloc_q, stress_q] = eval_stress(sol);
+    T max_stress_val = *std::max_element(stress_q.begin(), stress_q.end());
+    stress_ks.set_von_mises_max_stress(max_stress_val);
+    T ks_energy = stress_ks_analysis.energy(nullptr, sol.data());
+    T ks_stress_val =
+        log(ks_energy / area) / stress_ks.get_ksrho() + max_stress_val;
+
+    // Save information
     cache["x"] = x;
     cache["sol"] = sol;
     cache["chol"] = chol;
+    cache["ks_energy"] = ks_energy;
+    cache["area"] = area;
 
-    comp = std::inner_product(sol.begin(), sol.end(), elastic.get_rhs().begin(),
-                              T(0.0));
-
-    std::vector<T> dummy(mesh.get_num_nodes(), 0.0);
-    area = vol_analysis.energy(nullptr, dummy.data());
-    pen = pen_analysis.energy(nullptr, phi.data());
-
-    auto [xloc_q, stress_q] = eval_stress(sol);
-    max_stress_val = *std::max_element(stress_q.begin(), stress_q.end());
-
-    ks_stress_val = eval_stress_ks(max_stress_val, area, sol);
-
-    // ks_stress_val =
-    //     0.5 * std::inner_product(sol.begin(), sol.end(), sol.begin(),
-    //                              T(0.0));  // TODO: delete
-    // ks_stress_val = comp;  // TODO: delete
-
-    // ks_stress_val =
-    //     std::inner_product(sol.begin(), sol.end(), coefs.begin(), 0.0);
-
-    x_saved = x;  // TODO: delete
-    return {sol, xloc_q, stress_q};
+    return std::make_tuple(comp, area, pterm, max_stress_val, ks_stress_val,
+                           sol, xloc_q, stress_q);
   }
 
   // only useful if ersatz material is used
@@ -650,33 +625,23 @@ class TopoAnalysis {
     }
   }
 
-  T eval_stress_ks(T max_stress_val, T area, const std::vector<T>& u) {
-    stress_ks.set_von_mises_max_stress(max_stress_val);
-
-    return stress_ks_analysis.energy(nullptr, u.data());  // TODO: delete this
-    return log(stress_ks_analysis.energy(nullptr, u.data()) / area) /
-               stress_ks.get_ksrho() +
-           max_stress_val;
-  }
-
   void eval_obj_con_gradient(const std::vector<T>& x, std::vector<T>& gcomp,
                              std::vector<T>& garea, std::vector<T>& gpen,
-                             std::vector<T>& gstress,
-                             /*TODO: delete the following arguments*/
-                             std::vector<T>& gstress_partial,
-                             std::vector<T>& stress_adjoint_rhs,
-                             std::vector<T>& stress_adjoint,
-                             std::vector<T> fdv = {},
-                             std::vector<T>* gstress_fdv = nullptr,
-                             bool force_recompute = false /*TODO: delete*/) {
+                             std::vector<T>& gstress) {
+    T ks_energy = 0.0, area = 0.0;
     std::vector<T> sol;
     std::shared_ptr<SparseUtils::SparseCholesky<T>> chol;
-    if (x == std::get<std::vector<T>>(cache["x"]) and !force_recompute) {
+    if (x == std::get<std::vector<T>>(cache["x"])) {
       sol = std::get<std::vector<T>>(cache["sol"]);
       chol = std::get<std::shared_ptr<SparseUtils::SparseCholesky<T>>>(
           cache["chol"]);
+      ks_energy = std::get<T>(cache["ks_energy"]);
+      area = std::get<T>(cache["area"]);
     } else {
-      sol = update_mesh_and_solve(x, fdv, &chol);
+      sol = update_mesh_and_solve(x, &chol);
+      ks_energy = stress_ks_analysis.energy(nullptr, sol.data());
+      std::vector<T> dummy(mesh.get_num_nodes(), 0.0);
+      area = vol_analysis.energy(nullptr, dummy.data());
     }
 
     // Compliance function is self-adjoint with a sign flip
@@ -693,9 +658,6 @@ class TopoAnalysis {
       psi_stress[i] = 0.0;
     }
 
-    // TODO: delete
-    stress_adjoint_rhs = psi_stress;
-
     // Compute stress adjoints
     chol->solve(psi_stress.data());
 
@@ -706,9 +668,6 @@ class TopoAnalysis {
 
     std::vector<T> psi_stress_neg = psi_stress;
     for (T& p : psi_stress) p *= -1.0;
-
-    // TODO: delete
-    stress_adjoint = psi_stress;
 
     gcomp.resize(x.size());
     std::fill(gcomp.begin(), gcomp.end(), 0.0);
@@ -751,31 +710,12 @@ class TopoAnalysis {
 
     filter.applyGradient(x.data(), gstress.data(), gstress.data());
 
-    // TODO: delete
-    gstress_partial.resize(x.size());
-    if constexpr (use_ersatz) {
-      std::vector<T> sol0 = grid_dof_to_cut_dof<spatial_dim>(sol);
-      stress_ks_analysis.LSF_energy_derivatives(sol0.data(),
-                                                gstress_partial.data());
-    } else {
-      stress_ks_analysis.LSF_energy_derivatives(sol.data(),
-                                                gstress_partial.data());
+    // Now gstress is really just denergy/dx, next, compute dks/dx:
+    // dks/dx = (1.0 / energy * denergy/dx - 1.0 / area * darea/dx) / rho
+    for (int i = 0; i < gstress.size(); i++) {
+      gstress[i] =
+          (gstress[i] / ks_energy - garea[i] / area) / stress_ks.get_ksrho();
     }
-    filter.applyGradient(x.data(), gstress_partial.data(),
-                         gstress_partial.data());  // TODO: delete
-
-    // TODO: delete
-    if (gstress_fdv) {
-      gstress_fdv->resize(fdv.size());
-      if (fdv.size() != psi_stress.size()) {
-        throw std::runtime_error("incompatible dimensions");
-      }
-      for (int i = 0; i < psi_stress.size(); i++) {
-        (*gstress_fdv)[i] = coefs[i] * psi_stress_neg[i];
-      }
-    }
-
-    x_saved = x;  // TODO: delete
   }
 
   void write_quad_pts_to_vtk(const std::string vtk_path) {
@@ -972,15 +912,9 @@ class TopoAnalysis {
   std::set<int> loaded_cells;
 
   std::map<std::string,
-           std::variant<std::vector<T>,
+           std::variant<T, std::vector<T>,
                         std::shared_ptr<SparseUtils::SparseCholesky<T>>>>
       cache;
-
-  std::vector<T> coefs;  // TODO: delete
-
-  // TODO: delete the following debug code
- public:
-  std::vector<T> x_saved;
 };
 
 template <typename T, class TopoAnalysis>
@@ -1086,9 +1020,8 @@ class TopoProb : public ParOptProblem {
     std::vector<T> xr(xptr, xptr + nvars);
     std::vector<T> x = topo.get_prob_mesh().expand(xr);
 
-    T comp, area, pterm, max_stress_val, ks_stress_val;
-    auto [u, xloc_q, stress_q] =
-        topo.eval_obj_con(x, comp, area, pterm, max_stress_val, ks_stress_val);
+    auto [comp, area, pterm, max_stress_val, ks_stress_val, u, xloc_q,
+          stress_q] = topo.eval_obj_con(x);
     *fobj = comp + pterm;
     cons[0] = 1.0 - area / (domain_area * area_frac);  // >= 0
     cons[1] = 1.0 - ks_stress_val / stress_target;     // >= 0
@@ -1177,10 +1110,7 @@ class TopoProb : public ParOptProblem {
     Ac[1]->zeroEntries();
 
     std::vector<T> gcomp, garea, gpen, gstress;
-    std::vector<T> stress_adjoint_rhs, stress_adjoint,
-        gstress_partial;  // TODO: delete
-    topo.eval_obj_con_gradient(x, gcomp, garea, gpen, gstress, gstress_partial,
-                               stress_adjoint_rhs, stress_adjoint);
+    topo.eval_obj_con_gradient(x, gcomp, garea, gpen, gstress);
 
     std::vector<T> gcompr = topo.get_prob_mesh().reduce(gcomp);
     std::vector<T> garear = topo.get_prob_mesh().reduce(garea);
@@ -1191,22 +1121,6 @@ class TopoProb : public ParOptProblem {
       g[i] = gcompr[i] + gpenr[i];
       c1[i] = -garear[i] / (domain_area * area_frac);
       c2[i] = -gstressr[i] / stress_target;
-    }
-
-    // TODO: delete
-    std::string vtk_path =
-        fspath(prefix) /
-        fspath("adjoint_debug_" + std::to_string(counter) + ".vtk");
-    if constexpr (TopoAnalysis::use_ersatz) {
-      topo.write_grid_vtk(vtk_path, x, topo.get_phi(), {}, {},
-                          {{"stress_adjoint_rhs", stress_adjoint_rhs},
-                           {"stress_adjoint", stress_adjoint}},
-                          {});
-    } else {
-      topo.write_cut_vtk(vtk_path, x, topo.get_phi(), {}, {},
-                         {{"stress_adjoint_rhs", stress_adjoint_rhs},
-                          {"stress_adjoint", stress_adjoint}},
-                         {});
     }
 
     return 0;
@@ -1344,86 +1258,6 @@ void execute(int argc, char* argv[]) {
 
   double dh = parser.get_double_option("grad_check_fd_h");
   prob->check_gradients(dh);
-
-  // TODO: delete the following code block
-  {
-    std::vector<T> fdv(topo.get_rhs().size(), T(0.0));
-    std::vector<T> p(fdv.size(), T(0.0));
-
-    // fdv[0] = 1.0;
-    // p[0] = 1.0;
-
-    for (int i = 0; i < fdv.size(); i++) {
-      fdv[i] = (T)rand() / RAND_MAX;
-      p[i] = (T)rand() / RAND_MAX;
-    }
-
-    T comp, area, pterm, max_stress_val, ks_stress_val_1, ks_stress_val_2;
-    auto [sol, xloc_q, stress_q] = topo.eval_obj_con(
-        topo.x_saved, comp, area, pterm, max_stress_val, ks_stress_val_1, fdv);
-
-    std::vector<T> gcomp, garea, gpen, gstress, gstress_fdv;
-    std::vector<T> stress_adjoint_rhs, stress_adjoint,
-        gstress_partial;  // TODO: delete
-    std::vector<T> x1 = topo.x_saved;
-    topo.eval_obj_con_gradient(x1, gcomp, garea, gpen, gstress, gstress_partial,
-                               stress_adjoint_rhs, stress_adjoint, fdv,
-                               &gstress_fdv, true);
-
-    for (int i = 0; i < fdv.size(); i++) {
-      fdv[i] += p[i] * dh;
-    }
-    topo.eval_obj_con(x1, comp, area, pterm, max_stress_val, ks_stress_val_2,
-                      fdv);
-
-    T stress_fd = (ks_stress_val_2 - ks_stress_val_1) / dh;
-    T stress_exact = 0.0;
-
-    // assemble derivative w.r.t. fake dv
-    if (sol.size() != gstress_fdv.size())
-      throw std::runtime_error("sol and gstress_fdv size mismatch");
-
-    // for (int i = 0; i < gstress_fdv.size(); i++) {
-    //   gstress_fdv[i] += sol[i];
-    // }
-
-    for (int i = 0; i < fdv.size(); i++) {
-      stress_exact += p[i] * gstress_fdv[i];
-    }
-
-    std::printf("Gradient verification on a fake dv:\n");
-    std::printf("fake FD: %30.20e, Actual: %30.20e, Rel err: %20.10e\n",
-                stress_fd, stress_exact,
-                abs(stress_fd - stress_exact) / stress_exact);
-
-    std::vector<T> xp(x1.size());
-    for (int i = 0; i < xp.size(); i++) {
-      xp[i] = (T)rand() / RAND_MAX;
-    }
-
-    std::vector<T> x2(x1.size());
-    for (int i = 0; i < x2.size(); i++) {
-      x2[i] = x1[i] + dh * xp[i];
-    }
-
-    T stress_partial_1 =
-        topo.eval_stress_for_partial(x1, sol, area, max_stress_val);
-    T stress_partial_2 =
-        topo.eval_stress_for_partial(x2, sol, area, max_stress_val);
-
-    T stress_partial_fd = (stress_partial_2 - stress_partial_1) / dh;
-    T stress_partial_exact = 0.0;
-    for (int i = 0; i < gstress_partial.size(); i++) {
-      stress_partial_exact += gstress_partial[i] * xp[i];
-    }
-
-    // TODO: delete
-    std::printf(
-        "stress partial FD: %30.20e, Actual: %30.20e, Rel err: %20.10e\n",
-        stress_partial_fd, stress_partial_exact,
-        fabs(stress_partial_fd - stress_partial_exact) /
-            fabs(stress_partial_exact));
-  }
 
   if (parser.get_bool_option("check_grad_and_exit")) {
     return;

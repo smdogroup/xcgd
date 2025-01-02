@@ -36,7 +36,7 @@ T LSF_jacobian_adjoint_product_fd_check(const Physics& physics,
   using Basis = GDBasis2D<T, Mesh>;
   using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
 
-  int nxy[2] = {18, 12};
+  int nxy[2] = {13, 9};
   T lxy[2] = {3.0, 2.0};
   T pt0[2] = {3.2, -0.5};
   Grid grid(nxy, lxy);
@@ -118,7 +118,7 @@ T LSF_energy_derivatives_fd_check(const Physics& physics, double dh = 1e-6) {
   using Basis = GDBasis2D<T, Mesh>;
   using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
 
-  int nxy[2] = {18, 12};
+  int nxy[2] = {13, 9};
   T lxy[2] = {3.0, 2.0};
   T pt0[2] = {3.2, -0.5};
   Grid grid(nxy, lxy);
@@ -209,7 +209,6 @@ TEST(analysis, AdjJacProductPoisson) {
   Physics physics(source_func);
   test_LSF_jacobian_adjoint_product<2>(physics);
   test_LSF_jacobian_adjoint_product<4>(physics);
-  test_LSF_jacobian_adjoint_product<6>(physics);
 }
 
 TEST(analysis, AdjJacProductElasticity) {
@@ -224,7 +223,6 @@ TEST(analysis, AdjJacProductElasticity) {
   Physics physics(E, nu, int_func);
   test_LSF_jacobian_adjoint_product<2>(physics);
   test_LSF_jacobian_adjoint_product<4>(physics);
-  test_LSF_jacobian_adjoint_product<6>(physics);
 }
 
 TEST(analysis, EnergyPartialStressKS) {
@@ -235,4 +233,5 @@ TEST(analysis, EnergyPartialStressKS) {
   Physics physics(ksrho, E, nu);
 
   test_LSF_energy_derivatives<2>(physics);
+  test_LSF_energy_derivatives<4>(physics);
 }

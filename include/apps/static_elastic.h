@@ -132,9 +132,7 @@ class StaticElastic final {
   std::vector<T> solve(
       const std::vector<int>& bc_dof, const std::vector<T>& bc_vals,
       const std::tuple<LoadAnalyses...>& load_analyses,
-      std::shared_ptr<SparseUtils::SparseCholesky<T>>* chol_out = nullptr,
-      std::vector<T> rhs_manual = {} /*TODO: delete this*/
-  ) {
+      std::shared_ptr<SparseUtils::SparseCholesky<T>>* chol_out = nullptr) {
     int ndof = Physics::dof_per_node * mesh.get_num_nodes();
 
     // Compute Jacobian matrix
@@ -155,20 +153,6 @@ class StaticElastic final {
         load_analyses);
     for (int i = 0; i < rhs.size(); i++) {
       rhs[i] *= -1.0;
-    }
-
-    // TODO: delete
-    if (rhs_manual.size()) {
-      if (rhs_manual.size() != rhs.size()) {
-        throw std::runtime_error("rhs_manual have different dimension (" +
-                                 std::to_string(rhs_manual.size()) +
-                                 ") than rhs (" + std::to_string(rhs.size()) +
-                                 ")");
-      }
-
-      for (int i = 0; i < rhs.size(); i++) {
-        rhs[i] = rhs_manual[i];
-      }
     }
 
     for (int i = 0; i < bc_dof.size(); i++) {
@@ -412,9 +396,7 @@ class StaticElasticErsatz final {
   std::vector<T> solve(
       const std::vector<int>& bc_dof, const std::vector<T>& bc_vals,
       const std::tuple<LoadAnalyses...>& load_analyses,
-      std::shared_ptr<SparseUtils::SparseCholesky<T>>* chol_out = nullptr,
-      std::vector<T> rhs_manual = {} /*TODO: delete this*/
-  ) {
+      std::shared_ptr<SparseUtils::SparseCholesky<T>>* chol_out = nullptr) {
     int ndof = Physics::dof_per_node * grid.get_num_verts();
 
     // Compute Jacobian matrix
@@ -439,20 +421,6 @@ class StaticElasticErsatz final {
     analysis_r.residual(nullptr, t1.data(), rhs.data());
     for (int i = 0; i < rhs.size(); i++) {
       rhs[i] *= -1.0;
-    }
-
-    // TODO: delete
-    if (rhs_manual.size()) {
-      if (rhs_manual.size() != rhs.size()) {
-        throw std::runtime_error("rhs_manual have different dimension (" +
-                                 std::to_string(rhs_manual.size()) +
-                                 ") than rhs (" + std::to_string(rhs.size()) +
-                                 ")");
-      }
-
-      for (int i = 0; i < rhs.size(); i++) {
-        rhs[i] = rhs_manual[i];
-      }
     }
 
     for (int i = 0; i < bc_dof.size(); i++) {
