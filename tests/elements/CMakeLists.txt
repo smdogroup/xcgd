@@ -1,5 +1,3 @@
-configure_file(${CMAKE_SOURCE_DIR}/tests/elements/step_size_study.py step_size_study.py COPYONLY)
-
 add_executable(test_elements test_elements.cpp)
 add_executable(test_interpolation test_interpolation.cpp)
 add_executable(test_integration test_integration.cpp)
