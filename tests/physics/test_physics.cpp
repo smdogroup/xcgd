@@ -286,7 +286,7 @@ void test_stress_aggregation(
     std::tuple<typename Basis::Mesh *, Quadrature *, Basis *> tuple,
     double h = 1e-30, double tol = 1e-14) {
   using Physics = LinearElasticity2DVonMisesStressAggregation<T>;
-  double ksrho = 45.23;
+  double ksrho = 1.23;
   T E = 15.6, nu = 5.6;
 
   Physics physics(ksrho, E, nu);

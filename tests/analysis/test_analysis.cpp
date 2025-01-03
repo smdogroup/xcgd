@@ -17,6 +17,7 @@
 #include "sparse_utils/sparse_utils.h"
 #include "test_commons.h"
 #include "utils/mesher.h"
+#include "utils/misc.h"
 
 using T = double;
 
@@ -28,8 +29,7 @@ void save_mesh(const Mesh& mesh, std::string vtk_path) {
 }
 
 template <int Np_1d, class Physics>
-T LSF_jacobian_adjoint_product_fd_check(const Physics& physics,
-                                        double dh = 1e-6) {
+T LSF_jacobian_adjoint_product_fd_check(Physics& physics, double dh = 1e-6) {
   using Grid = StructuredGrid2D<T>;
   using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
   using Mesh = CutMesh<T, Np_1d>;
@@ -103,20 +103,30 @@ T LSF_jacobian_adjoint_product_fd_check(const Physics& physics,
   auto [xloc_q, val_q] = analysis.interpolate(
       std::vector<T>(mesh.get_num_nodes() * Physics::dof_per_node, 0.0).data());
   FieldToVTKNew<T, Basis::spatial_dim> field_vtk(
-      "quad_Np_" + std::to_string(Np_1d) + ".vtk");
+      "LSF_jap_quad_Np_" + std::to_string(Np_1d) + ".vtk");
   field_vtk.add_mesh(xloc_q);
   field_vtk.write_mesh();
 
   return relerr;
 }
 
-template <int Np_1d, class Physics>
-T LSF_energy_derivatives_fd_check(const Physics& physics, double dh = 1e-6) {
+template <int Np_1d>
+T LSF_energy_derivatives_fd_check(double dh = 1e-6) {
   using Grid = StructuredGrid2D<T>;
   using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
   using Mesh = CutMesh<T, Np_1d>;
   using Basis = GDBasis2D<T, Mesh>;
+  using Physics = LinearElasticity2DVonMisesStressAggregation<T>;
+  using Stress = LinearElasticity2DVonMisesStress<T>;
+
   using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
+  using StressAnalysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Stress>;
+
+  double ksrho = 1.0;
+  T E = 10.0, nu = 0.3;
+  T yield_stress = 100.0;
+  Physics physics(ksrho, E, nu, yield_stress);
+  Stress stress(E, nu);
 
   int nxy[2] = {13, 9};
   T lxy[2] = {3.0, 2.0};
@@ -130,6 +140,7 @@ T LSF_energy_derivatives_fd_check(const Physics& physics, double dh = 1e-6) {
   Quadrature quadrature(mesh);
 
   Analysis analysis(mesh, quadrature, basis, physics);
+  StressAnalysis stress_analysis(mesh, quadrature, basis, stress);
 
   int ndof = mesh.get_num_nodes() * Physics::dof_per_node;
   int ndv = grid.get_num_verts();
@@ -145,6 +156,10 @@ T LSF_energy_derivatives_fd_check(const Physics& physics, double dh = 1e-6) {
   for (int i = 0; i < ndof; i++) {
     dof[i] = (double)rand() / RAND_MAX;
   }
+
+  auto [xloc_q, stress_q] = stress_analysis.interpolate_energy(dof.data());
+  T max_stress_val = *std::max_element(stress_q.begin(), stress_q.end());
+  physics.set_max_stress_ratio(max_stress_val / yield_stress);
 
   T e1 = analysis.energy(nullptr, dof.data());
   analysis.LSF_energy_derivatives(dof.data(), dfdphi.data());
@@ -175,7 +190,7 @@ T LSF_energy_derivatives_fd_check(const Physics& physics, double dh = 1e-6) {
 }
 
 template <int Np_1d, class Physics>
-void test_LSF_jacobian_adjoint_product(const Physics& physics) {
+void test_LSF_jacobian_adjoint_product(Physics& physics) {
   T relerr_min = 1.0;
   for (double dh :
        std::vector<double>{1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9,
@@ -187,13 +202,13 @@ void test_LSF_jacobian_adjoint_product(const Physics& physics) {
   EXPECT_LE(relerr_min, 1e-6);
 }
 
-template <int Np_1d, class Physics>
-void test_LSF_energy_derivatives(const Physics& physics) {
+template <int Np_1d>
+void test_LSF_energy_derivatives() {
   T relerr_min = 1.0;
   for (double dh :
        std::vector<double>{1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9,
                            1e-10, 1e-11, 1e-12, 1e-13, 1e-14, 1e-15}) {
-    T ret = LSF_energy_derivatives_fd_check<Np_1d, Physics>(physics, dh);
+    T ret = LSF_energy_derivatives_fd_check<Np_1d>(dh);
     if (ret < relerr_min) relerr_min = ret;
   }
 
@@ -226,12 +241,6 @@ TEST(analysis, AdjJacProductElasticity) {
 }
 
 TEST(analysis, EnergyPartialStressKS) {
-  using Physics = LinearElasticity2DVonMisesStressAggregation<T>;
-
-  double ksrho = 12.34;
-  T E = 10.0, nu = 0.3;
-  Physics physics(ksrho, E, nu);
-
-  test_LSF_energy_derivatives<2>(physics);
-  test_LSF_energy_derivatives<4>(physics);
+  test_LSF_energy_derivatives<2>();
+  test_LSF_energy_derivatives<4>();
 }

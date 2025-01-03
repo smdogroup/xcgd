@@ -45,6 +45,16 @@ class LinearElasticity2DVonMisesStress final : public PhysicsBase<T, 2, 0, 2> {
   T vs_max;      // maximum Von Mises stress
 };
 
+/*
+ * Evaluates the approximated maximum Von Mises stress over a domain using
+ * continuous KS aggregation:
+ *
+ *   max s ~= m + 1/ρ * ln(∫exp(ρ * (s - m))dΩ)
+ *
+ * where m = max(s) to prevent floating-point number overflow for exponential, ρ
+ * is the ks parameter, s = Von Mises stress / yield stress
+ *
+ * */
 template <typename T>
 class LinearElasticity2DVonMisesStressAggregation final
     : public PhysicsBase<T, 2, 0, 2> {
@@ -57,13 +67,20 @@ class LinearElasticity2DVonMisesStressAggregation final
   using PhysicsBase_s::spatial_dim;
 
   LinearElasticity2DVonMisesStressAggregation(double ksrho, T E, T nu,
-                                              T vm_max = 0.0)
+                                              T yield_stress,
+                                              T max_stress_ratio = 1.0)
       : ksrho(ksrho),
         mu(0.5 * E / (1.0 + nu)),
         lambda(E * nu / ((1.0 + nu) * (1.0 - nu))),
-        vm_max(vm_max) {}
+        yield_stress(yield_stress),
+        max_stress_ratio(max_stress_ratio) {}
 
-  void set_von_mises_max_stress(T vm_max_) { vm_max = vm_max_; }
+  // Does not effect result, but set a proper value can help preventing
+  // floating-point overflow
+  void set_max_stress_ratio(T max_stress_ratio_) {
+    max_stress_ratio = max_stress_ratio_;
+  }
+  T get_yield_stress() const { return yield_stress; }
   double get_ksrho() { return ksrho; }
 
   T energy(T weight, T _, A2D::Vec<T, spatial_dim>& __,
@@ -79,7 +96,8 @@ class LinearElasticity2DVonMisesStressAggregation final
     A2D::MatTrace(S, trS);
     A2D::MatDet(S, detS);
     von_mises = sqrt(trS * trS - 3.0 * detS);
-    return weight * detJ * exp(ksrho * (von_mises - vm_max));
+    return weight * detJ *
+           exp(ksrho * (von_mises / yield_stress - max_stress_ratio));
   }
 
   void residual(T weight, T _, A2D::Vec<T, spatial_dim>& __,
@@ -102,7 +120,8 @@ class LinearElasticity2DVonMisesStressAggregation final
         A2D::SymIsotropic(mu, lambda, E_obj, S_obj), A2D::MatTrace(S_obj, trS),
         A2D::MatDet(S_obj, detS),
         A2D::Eval(weight * detJ *
-                      exp(ksrho * (sqrt(trS * trS - 3.0 * detS) - vm_max)),
+                      exp(ksrho * (sqrt(trS * trS - 3.0 * detS) / yield_stress -
+                                   max_stress_ratio)),
                   output));
 
     output.bvalue() = 1.0;
@@ -132,14 +151,16 @@ class LinearElasticity2DVonMisesStressAggregation final
         A2D::SymIsotropic(mu, lambda, E_obj, S_obj), A2D::MatTrace(S_obj, trS),
         A2D::MatDet(S_obj, detS),
         A2D::Eval(weight * detJ *
-                      exp(ksrho * (sqrt(trS * trS - 3.0 * detS) - vm_max)),
+                      exp(ksrho * (sqrt(trS * trS - 3.0 * detS) / yield_stress -
+                                   max_stress_ratio)),
                   output));
     output.bvalue() = 1.0;
     stack.hproduct();
   }
 
  private:
-  double ksrho;  // KS aggregation parameter
-  T mu, lambda;  // Lame parameters
-  T vm_max;      // maximum Von Mises stress
+  const double ksrho;  // KS aggregation parameter
+  const T mu, lambda;  // Lame parameters
+  const T yield_stress;
+  T max_stress_ratio;  // maximum Von Mises stress / yield stress
 };
