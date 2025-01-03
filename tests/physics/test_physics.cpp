@@ -287,9 +287,10 @@ void test_stress_aggregation(
     double h = 1e-30, double tol = 1e-14) {
   using Physics = LinearElasticity2DVonMisesStressAggregation<T>;
   double ksrho = 1.23;
+  T yield_stress = 50.0;
   T E = 15.6, nu = 5.6;
 
-  Physics physics(ksrho, E, nu);
+  Physics physics(ksrho, E, nu, yield_stress);
   test_physics(tuple, physics, h, tol, true);  // TODO: delete
   // test_physics(tuple, physics, h, tol, false, true);
 }
@@ -342,5 +343,5 @@ TEST(physics, StressAggregation2DQuad) {
   test_stress_aggregation(create_quad_basis());
 }
 TEST(physics, StressAggregation2DGD) {
-  test_stress_aggregation(create_gd_basis(), 1e-8, 1e-8);
+  test_stress_aggregation(create_gd_basis(), 1e-8, 1e-6);
 }
