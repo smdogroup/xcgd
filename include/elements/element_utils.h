@@ -620,11 +620,7 @@ void add_jac_adj_product(const T N[], const T &x_val, T elem_dfdx[]) {
  * @param jp_ugrad_ref ∂2e/∂(∇_ξ)uq2 * ψq
  * @param elem_dfdphi output, element vector of ψ^T * dR/dφ
  */
-template <typename T, class GDBasis, int dim,
-          /*TODO: These are debug flags, consider removing them later*/
-          bool skip_ajp1 = false, bool skip_ajp3 = false,
-          bool skip_ajp31 = false, bool skip_ajp32 = false,
-          bool skip_ajp33 = false, bool skip_ajp34 = false>
+template <typename T, class GDBasis, int dim>
 void add_jac_adj_product(
     T weight, T detJ, const T wts_grad[], const T pts_grad[],
     const A2D::Vec<T, dim> &psiq,
@@ -698,31 +694,22 @@ void add_jac_adj_product(
 
   for (int n = 0; n < max_nnodes_per_element; n++) {
     // AJP_{1,n}
-    if constexpr (not skip_ajp1) {
-      elem_dfdphi[n] += detJ * dedu_psi * wts_grad[n];
-    }
+    elem_dfdphi[n] += detJ * dedu_psi * wts_grad[n];
 
     // AJP_{2,n} is assumed zero
 
     // AJP_{3,n}
-    if constexpr (not skip_ajp3) {
-      for (int d = 0; d < spatial_dim; d++) {
-        T tmp = 0.0;
-        if constexpr (not skip_ajp31) tmp += jvp_ugrad(d);
-        if constexpr (not skip_ajp32) tmp += jvp_uhess(d);
-        if constexpr (not skip_ajp33) tmp += deriv_grad(d);
-        if constexpr (not skip_ajp34) tmp += deriv_hess(d);
-
-        elem_dfdphi[n] += wdetJ * tmp * pts_grad[spatial_dim * n + d];
-      }
+    for (int d = 0; d < spatial_dim; d++) {
+      elem_dfdphi[n] +=
+          wdetJ *
+          (jvp_ugrad(d) + jvp_uhess(d) + deriv_grad(d) + deriv_hess(d)) *
+          pts_grad[spatial_dim * n + d];
     }
   }
 }
 
 // dim == 1
-template <typename T, class GDBasis,
-          /*TODO: These are debug flags, consider removing them later*/
-          bool skip_ajp1 = false, bool skip_ajp3 = false>
+template <typename T, class GDBasis>
 void add_jac_adj_product(
     T weight, T detJ, const T wts_grad[], const T pts_grad[], T psiq,
     const A2D::Vec<T, GDBasis::spatial_dim> &ugrad_ref,
@@ -777,20 +764,16 @@ void add_jac_adj_product(
 
   for (int n = 0; n < max_nnodes_per_element; n++) {
     // AJP_{1,n}
-    if constexpr (not skip_ajp1) {
-      elem_dfdphi[n] += detJ * dedu_psi * wts_grad[n];
-    }
+    elem_dfdphi[n] += detJ * dedu_psi * wts_grad[n];
 
     // AJP_{2,n} is assumed zero
 
     // AJP_{3,n}
-    if constexpr (not skip_ajp3) {
-      for (int d = 0; d < spatial_dim; d++) {
-        elem_dfdphi[n] +=
-            wdetJ *
-            (jvp_ugrad(d) + jvp_uhess(d) + deriv_grad(d) + deriv_hess(d)) *
-            pts_grad[spatial_dim * n + d];
-      }
+    for (int d = 0; d < spatial_dim; d++) {
+      elem_dfdphi[n] +=
+          wdetJ *
+          (jvp_ugrad(d) + jvp_uhess(d) + deriv_grad(d) + deriv_hess(d)) *
+          pts_grad[spatial_dim * n + d];
     }
   }
 }
