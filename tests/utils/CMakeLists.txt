@@ -15,6 +15,7 @@ target_link_libraries(test_json PRIVATE gtest_main A2D::A2D)
 target_link_libraries(test_misc PRIVATE gtest_main A2D::A2D)
 
 configure_file(${CMAKE_SOURCE_DIR}/tests/utils/test_parser.cfg test_parser.cfg COPYONLY)
+configure_file(${CMAKE_SOURCE_DIR}/tests/utils/test_parser.cfg.json test_parser.cfg.json COPYONLY)
 
 # Make tests auto-testable with CMake ctest
 include(GoogleTest)

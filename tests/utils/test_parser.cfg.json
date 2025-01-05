@@ -1,0 +1,14 @@
+{
+    "cfg": {
+        "foo": "bar",
+        "int_key": "5",
+        "is_false": "False",
+        "is_false_too": "false",
+        "is_true": "True",
+        "is_true_too": "true",
+        "num_key": "4.2",
+        "num_key_2": "1e5",
+        "string_key": "hello/xcgd",
+        "wrong_bool": "Aha"
+    }
+}

@@ -1,5 +1,6 @@
 #include "test_commons.h"
 #include "utils/argparser.h"
+#include "utils/json.h"
 
 TEST(utils, ArgParserPass) {
   ArgParser p;
@@ -60,6 +61,32 @@ TEST(utils, ArgParserFail) {
 
 TEST(utils, CfgParser) {
   ConfigParser parser("test_parser.cfg");
+
+  EXPECT_EQ(parser.get_str_option("string_key"), "hello/xcgd");
+  EXPECT_EQ(parser.get_str_option("foo"), "bar");
+  EXPECT_EQ(parser.get_int_option("int_key"), 5);
+  EXPECT_DOUBLE_EQ(parser.get_double_option("num_key"), 4.2);
+  EXPECT_DOUBLE_EQ(parser.get_double_option("num_key_2"), 100000.0);
+  EXPECT_EQ(parser.get_num_options(), 10);
+  EXPECT_EQ(parser.get_bool_option("is_true"), true);
+  EXPECT_EQ(parser.get_bool_option("is_true_too"), true);
+  EXPECT_EQ(parser.get_bool_option("is_false"), false);
+  EXPECT_EQ(parser.get_bool_option("is_false_too"), false);
+  EXPECT_DEATH({ parser.get_bool_option("wrong_bool"); },
+               "invalid value .* for a boolean option .*");
+
+  // Save cfg to json
+  json j;
+  j["cfg"] = parser.get_options();
+  write_json("test_parser_out.json", j);
+  EXPECT_EQ(read_json("test_parser_out.json"),
+            read_json("test_parser.cfg.json"));
+}
+
+TEST(utils, CfgParserFromMap) {
+  json j = read_json("test_parser.cfg.json");
+  ConfigParser parser;
+  parser.set_options(j["cfg"]);
 
   EXPECT_EQ(parser.get_str_option("string_key"), "hello/xcgd");
   EXPECT_EQ(parser.get_str_option("foo"), "bar");

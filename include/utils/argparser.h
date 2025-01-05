@@ -15,6 +15,8 @@
 #include <string>
 #include <variant>
 
+#include "utils/json.h"
+
 #ifndef PATH_MAX
 #define PATH_MAX 4096
 #endif
@@ -187,6 +189,9 @@ class ArgParser {
 
 class ConfigParser {
  public:
+  ConfigParser() = default;  // Construct an empty parser, options can be set
+                             // via set_options() later
+
   ConfigParser(std::string cfg_path) {
     realpath(cfg_path.c_str(), abs_path);
     bool fail = false;
@@ -220,6 +225,12 @@ class ConfigParser {
 
     if (fail) {
       exit(-1);
+    }
+  }
+
+  void set_options(const json& kvpairs_json) {
+    for (const auto& item : kvpairs_json.items()) {
+      cfg[item.key()] = item.value();
     }
   }
 
@@ -264,6 +275,7 @@ class ConfigParser {
   }
 
   int get_num_options() const { return cfg.size(); }
+  const auto& get_options() const { return cfg; }
 
  private:
   void key_not_found(std::string key) const {
