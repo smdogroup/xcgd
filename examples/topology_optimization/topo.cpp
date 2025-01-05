@@ -916,18 +916,18 @@ class TopoAnalysis {
 template <typename T, class TopoAnalysis>
 class TopoProb : public ParOptProblem {
  public:
-  TopoProb(TopoAnalysis& topo, double area_frac, double stress_ratio_ub,
-           std::string prefix, const ConfigParser& parser)
+  TopoProb(TopoAnalysis& topo, std::string prefix, const ConfigParser& parser)
       : ParOptProblem(MPI_COMM_SELF),
-        nvars(topo.get_prob_mesh().get_nvars()),
-        ncon(2),
-        nineq(2),
         topo(topo),
         prefix(prefix),
         parser(parser),
         domain_area(topo.get_prob_mesh().get_domain_area()),
-        area_frac(area_frac),
-        stress_ratio_ub(stress_ratio_ub) {
+        area_frac(parser.get_double_option("area_frac")),
+        stress_ratio_ub(parser.get_double_option("stress_ratio_upper_bound")),
+        has_stress_constraint(parser.get_bool_option("has_stress_constraint")),
+        nvars(topo.get_prob_mesh().get_nvars()),
+        ncon(has_stress_constraint ? 2 : 1),
+        nineq(ncon) {
     setProblemSizes(nvars, ncon, 0);
     setNumInequalities(nineq, 0);
 
@@ -1021,8 +1021,10 @@ class TopoProb : public ParOptProblem {
     auto [comp, area, pterm, max_stress, max_stress_ratio, ks_stress_ratio, u,
           xloc_q, stress_q] = topo.eval_obj_con(x);
     *fobj = comp + pterm;
-    cons[0] = 1.0 - area / (domain_area * area_frac);   // >= 0
-    cons[1] = 1.0 - ks_stress_ratio / stress_ratio_ub;  // >= 0
+    cons[0] = 1.0 - area / (domain_area * area_frac);  // >= 0
+    if (has_stress_constraint) {
+      cons[1] = 1.0 - ks_stress_ratio / stress_ratio_ub;  // >= 0
+    }
 
     if (counter % parser.get_int_option("write_vtk_every") == 0) {
       // Write design to vtk
@@ -1104,8 +1106,10 @@ class TopoProb : public ParOptProblem {
     Ac[0]->getArray(&c1);
     Ac[0]->zeroEntries();
 
-    Ac[1]->getArray(&c2);
-    Ac[1]->zeroEntries();
+    if (has_stress_constraint) {
+      Ac[1]->getArray(&c2);
+      Ac[1]->zeroEntries();
+    }
 
     std::vector<T> gcomp, garea, gpen, gstress;
     topo.eval_obj_con_gradient(x, gcomp, garea, gpen, gstress);
@@ -1113,12 +1117,17 @@ class TopoProb : public ParOptProblem {
     std::vector<T> gcompr = topo.get_prob_mesh().reduce(gcomp);
     std::vector<T> garear = topo.get_prob_mesh().reduce(garea);
     std::vector<T> gpenr = topo.get_prob_mesh().reduce(gpen);
-    std::vector<T> gstressr = topo.get_prob_mesh().reduce(gstress);
 
     for (int i = 0; i < nvars; i++) {
       g[i] = gcompr[i] + gpenr[i];
       c1[i] = -garear[i] / (domain_area * area_frac);
-      c2[i] = -gstressr[i] / stress_ratio_ub;
+    }
+
+    if (has_stress_constraint) {
+      std::vector<T> gstressr = topo.get_prob_mesh().reduce(gstress);
+      for (int i = 0; i < nvars; i++) {
+        c2[i] = -gstressr[i] / stress_ratio_ub;
+      }
     }
 
     return 0;
@@ -1131,21 +1140,18 @@ class TopoProb : public ParOptProblem {
   }
 
  private:
+  TopoAnalysis& topo;
+  std::string prefix;
+  const ConfigParser& parser;
+  double domain_area = 0.0;
+  double area_frac = 0.0;
+  double stress_ratio_ub = 0.0;
+  bool has_stress_constraint = false;
   int nvars = -1;
   int ncon = -1;
   int nineq = -1;
 
-  TopoAnalysis& topo;
-
-  std::string prefix;
-  const ConfigParser& parser;
-
   int counter = -1;
-
-  double domain_area = 0.0;
-  double area_frac = 0.0;
-  double stress_ratio_ub = 0.0;
-
   bool is_gradient_check = false;
 };
 
@@ -1250,10 +1256,8 @@ void execute(int argc, char* argv[]) {
                     robust_proj_eta,
                     prefix};
 
-  double area_frac = parser.get_double_option("area_frac");
-  double stress_ratio_ub = parser.get_double_option("stress_ratio_upper_bound");
-  TopoProb<T, TopoAnalysis>* prob = new TopoProb<T, TopoAnalysis>(
-      topo, area_frac, stress_ratio_ub, prefix, parser);
+  TopoProb<T, TopoAnalysis>* prob =
+      new TopoProb<T, TopoAnalysis>(topo, prefix, parser);
   prob->incref();
 
   double dh = parser.get_double_option("grad_check_fd_h");

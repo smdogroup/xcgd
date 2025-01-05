@@ -268,9 +268,9 @@ void test_two_sided_problem(std::string prob_json = "") {
   to_vtk.write_vec("sol", sol.data());
 }
 
+template <int Np_1d>
 void test_two_sided_app() {
   using T = double;
-  int constexpr Np_1d = 2;
   using Grid = StructuredGrid2D<T>;
   using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
   using Mesh = CutMesh<T, Np_1d>;
@@ -296,8 +296,10 @@ void test_two_sided_app() {
   Basis basis(mesh);
   StaticApp static_app(E, nu, mesh, quadrature, basis, int_func, 1e-6);
 
-  write_vtk<T>("app_mesh_left.vtk", static_app.get_mesh());
-  write_vtk<T>("app_mesh_right.vtk", static_app.get_mesh_ersatz());
+  write_vtk<T>("app_mesh_left_Np_" + std::to_string(Np_1d) + ".vtk",
+               static_app.get_mesh());
+  write_vtk<T>("app_mesh_right_Np_" + std::to_string(Np_1d) + ".vtk",
+               static_app.get_mesh_ersatz());
 
   // BC
   std::vector<int> bc_nodes = mesh.get_left_boundary_nodes();
@@ -356,7 +358,8 @@ void test_two_sided_app() {
 
   // Export to vtk
   GridMesh<T, Np_1d> gmesh(grid);
-  ToVTK<T, typeof(gmesh)> to_vtk(gmesh, "app_combined.vtk");
+  ToVTK<T, typeof(gmesh)> to_vtk(
+      gmesh, "app_combined_Np_" + std::to_string(Np_1d) + ".vtk");
   to_vtk.write_mesh();
   to_vtk.write_sol("lsf", mesh.get_lsf_dof().data());
   to_vtk.write_vec("sol", sol.data());
@@ -371,5 +374,6 @@ int main(int argc, char* argv[]) {
   std::string prob_json = p.get<std::string>("prob-json");
   test_two_sided_problem(prob_json);
 
-  test_two_sided_app();
+  test_two_sided_app<2>();
+  test_two_sided_app<4>();
 }
