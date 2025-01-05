@@ -9,7 +9,6 @@
 #include "analysis.h"
 #include "elements/gd_mesh.h"
 #include "elements/gd_vandermonde.h"
-#include "physics/cut_bcs.h"
 #include "physics/linear_elasticity.h"
 #include "physics/poisson.h"
 #include "sparse_utils/sparse_utils.h"
@@ -374,9 +373,9 @@ void execute_accuracy_study(std::string prefix, ProbInstance instance,
                        typeof(elasticity_int_fun)>>::type;
   using PhysicsBCs = typename std::conditional<
       physics_type == PhysicsType::Poisson,
-      CutDirichlet<T, Basis::spatial_dim, typeof(poisson_bc_fun)>,
-      VectorCutDirichlet<T, Basis::spatial_dim, Basis::spatial_dim,
-                         typeof(elasticity_bc_fun)>>::type;
+      PoissonCutDirichlet<T, Basis::spatial_dim, typeof(poisson_bc_fun)>,
+      LinearElasticityCutDirichlet<T, Basis::spatial_dim, Basis::spatial_dim,
+                                   typeof(elasticity_bc_fun)>>::type;
 
   using AnalysisBulk =
       GalerkinAnalysis<T, Mesh, QuadratureBulk, Basis, PhysicsBulk>;

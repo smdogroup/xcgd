@@ -9,8 +9,8 @@
 #include "elements/fe_tetrahedral.h"
 #include "elements/gd_mesh.h"
 #include "elements/gd_vandermonde.h"
-#include "physics/cut_bcs.h"
 #include "physics/linear_elasticity.h"
+#include "physics/poisson.h"
 #include "sparse_utils/sparse_utils.h"
 #include "test_commons.h"
 #include "utils/mesher.h"
@@ -167,13 +167,13 @@ create_gd_lsf_surf_basis() {
 }
 
 template <class Quadrature, class Basis>
-void test_cut_dirichlet(
+void test_poisson_cut_dirichlet(
     std::tuple<typename Basis::Mesh *, Quadrature *, Basis *> tuple,
     double h = 1e-5, double tol = 1e-12) {
   auto bc_fun = [](const A2D::Vec<T, Basis::spatial_dim> &xloc) {
     return xloc(0) * xloc(0) + xloc(1) * xloc(1);
   };
-  using Physics = CutDirichlet<T, Basis::spatial_dim, typeof(bc_fun)>;
+  using Physics = PoissonCutDirichlet<T, Basis::spatial_dim, typeof(bc_fun)>;
   Physics physics(1.23, bc_fun);
   test_physics_fd(tuple, physics, h, tol);
 }
@@ -214,7 +214,7 @@ void test_elasticity_external_load(
 }
 
 template <class Quadrature, class Basis>
-void test_vector_cut_dirichlet(
+void test_linear_elasticity_cut_dirichlet(
     std::tuple<typename Basis::Mesh *, Quadrature *, Basis *> tuple,
     double h = 1e-5, double tol = 1e-10) {
   constexpr int dim = 4;
@@ -223,17 +223,18 @@ void test_vector_cut_dirichlet(
                            xloc(0) - xloc(1)};
     return A2D::Vec<T, dim>(data.data());
   };
-  using Physics = VectorCutDirichlet<T, Basis::spatial_dim, 4, typeof(bc_fun)>;
+  using Physics =
+      LinearElasticityCutDirichlet<T, Basis::spatial_dim, 4, typeof(bc_fun)>;
   Physics physics(1.23, bc_fun);
   test_physics_fd(tuple, physics, h, tol);
 }
 
-TEST(physics, CutDirichlet) {
-  test_cut_dirichlet(create_gd_lsf_surf_basis(), 1e-5, 1e-10);
+TEST(physics, PoissonCutDirichlet) {
+  test_poisson_cut_dirichlet(create_gd_lsf_surf_basis(), 1e-5, 1e-10);
 }
 
-TEST(physics, VectorCutDirichlet) {
-  test_vector_cut_dirichlet(create_gd_lsf_surf_basis());
+TEST(physics, LinearElasticityCutDirichlet) {
+  test_linear_elasticity_cut_dirichlet(create_gd_lsf_surf_basis());
 }
 
 TEST(physics, ElasticityExternalLoad) {

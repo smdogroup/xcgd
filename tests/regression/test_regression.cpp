@@ -5,7 +5,6 @@
 #include "apps/poisson_app.h"
 #include "apps/static_elastic.h"
 #include "elements/gd_vandermonde.h"
-#include "physics/cut_bcs.h"
 #include "test_commons.h"
 #include "utils/json.h"
 #include "utils/loggers.h"
@@ -249,7 +248,7 @@ void verify_nitsche_poisson(double tol = 1e-20, double nitsche_eta = 1e8) {
   };
 
   using PoissonBulk = PoissonPhysics<T, Basis::spatial_dim, typeof(source_fun)>;
-  using PoissonBCs = CutDirichlet<T, Basis::spatial_dim, typeof(bc_fun)>;
+  using PoissonBCs = PoissonCutDirichlet<T, Basis::spatial_dim, typeof(bc_fun)>;
 
   using AnalysisBulk =
       GalerkinAnalysis<T, Mesh, QuadratureBulk, Basis, PoissonBulk>;

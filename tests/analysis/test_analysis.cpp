@@ -9,7 +9,6 @@
 #include "elements/fe_tetrahedral.h"
 #include "elements/gd_mesh.h"
 #include "elements/gd_vandermonde.h"
-#include "physics/cut_bcs.h"
 #include "physics/linear_elasticity.h"
 #include "physics/poisson.h"
 #include "physics/stress.h"

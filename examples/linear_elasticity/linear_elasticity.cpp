@@ -10,7 +10,6 @@
 #include "elements/element_commons.h"
 #include "elements/fe_quadrilateral.h"
 #include "elements/gd_vandermonde.h"
-#include "physics/cut_bcs.h"
 #include "sparse_utils/sparse_utils.h"
 #include "utils/mesher.h"
 #include "utils/vtk.h"
@@ -218,8 +217,8 @@ void solve_linear_elasticity_nitsche() {
   };
 
   using PhysicsBCs =
-      VectorCutDirichlet<T, Basis::spatial_dim, PhysicsBulk::dof_per_node,
-                         typeof(bc_fun)>;
+      LinearElasticityCutDirichlet<T, Basis::spatial_dim,
+                                   PhysicsBulk::dof_per_node, typeof(bc_fun)>;
 
   using AnalysisBulk =
       GalerkinAnalysis<T, Mesh, QuadratureBulk, Basis, PhysicsBulk>;
