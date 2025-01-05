@@ -694,12 +694,7 @@ class TopoAnalysis {
     std::fill(gstress.begin(), gstress.end(), 0.0);
 
     // Explicit partials
-    if constexpr (use_ersatz) {
-      std::vector<T> sol0 = grid_dof_to_cut_dof<spatial_dim>(sol);
-      stress_ks_analysis.LSF_energy_derivatives(sol0.data(), gstress.data());
-    } else {
-      stress_ks_analysis.LSF_energy_derivatives(sol.data(), gstress.data());
-    }
+    stress_ks_analysis.LSF_energy_derivatives(sol.data(), gstress.data());
 
     // Implicit derivatives via the adjoint variables
     elastic.get_analysis().LSF_jacobian_adjoint_product(
