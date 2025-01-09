@@ -246,10 +246,9 @@ class StaticElasticErsatz final {
       2 * Mesh::max_nnodes_per_element;
 
  public:
-  StaticElasticErsatz(
-      T E, T nu, Mesh& mesh, Quadrature& quadrature, Basis& basis,
-      const IntFunc& int_func,
-      double ersatz_ratio = 1.234)  // TODO: change it back to 1e-6
+  StaticElasticErsatz(T E, T nu, Mesh& mesh, Quadrature& quadrature,
+                      Basis& basis, const IntFunc& int_func,
+                      double ersatz_ratio = 1e-6)
       : grid(mesh.get_grid()),
         mesh_l(mesh),
         mesh_r(grid),

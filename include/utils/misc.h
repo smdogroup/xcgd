@@ -122,4 +122,10 @@ void write_vec(const std::string fname, int size, const Vec& vec) {
   std::fclose(fp);
 }
 
+inline void xcgd_assert(bool condition, std::string message) {
+  if (not condition) {
+    throw std::runtime_error(message);
+  }
+}
+
 #endif  // XCGD_MISC_H

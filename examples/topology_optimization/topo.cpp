@@ -269,12 +269,21 @@ class LbracketGridMesh final
         loaded_frac(loaded_frac),
         domain_area(lxy[0] * lxy[1] *
                     (1.0 - (1.0 - lbracket_frac) * (1.0 - lbracket_frac))) {
-    // Find loaded cells and verts
-    for (int iy = 0; iy < ny1; iy++) {
+    // // Find loaded cells and verts
+    // for (int iy = 0; iy < ny1; iy++) {
+    //   T xloc[Grid::spatial_dim];
+    //   int c = this->grid.get_coords_cell(nx1 - 1, iy);
+    //   this->grid.get_cell_xloc(c, xloc);
+    //   if (xloc[1] >= ly1 - lxy[1] * loaded_frac and xloc[1] <= ly1) {
+    //     loaded_cells.insert(c);
+    //   }
+    // }
+
+    for (int ix = 0; ix < nx1; ix++) {
       T xloc[Grid::spatial_dim];
-      int c = this->grid.get_coords_cell(nx1 - 1, iy);
+      int c = this->grid.get_coords_cell(ix, ny1 - 1);
       this->grid.get_cell_xloc(c, xloc);
-      if (xloc[1] >= ly1 - lxy[1] * loaded_frac and xloc[1] <= ly1) {
+      if (xloc[0] >= lx1 * (1.0 - loaded_frac) and xloc[0] <= lx1) {
         loaded_cells.insert(c);
       }
     }
@@ -282,8 +291,8 @@ class LbracketGridMesh final
     for (int cell : loaded_cells) {
       int verts[Grid::nverts_per_cell];
       this->grid.get_cell_verts(cell, verts);
-      loaded_verts.insert(verts[1]);
       loaded_verts.insert(verts[2]);
+      loaded_verts.insert(verts[3]);
     }
 
     N = this->grid.get_num_verts();
@@ -385,7 +394,7 @@ class TopoAnalysis {
   using LoadPhysics =
       ElasticityExternalLoad<T, Basis::spatial_dim, typeof(load_func)>;
   using LoadQuadrature =
-      GDGaussQuadrature2D<T, Np_1d, QuadPtType::SURFACE, SurfQuad::RIGHT, Mesh>;
+      GDGaussQuadrature2D<T, Np_1d, QuadPtType::SURFACE, SurfQuad::TOP, Mesh>;
   using LoadAnalysis =
       GalerkinAnalysis<T, Mesh, LoadQuadrature, Basis, LoadPhysics, use_ersatz>;
 
@@ -394,7 +403,7 @@ class TopoAnalysis {
  public:
   TopoAnalysis(ProbMesh& prob_mesh, T r0, T E, T nu, T penalty, T stress_ksrho,
                T yield_stress, bool use_robust_projection, double proj_beta,
-               double proj_eta, std::string prefix)
+               double proj_eta, std::string prefix, double compliance_scalar)
       : prob_mesh(prob_mesh),
         grid(prob_mesh.get_grid()),
         mesh(prob_mesh.get_mesh()),
@@ -412,7 +421,8 @@ class TopoAnalysis {
         stress_ks_analysis(mesh, quadrature, basis, stress_ks),
         phi(mesh.get_lsf_dof()),
         prefix(prefix),
-        cache({{"x", {}}, {"sol", {}}, {"chol", nullptr}}) {
+        cache({{"x", {}}, {"sol", {}}, {"chol", nullptr}}),
+        compliance_scalar(compliance_scalar) {
     // Get loaded cells
     loaded_cells = prob_mesh.get_loaded_cells();
   }
@@ -548,7 +558,8 @@ class TopoAnalysis {
     std::vector<T> sol = update_mesh_and_solve(x, &chol);
 
     T comp = std::inner_product(sol.begin(), sol.end(),
-                                elastic.get_rhs().begin(), T(0.0));
+                                elastic.get_rhs().begin(), T(0.0)) *
+             compliance_scalar;
 
     std::vector<T> dummy(mesh.get_num_nodes(), 0.0);
     T area = vol_analysis.energy(nullptr, dummy.data());
@@ -560,7 +571,7 @@ class TopoAnalysis {
     stress_ks.set_max_stress_ratio(max_stress_ratio);
     T ks_energy = stress_ks_analysis.energy(nullptr, sol.data());
     T ks_stress_ratio =
-        log(ks_energy / area) / stress_ks.get_ksrho() + max_stress_ratio;
+        log(ks_energy) / stress_ks.get_ksrho() + max_stress_ratio;
 
     // Save information
     cache["x"] = x;
@@ -679,6 +690,9 @@ class TopoAnalysis {
           sol.data(), sol.data() /*this is effectively -psi*/, gcomp.data());
     }
     filter.applyGradient(x.data(), gcomp.data(), gcomp.data());
+    std::transform(
+        gcomp.begin(), gcomp.end(), gcomp.begin(),
+        [this](const T& val) { return val * this->compliance_scalar; });
 
     garea.resize(x.size());
     std::fill(garea.begin(), garea.end(), 0.0);
@@ -709,8 +723,9 @@ class TopoAnalysis {
     // Now gstress is really just denergy/dx, next, compute dks/dx:
     // dks/dx = (1.0 / energy * denergy/dx - 1.0 / area * darea/dx) / rho
     for (int i = 0; i < gstress.size(); i++) {
-      gstress[i] =
-          (gstress[i] / ks_energy - garea[i] / area) / stress_ks.get_ksrho();
+      // gstress[i] =
+      //     (gstress[i] / ks_energy - garea[i] / area) / stress_ks.get_ksrho();
+      gstress[i] = (gstress[i] / ks_energy) / stress_ks.get_ksrho();
     }
   }
 
@@ -861,19 +876,14 @@ class TopoAnalysis {
     }
   }
 
-  void write_prob_json(const std::string json_path,
-                       const ConfigParser& parser) {
+  void write_prob_json(const std::string json_path, const ConfigParser& parser,
+                       const std::vector<T>& x) {
     json j;
-    j["Np_1d"] = parser.get_int_option("Np_1d");
-    j["E"] = parser.get_double_option("E");
-    j["nu"] = parser.get_double_option("nu");
-    j["nx"] = parser.get_int_option("nx");
-    j["ny"] = parser.get_int_option("ny");
-    j["lx"] = parser.get_double_option("lx");
-    j["ly"] = parser.get_double_option("ly");
+    j["cfg"] = parser.get_options();
     j["lsf_dof"] = mesh.get_lsf_dof();
     j["bc_dof"] = bc_dof;
     j["loaded_cells"] = loaded_cells;
+    j["dvs"] = x;
     write_json(json_path, j);
   }
 
@@ -911,6 +921,7 @@ class TopoAnalysis {
            std::variant<T, std::vector<T>,
                         std::shared_ptr<SparseUtils::SparseCholesky<T>>>>
       cache;
+  double compliance_scalar;
 };
 
 template <typename T, class TopoAnalysis>
@@ -925,6 +936,11 @@ class TopoProb : public ParOptProblem {
         area_frac(parser.get_double_option("area_frac")),
         stress_ratio_ub(parser.get_double_option("stress_ratio_upper_bound")),
         has_stress_constraint(parser.get_bool_option("has_stress_constraint")),
+        has_stress_objective(parser.get_bool_option("has_stress_objective")),
+        stress_objective_scalar(
+            parser.get_double_option("stress_objective_scalar")),
+        stress_objective_theta(
+            parser.get_double_option("stress_objective_theta")),
         nvars(topo.get_prob_mesh().get_nvars()),
         ncon(has_stress_constraint ? 2 : 1),
         nineq(ncon) {
@@ -938,26 +954,29 @@ class TopoProb : public ParOptProblem {
     reset_counter();
   }
 
-  void print_progress(T comp, T pterm, T vol_frac, T max_stress,
+  void print_progress(T obj, T comp, T pterm, T vol_frac, T max_stress,
                       T max_stress_ratio, T ks_stress_ratio,
                       int header_every = 10) {
     std::ofstream progress_file(fspath(prefix) / fspath("optimization.log"),
                                 std::ios::app);
-    if (counter % header_every == 1) {
+    if (counter % header_every == 0) {
       char phead[30];
-      std::snprintf(phead, 30, "gradx penalty(c:%9.2e)",
+      std::snprintf(phead, 20, "pen(c:%8.1e)",
                     parser.get_double_option("grad_penalty_coeff"));
       char line[2048];
-      std::snprintf(line, 2048, "\n%5s%20s%30s%20s%20s%20s%20s\n", "iter",
-                    "comp", phead, "vol (\%)", "stress_max", "stress_ratio_max",
-                    "stress_ratio_ks");
+      std::snprintf(line, 2048, "\n%5s%20s%20s%20s%15s%20s%20s%20s%15s\n",
+                    "iter", "obj", "comp", phead, "vol (\%)", "stress_max",
+                    "stress_ratio_max", "stress_ratio_ks", "ks relerr(\%)");
       std::cout << line;
       progress_file << line;
     }
     char line[2048];
-    std::snprintf(line, 2048, "%5d%20.10e%30.10e%20.5f%20.10e%20.10e%20.10e\n",
-                  counter, comp, pterm, 100.0 * vol_frac, max_stress,
-                  max_stress_ratio, ks_stress_ratio);
+    std::snprintf(
+        line, 2048,
+        "%5d%20.10e%20.10e%20.10e%15.5f%20.10e%20.10e%20.10e%15.5f\n", counter,
+        obj, comp, pterm, 100.0 * vol_frac, max_stress, max_stress_ratio,
+        ks_stress_ratio,
+        (ks_stress_ratio - max_stress_ratio) / max_stress_ratio * 100.0);
     std::cout << line;
     progress_file << line;
     progress_file.close();
@@ -980,11 +999,38 @@ class TopoProb : public ParOptProblem {
     lbvec->getArray(&lb);
     ubvec->getArray(&ub);
 
-    std::vector<T> x0 = topo.create_initial_topology(
-        parser.get_int_option("init_topology_nholes_x"),
-        parser.get_int_option("init_topology_nholes_y"),
-        parser.get_double_option("init_topology_r"),
-        parser.get_bool_option("init_topology_cell_center"));
+    // Set initial design
+    std::vector<T> x0;
+    std::string init_topo_json_path =
+        parser.get_str_option("init_topology_from_json");
+    if (!init_topo_json_path.empty()) {
+      json j = read_json(init_topo_json_path);
+      json j_this(parser.get_options());
+
+      // Sanity checks to make sure the input json has the same basic settings
+      // as the current case
+
+      for (std::string key :
+           std::vector<std::string>{"instance", "nx", "ny", "lx", "ly"}) {
+        xcgd_assert(j["cfg"][key] == j_this[key], key + "mismatch");
+      }
+
+      x0 = std::vector<T>(j["dvs"]);
+      xcgd_assert(x0.size() == nvars,
+                  "design variable dimension mismatch, expect " +
+                      std::to_string(nvars) + ", got " +
+                      std::to_string(x0.size()));
+
+    }
+
+    else {
+      x0 = topo.create_initial_topology(
+          parser.get_int_option("init_topology_nholes_x"),
+          parser.get_int_option("init_topology_nholes_y"),
+          parser.get_double_option("init_topology_r"),
+          parser.get_bool_option("init_topology_cell_center"));
+    }
+
     std::vector<T> x0r = topo.get_prob_mesh().reduce(x0);
 
     // update mesh and bc dof, but don't perform the linear solve
@@ -1005,22 +1051,29 @@ class TopoProb : public ParOptProblem {
   }
 
   int evalObjCon(ParOptVec* xvec, T* fobj, T* cons) {
-    // Save the elastic problem instance to json
-    if (counter % parser.get_int_option("save_prob_json_every") == 0) {
-      std::string json_path = fspath(prefix) / fspath("json") /
-                              ((is_gradient_check ? "fdcheck_" : "opt_") +
-                               std::to_string(counter) + ".json");
-      topo.write_prob_json(json_path, parser);
-    }
-
     T* xptr;
     xvec->getArray(&xptr);
     std::vector<T> xr(xptr, xptr + nvars);
     std::vector<T> x = topo.get_prob_mesh().expand(xr);
 
+    // Save the elastic problem instance to json
+    if (counter % parser.get_int_option("save_prob_json_every") == 0) {
+      std::string json_path = fspath(prefix) / fspath("json") /
+                              ((is_gradient_check ? "fdcheck_" : "opt_") +
+                               std::to_string(counter) + ".json");
+      topo.write_prob_json(json_path, parser, x);
+    }
+
     auto [comp, area, pterm, max_stress, max_stress_ratio, ks_stress_ratio, u,
           xloc_q, stress_q] = topo.eval_obj_con(x);
-    *fobj = comp + pterm;
+    if (has_stress_objective) {
+      *fobj =
+          (1.0 - stress_objective_theta) * comp +
+          stress_objective_theta * stress_objective_scalar * ks_stress_ratio +
+          pterm;
+    } else {
+      *fobj = comp + pterm;
+    }
     cons[0] = 1.0 - area / (domain_area * area_frac);  // >= 0
     if (has_stress_constraint) {
       cons[1] = 1.0 - ks_stress_ratio / stress_ratio_ub;  // >= 0
@@ -1065,13 +1118,30 @@ class TopoProb : public ParOptProblem {
       vtk_name = "fdcheck_grid_" + std::to_string(counter) + ".vtk";
       std::vector<T> dvr(nvars, 0.0);
       std::vector<T> dv = topo.get_prob_mesh().expand(dvr);
+
+      std::vector<T> vert_loaded_or_not(
+          topo.get_prob_mesh().get_grid().get_num_verts(), 0.0);
+      for (int i : topo.get_prob_mesh().get_loaded_verts()) {
+        vert_loaded_or_not[i] = 1.0;
+      }
+
+      std::vector<T> cell_loaded_or_not(
+          topo.get_prob_mesh().get_grid().get_num_cells(), 0.0);
+      for (int i : topo.get_prob_mesh().get_loaded_cells()) {
+        cell_loaded_or_not[i] = 1.0;
+      }
+
       if constexpr (TopoAnalysis::use_ersatz) {
         topo.write_grid_vtk(fspath(prefix) / fspath(vtk_name), x,
-                            topo.get_phi(), {{"dv", dv}}, {},
+                            topo.get_phi(),
+                            {{"dv", dv}, {"loaded_verts", vert_loaded_or_not}},
+                            {{"loaded_cells", cell_loaded_or_not}},
                             {{"displacement", u}, {"rhs", topo.get_rhs()}}, {});
       } else {
         topo.write_grid_vtk(fspath(prefix) / fspath(vtk_name), x,
-                            topo.get_phi(), {{"dv", dv}}, {}, {}, {});
+                            topo.get_phi(),
+                            {{"dv", dv}, {"loaded_verts", vert_loaded_or_not}},
+                            {{"loaded_cells", cell_loaded_or_not}}, {}, {});
       }
 
       vtk_name = "fdcheck_cut_" + std::to_string(counter) + ".vtk";
@@ -1085,7 +1155,7 @@ class TopoProb : public ParOptProblem {
     }
 
     // print optimization progress
-    print_progress(comp, pterm, area / domain_area, max_stress,
+    print_progress(*fobj, comp, pterm, area / domain_area, max_stress,
                    max_stress_ratio, ks_stress_ratio);
 
     counter++;
@@ -1117,14 +1187,29 @@ class TopoProb : public ParOptProblem {
     std::vector<T> gcompr = topo.get_prob_mesh().reduce(gcomp);
     std::vector<T> garear = topo.get_prob_mesh().reduce(garea);
     std::vector<T> gpenr = topo.get_prob_mesh().reduce(gpen);
+    std::vector<T> gstressr;
+
+    if (has_stress_objective or has_stress_constraint) {
+      gstressr = topo.get_prob_mesh().reduce(gstress);
+    }
+
+    if (has_stress_objective) {
+      T a = 1.0 - stress_objective_theta;
+      T b = stress_objective_theta * stress_objective_scalar;
+      for (int i = 0; i < nvars; i++) {
+        g[i] = a * gcompr[i] + b * gstressr[i] + gpenr[i];
+      }
+    } else {
+      for (int i = 0; i < nvars; i++) {
+        g[i] = gcompr[i] + gpenr[i];
+      }
+    }
 
     for (int i = 0; i < nvars; i++) {
-      g[i] = gcompr[i] + gpenr[i];
       c1[i] = -garear[i] / (domain_area * area_frac);
     }
 
     if (has_stress_constraint) {
-      std::vector<T> gstressr = topo.get_prob_mesh().reduce(gstress);
       for (int i = 0; i < nvars; i++) {
         c2[i] = -gstressr[i] / stress_ratio_ub;
       }
@@ -1147,6 +1232,9 @@ class TopoProb : public ParOptProblem {
   double area_frac = 0.0;
   double stress_ratio_ub = 0.0;
   bool has_stress_constraint = false;
+  bool has_stress_objective = false;
+  double stress_objective_scalar = 0.0;
+  double stress_objective_theta = 0.0;
   int nvars = -1;
   int ncon = -1;
   int nineq = -1;
@@ -1243,6 +1331,7 @@ void execute(int argc, char* argv[]) {
   T penalty = parser.get_double_option("grad_penalty_coeff");
   T stress_ksrho = parser.get_double_option("stress_ksrho");
   T yield_stress = parser.get_double_option("yield_stress");
+  double compliance_scalar = parser.get_double_option("compliance_scalar");
 
   TopoAnalysis topo{*prob_mesh,
                     r0,
@@ -1254,7 +1343,8 @@ void execute(int argc, char* argv[]) {
                     use_robust_projection,
                     robust_proj_beta,
                     robust_proj_eta,
-                    prefix};
+                    prefix,
+                    compliance_scalar};
 
   TopoProb<T, TopoAnalysis>* prob =
       new TopoProb<T, TopoAnalysis>(topo, prefix, parser);
