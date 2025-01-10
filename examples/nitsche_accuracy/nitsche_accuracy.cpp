@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <cassert>
 #include <exception>
 #include <memory>
@@ -11,7 +10,6 @@
 #include "elements/gd_vandermonde.h"
 #include "physics/linear_elasticity.h"
 #include "physics/poisson.h"
-#include "sparse_utils/sparse_utils.h"
 #include "utils/argparser.h"
 #include "utils/json.h"
 #include "utils/loggers.h"
@@ -130,17 +128,9 @@ void write_vtk(std::string vtkpath, PhysicsType physics_type, const Mesh& mesh,
   }
 
   if (save_stencils) {
-    for (auto e : degenerate_stencils) {
-      int elem = e.first;
-      std::vector<int> nodes = e.second;
-      std::vector<T> dof(mesh.get_num_nodes(), 0.0);
-      for (int n : nodes) {
-        dof[n] = 1.0;
-      }
-      char name[256];
-      std::snprintf(name, 256, "degenerate_stencil_elem_%05d", elem);
-      vtk.write_sol(name, dof.data());
-    }
+    auto [base, suffix] = split_path(vtkpath);
+    StencilToVTK<T, Mesh> stencil_vtk(mesh, base + "_degen_stencils" + suffix);
+    stencil_vtk.write_stencils(degenerate_stencils);
   }
 }
 
@@ -590,7 +580,7 @@ int main(int argc, char* argv[]) {
   DegenerateStencilLogger::enable();
 
   ArgParser p;
-  p.add_argument<int>("--save-degenerate-stencils", 0);
+  p.add_argument<int>("--save-degenerate-stencils", 1);
   p.add_argument<int>("--consistency-check", 1);
   p.add_argument<int>("--Np_1d", 2);
   p.add_argument<int>("--nxy", 64);

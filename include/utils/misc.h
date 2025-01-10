@@ -128,4 +128,15 @@ inline void xcgd_assert(bool condition, std::string message) {
   }
 }
 
+inline auto split_path(std::string path) {
+  size_t lastDot = path.rfind('.');
+
+  std::string base =
+      lastDot == std::string::npos ? path : path.substr(0, lastDot);
+  std::string suffix =
+      lastDot == std::string::npos ? "" : path.substr(lastDot, path.size());
+
+  return std::make_tuple(base, suffix);
+}
+
 #endif  // XCGD_MISC_H

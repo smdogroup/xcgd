@@ -857,7 +857,7 @@ class TopoAnalysis {
     vtk.write_cell_sol("cond", conds.data());
 
     std::vector<double> nstencils(mesh.get_num_elements(),
-                                  Mesh::Np_1d * Mesh::Np_1d);
+                                  Mesh::max_nnodes_per_element);
     auto degenerate_stencils = DegenerateStencilLogger::get_stencils();
     for (auto e : degenerate_stencils) {
       int elem = e.first;
@@ -874,6 +874,11 @@ class TopoAnalysis {
       }
       vtk.write_cell_vec(name, vals.data());
     }
+
+    // Save degenerate stencils
+    auto [base, suffix] = split_path(vtk_path);
+    StencilToVTK<T, Mesh> stencil_vtk(mesh, base + "_degen_stencils" + suffix);
+    stencil_vtk.write_stencils(degenerate_stencils);
   }
 
   void write_prob_json(const std::string json_path, const ConfigParser& parser,

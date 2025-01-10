@@ -466,4 +466,91 @@ class FieldToVTKNew {
   bool vtk_has_nodal_sol_header = false;
 };
 
+// Save stencils for selected elements to vtk
+template <typename T, class Mesh>
+class StencilToVTK {
+ private:
+  static constexpr int spatial_dim = Mesh::spatial_dim;
+
+ public:
+  StencilToVTK(const Mesh& mesh, const std::string vtk_name = "stencils.vtk")
+      : mesh(mesh) {
+    // Open file and destroy old contents
+    fp = std::fopen(vtk_name.c_str(), "w+");
+
+    if (spatial_dim != 2 and spatial_dim != 3) {
+      char msg[256];
+      std::snprintf(msg, sizeof(msg),
+                    "Invalid spatial_dim, got %d, expect 2 or 3", spatial_dim);
+      throw std::runtime_error(msg);
+    }
+
+    // Write xloc of nodes
+    write_nodes();
+  }
+
+  ~StencilToVTK() {
+    // Close file
+    std::fclose(fp);
+  }
+
+  void write_stencils(std::map<int, std::vector<int>>& stencils) {
+    int nelems = mesh.get_num_elements();
+    int poly_data_size = nelems;
+    for (const auto& [elem, nodes] : stencils) {
+      poly_data_size += nodes.size();
+    }
+
+    // Connectivity
+    std::fprintf(fp, "CELLS %d %d\n", nelems, poly_data_size);
+    for (int elem = 0; elem < nelems; elem++) {
+      if (stencils.count(elem)) {
+        std::fprintf(fp, "%zu ", stencils[elem].size());
+        for (int n : stencils[elem]) {
+          std::fprintf(fp, "%d ", n);
+        }
+        std::fprintf(fp, "\n");
+      } else {
+        std::fprintf(fp, "0\n");
+      }
+    }
+
+    // Cell types are all polygons
+    std::fprintf(fp, "CELL_TYPES %d\n", nelems);
+    for (int elem = 0; elem < nelems; elem++) {
+      std::fprintf(fp, "%d\n", VTKID::POLYGON);
+    }
+  }
+
+ private:
+  void write_nodes() const {
+    // Write header
+    std::fprintf(fp, "# vtk DataFile Version 3.0\n");
+    std::fprintf(fp, "my example\n");
+    std::fprintf(fp, "ASCII\n");
+    std::fprintf(fp, "DATASET UNSTRUCTURED_GRID\n");
+
+    // Write nodes
+    std::fprintf(fp, "POINTS %d double\n", mesh.get_num_nodes());
+    for (int i = 0; i < mesh.get_num_nodes(); i++) {
+      T xloc[spatial_dim];
+      mesh.get_node_xloc(i, xloc);
+      if constexpr (spatial_dim == 2) {
+        write_real_val(fp, xloc[0]);
+        write_real_val(fp, xloc[1]);
+        write_real_val(fp, 0.0);
+        std::fprintf(fp, "\n");
+      } else {
+        write_real_val(fp, xloc[0]);
+        write_real_val(fp, xloc[1]);
+        write_real_val(fp, xloc[2]);
+        std::fprintf(fp, "\n");
+      }
+    }
+  }
+
+  const Mesh& mesh;
+  std::FILE* fp = nullptr;
+};
+
 #endif  // XCGD_VTK_H
