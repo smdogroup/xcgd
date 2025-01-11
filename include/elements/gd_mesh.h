@@ -590,6 +590,8 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
 #endif
   }
 
+  void update_mesh_new() {}
+
   inline const std::unordered_map<int, int>& get_vert_nodes() const {
     return vert_nodes;
   }
