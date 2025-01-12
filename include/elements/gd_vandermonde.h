@@ -147,8 +147,7 @@ class VandermondeEvaluator {
   VandermondeEvaluator(const Mesh& mesh, int elem, bool reorder_nodes = false)
       : mesh(mesh), reorder_nodes(reorder_nodes) {
     int nodes[Np_1d * Np_1d];
-    std::vector<std::vector<bool>> pstencil;
-    nnodes = mesh.get_elem_dof_nodes(elem, nodes, &pstencil);
+    nnodes = mesh.get_elem_dof_nodes(elem, nodes);
 
     std::vector<int> perm, _;
     if (reorder_nodes) {
@@ -185,6 +184,7 @@ class VandermondeEvaluator {
     //     pterms.push_back({i, j});
     //   }
     // }
+    std::vector<std::vector<bool>> pstencil = mesh.get_elem_pstencil(elem);
     pterms = pstencil_to_pterms<Np_1d>(pstencil);
 
     std::vector<T> xpows(Np_1d), ypows(Np_1d);

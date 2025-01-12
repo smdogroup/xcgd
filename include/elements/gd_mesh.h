@@ -269,21 +269,20 @@ class GridMesh : public GDMeshBase<T, Np_1d, Grid_> {
    * @param elem element index
    * @param nodes dof node indices, length: max_nnodes_per_element
    */
-  int get_elem_dof_nodes(
-      int elem, int* nodes,
-      std::vector<std::vector<bool>>* pstencil = nullptr) const {
-    if (pstencil) {
-      pstencil->clear();
-      pstencil->resize(Np_1d);
-      for (int I = 0; I < Np_1d; I++) {
-        (*pstencil)[I] = std::vector<bool>(Np_1d, false);
-        for (int J = 0; J < Np_1d; J++) {
-          (*pstencil)[I][J] = true;
-        }
-      }
-    }
+  int get_elem_dof_nodes(int elem, int* nodes) const {
     this->grid.template get_cell_ground_stencil<Np_1d>(elem, nodes);
     return max_nnodes_per_element;
+  }
+
+  std::vector<std::vector<bool>> get_elem_pstencil(int elem) const {
+    std::vector<std::vector<bool>> pstencil(Np_1d);
+    for (int I = 0; I < Np_1d; I++) {
+      pstencil[I] = std::vector<bool>(Np_1d, false);
+      for (int J = 0; J < Np_1d; J++) {
+        pstencil[I][J] = true;
+      }
+    }
+    return pstencil;
   }
 
   inline void get_elem_corner_nodes(int elem, int* nodes) const {
@@ -415,34 +414,19 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
    * @brief For a GD element, get all dof nodes
    *
    * @param elem element index
-   * @param nodes dof node indices, length: max_nnodes_per_element
-   *
-   * @return number of nodes associated to this element
+   * @return nodes dof node indices, length: nnodes
    */
-  int get_elem_dof_nodes(
-      int elem, int* nodes,
-      std::vector<std::vector<bool>>* pstencil = nullptr) const {
+  int get_elem_dof_nodes(int elem, int* nodes) const {
     const auto& nodes_v = elem_nodes.at(elem);
     int nnodes = nodes_v.size();
     for (int i = 0; i < nnodes; i++) {
       nodes[i] = nodes_v[i];
     }
-
-    // TODO(fyc): this is not efficient, we sould change the API so that
-    // we can directly obtain a reference to elem_pstencils when needed
-    if (pstencil) {
-      const auto& pstencil_v = elem_pstencils.at(elem);
-      pstencil->clear();
-      pstencil->resize(Np_1d);
-      for (int I = 0; I < Np_1d; I++) {
-        (*pstencil)[I].resize(Np_1d);
-        for (int J = 0; J < Np_1d; J++) {
-          (*pstencil)[I][J] = pstencil_v[I][J];
-        }
-      }
-    }
-
     return nnodes;
+  }
+
+  std::vector<std::vector<bool>> get_elem_pstencil(int elem) const {
+    return elem_pstencils.at(elem);
   }
 
   // Similar to get_elem_dof_nodes, but use grid indices (i.e. cell, vert)
@@ -524,11 +508,6 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
           // throw StencilConstructionFailed(elem);
           continue;
         }
-      }
-
-      int nnodes = elem_nodes[elem].size();
-      if (nnodes != max_nnodes_per_element) {
-        DegenerateStencilLogger::add(elem, nnodes, nodes);
       }
     }
   }

@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "a2dcore.h"
+#include "utils/exceptions.h"
 #include "utils/misc.h"
 
 /**
@@ -22,10 +23,13 @@ class MeshBase {
   virtual int get_num_nodes() const = 0;
   virtual int get_num_elements() const = 0;
   virtual void get_node_xloc(int node, T* xloc) const = 0;
-  virtual int get_elem_dof_nodes(
-      int elem, int* nodes,
-      std::vector<std::vector<bool>>* pstencil = nullptr) const = 0;
+  virtual int get_elem_dof_nodes(int elem, int* nodes) const = 0;
   virtual void get_elem_corner_nodes(int elem, int* nodes) const = 0;
+
+  // Optional methods
+  virtual std::vector<std::vector<bool>> get_elem_pstencil(int elem) const {
+    throw NotImplemented("get_elem_pstencil() is not implemented");
+  }
 };
 
 template <typename T>
