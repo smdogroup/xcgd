@@ -60,9 +60,9 @@ TEST(quadrature, GaussSurfQuad) {
 
 // A complex element means an element with multiple level-set lines cutting
 // through it
+template <int Np_1d>
 void test_complex_element_quad(bool negate = false) {
   using T = double;
-  int constexpr Np_1d = 2;
 
   using Grid = StructuredGrid2D<T>;
   using Mesh = CutMesh<T, Np_1d, Grid>;
@@ -102,18 +102,21 @@ void test_complex_element_quad(bool negate = false) {
   auto [xloc_q, dof_q] = analysis.interpolate(dof.data());
 
   ToVTK<T, Mesh> vtk_mesh(mesh, std::string("complex_element_") +
-                                    (negate ? "negate_" : "") + "mesh.vtk");
+                                    (negate ? "negate_" : "") + "mesh_Np_" +
+                                    std::to_string(Np_1d) + ".vtk");
   vtk_mesh.write_mesh();
   vtk_mesh.write_sol("lsf", mesh.get_lsf_nodes().data());
 
   FieldToVTKNew<T, Basis::spatial_dim> vtk_quad(
       std::string("complex_element_") + (negate ? "negate_" : "") +
-      "quads.vtk");
+      "quads_Np_" + std::to_string(Np_1d) + ".vtk");
   vtk_quad.add_mesh(xloc_q);
   vtk_quad.write_mesh();
 }
 
 TEST(quadrature, ComplexElementQuad) {
-  test_complex_element_quad(false);
-  test_complex_element_quad(true);
+  test_complex_element_quad<2>(false);
+  test_complex_element_quad<2>(true);
+  test_complex_element_quad<4>(false);
+  test_complex_element_quad<4>(true);
 }

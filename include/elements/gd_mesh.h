@@ -322,6 +322,9 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
   using MeshBase = GDMeshBase<T, Np_1d, Grid_>;
   using LSFMesh = GridMesh<T, Np_1d, Grid_>;
 
+  template <class T1, class T2>
+  using Map = std::unordered_map<T1, T2>;  // can std::map be a superior choice?
+
  public:
   using MeshBase::corner_nodes_per_element;
   using MeshBase::max_nnodes_per_element;
@@ -372,7 +375,7 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
    *
    * @return number of nodes associated to this element
    */
-  int get_elem_dof_nodes(
+  int get_elem_dof_nodes_deprecated(
       int elem, int* nodes,
       std::vector<std::vector<bool>>* pstencil = nullptr) const {
     if (pstencil) {
@@ -405,6 +408,40 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
     if (nnodes != max_nnodes_per_element) {
       DegenerateStencilLogger::add(elem, nnodes, nodes);
     }
+    return nnodes;
+  }
+
+  /**
+   * @brief For a GD element, get all dof nodes
+   *
+   * @param elem element index
+   * @param nodes dof node indices, length: max_nnodes_per_element
+   *
+   * @return number of nodes associated to this element
+   */
+  int get_elem_dof_nodes(
+      int elem, int* nodes,
+      std::vector<std::vector<bool>>* pstencil = nullptr) const {
+    const auto& nodes_v = elem_nodes.at(elem);
+    int nnodes = nodes_v.size();
+    for (int i = 0; i < nnodes; i++) {
+      nodes[i] = nodes_v[i];
+    }
+
+    // TODO(fyc): this is not efficient, we sould change the API so that
+    // we can directly obtain a reference to elem_pstencils when needed
+    if (pstencil) {
+      const auto& pstencil_v = elem_pstencils.at(elem);
+      pstencil->clear();
+      pstencil->resize(Np_1d);
+      for (int I = 0; I < Np_1d; I++) {
+        (*pstencil)[I].resize(Np_1d);
+        for (int J = 0; J < Np_1d; J++) {
+          (*pstencil)[I][J] = pstencil_v[I][J];
+        }
+      }
+    }
+
     return nnodes;
   }
 
@@ -458,8 +495,61 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
 
   inline const std::map<int, int>& get_cell_elems() const { return cell_elems; }
 
-  // Update the mesh when the lsf_dof is updated
+  // Update the mesh as well as the element->node mapping
   void update_mesh() {
+    update_mesh_init();
+
+    elem_nodes.clear();
+    elem_pstencils.clear();
+
+    for (int elem = 0; elem < num_elements; elem++) {
+      elem_nodes[elem].reserve(max_nnodes_per_element);
+      elem_pstencils[elem].resize(Np_1d);
+      for (int i = 0; i < Np_1d; i++) {
+        elem_pstencils[elem][i] = std::vector<bool>(Np_1d, false);
+      }
+
+      int nodes[Np_1d * Np_1d];
+      int cell = elem_cells.at(elem);
+      this->grid.template get_cell_ground_stencil<Np_1d>(cell, nodes);
+      adjust_stencil(cell, nodes);
+
+      for (int i = 0; i < max_nnodes_per_element; i++) {
+        try {
+          elem_nodes[elem].push_back(vert_nodes.at(nodes[i]));
+          int I = i % Np_1d;
+          int J = i / Np_1d;
+          elem_pstencils[elem][I][J] = true;
+        } catch (const std::out_of_range& e) {
+          // throw StencilConstructionFailed(elem);
+          continue;
+        }
+      }
+
+      int nnodes = elem_nodes[elem].size();
+      if (nnodes != max_nnodes_per_element) {
+        DegenerateStencilLogger::add(elem, nnodes, nodes);
+      }
+    }
+  }
+
+  inline const Map<int, int>& get_vert_nodes() const { return vert_nodes; }
+
+  inline bool is_cut_elem(int elem) const {
+    return static_cast<bool>(cut_elems.count(elem));
+  }
+  inline bool is_regular_stencil_elem(int elem) const {
+    return static_cast<bool>(regular_stencil_elems.count(elem));
+  }
+
+  const inline std::set<int>& get_cut_elems() const { return cut_elems; }
+  const inline std::set<int>& get_regular_stencil_elems() const {
+    return regular_stencil_elems;
+  }
+
+ private:
+  // Update the mesh when the lsf_dof is updated
+  void update_mesh_init() {
     node_verts.clear();
     vert_nodes.clear();
     elem_cells.clear();
@@ -590,25 +680,6 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
 #endif
   }
 
-  void update_mesh_new() {}
-
-  inline const std::unordered_map<int, int>& get_vert_nodes() const {
-    return vert_nodes;
-  }
-
-  inline bool is_cut_elem(int elem) const {
-    return static_cast<bool>(cut_elems.count(elem));
-  }
-  inline bool is_regular_stencil_elem(int elem) const {
-    return static_cast<bool>(regular_stencil_elems.count(elem));
-  }
-
-  const inline std::set<int>& get_cut_elems() const { return cut_elems; }
-  const inline std::set<int>& get_regular_stencil_elems() const {
-    return regular_stencil_elems;
-  }
-
- private:
   // Given the lsf dof, interpolate the gradient of the lsf at the centroid
   // a cell using bilinear quad element
   std::array<T, spatial_dim> interp_lsf_grad(int cell) {
@@ -673,10 +744,21 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
   // level set function values at vertices of the ground grid
   std::vector<T> lsf_dof;
 
+  /* Below is information about the element-to-node topology, at each update to
+   * the mesh, the dof nodes associated to an element may change from verts to
+   * verts, as well as the elements themselves might correspond to different
+   * cells.
+   *
+   * Recall that cells and verts are defined on the ground grid, and elements
+   * and nodes are defined on the dynamic mesh itself */
+
+  Map<int, std::vector<int>> elem_nodes;
+  Map<int, std::vector<std::vector<bool>>> elem_pstencils;
+
   // indices of vertices that are dof nodes, i.e. vertices that have active
   // degrees of freedom
-  std::unordered_map<int, int> node_verts;  // node -> vert
-  std::unordered_map<int, int> vert_nodes;  // vert -> node
+  Map<int, int> node_verts;  // node -> vert
+  Map<int, int> vert_nodes;  // vert -> node
 
   // indices of cells that are dof elements, i.e. cells that have active degrees
   // of freedom
