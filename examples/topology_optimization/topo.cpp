@@ -983,7 +983,7 @@ class TopoProb : public ParOptProblem {
       std::snprintf(line, 2048, "\n%5s%20s%20s%20s%15s%20s%20s%20s%15s%15s\n",
                     "iter", "obj", "comp", phead, "vol (\%)", "stress_max",
                     "stress_ratio_max", "stress_ratio_ks", "ks relerr(\%)",
-                    "uptime(s)");
+                    "uptime(H:M:S)");
       std::cout << line;
       progress_file << line;
     }
