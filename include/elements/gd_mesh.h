@@ -6,7 +6,6 @@
 #include <limits>
 #include <map>
 #include <set>
-#include <unordered_map>
 #include <vector>
 
 #include "elements/element_commons.h"
@@ -76,6 +75,10 @@ class StructuredGrid2D final {
       nelems *= nxy[d];
     }
     return nelems;
+  }
+
+  inline bool is_valid_vert(int ix, int iy) const {
+    return (ix >= 0 and ix <= nxy[0] and iy >= 0 and iy <= nxy[1]);
   }
 
   // coordinates -> vert
@@ -302,6 +305,9 @@ class GridMesh : public GDMeshBase<T, Np_1d, Grid_> {
 
   inline int get_node_vert(int node) const { return node; }
 
+  // Caution: this is a dummy function that does not return meaningful value
+  inline int get_elem_dir(int elem) const { return 0; }
+
  private:
   int num_nodes = -1;
   int num_elements = -1;
@@ -322,7 +328,9 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
   using LSFMesh = GridMesh<T, Np_1d, Grid_>;
 
   template <class T1, class T2>
-  using Map = std::unordered_map<T1, T2>;  // can std::map be a superior choice?
+  using Map =
+      std::unordered_map<T1, T2>;  // TODO(fyc): std::map and
+                                   // std::unordered_map, which is better?
 
  public:
   using MeshBase::corner_nodes_per_element;
@@ -425,8 +433,8 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
     return nnodes;
   }
 
-  std::vector<std::vector<bool>> get_elem_pstencil(int elem) const {
-    return elem_pstencils.at(elem);
+  const Map<int, std::vector<int>>& get_elem_nodes() const {
+    return elem_nodes;
   }
 
   // Similar to get_elem_dof_nodes, but use grid indices (i.e. cell, vert)
@@ -480,36 +488,9 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
   inline const std::map<int, int>& get_cell_elems() const { return cell_elems; }
 
   // Update the mesh as well as the element->node mapping
-  void update_mesh() {
-    update_mesh_init();
-
-    elem_nodes.clear();
-    elem_pstencils.clear();
-
-    for (int elem = 0; elem < num_elements; elem++) {
-      elem_nodes[elem].reserve(max_nnodes_per_element);
-      elem_pstencils[elem].resize(Np_1d);
-      for (int i = 0; i < Np_1d; i++) {
-        elem_pstencils[elem][i] = std::vector<bool>(Np_1d, false);
-      }
-
-      int nodes[Np_1d * Np_1d];
-      int cell = elem_cells.at(elem);
-      this->grid.template get_cell_ground_stencil<Np_1d>(cell, nodes);
-      adjust_stencil(cell, nodes);
-
-      for (int i = 0; i < max_nnodes_per_element; i++) {
-        try {
-          elem_nodes[elem].push_back(vert_nodes.at(nodes[i]));
-          int I = i % Np_1d;
-          int J = i / Np_1d;
-          elem_pstencils[elem][I][J] = true;
-        } catch (const std::out_of_range& e) {
-          // throw StencilConstructionFailed(elem);
-          continue;
-        }
-      }
-    }
+  inline void update_mesh() {
+    // update_mesh_spiral();
+    update_mesh_push();
   }
 
   inline const Map<int, int>& get_vert_nodes() const { return vert_nodes; }
@@ -526,14 +507,19 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
     return regular_stencil_elems;
   }
 
+  inline int get_elem_dir(int elem) const {
+    return cell_dirs[elem_cells[elem]];
+  }
+
  private:
   // Update the mesh when the lsf_dof is updated
   void update_mesh_init() {
+    elem_nodes.clear();
     node_verts.clear();
     vert_nodes.clear();
     elem_cells.clear();
     cell_elems.clear();
-    dir_cells.clear();
+    cell_dirs.clear();
     cut_elems.clear();
     regular_stencil_elems.clear();
 
@@ -588,7 +574,7 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
 
     // For each cell, get the push direction for the outlying ground stencil
     // vertices
-    dir_cells = std::vector<int>(ncells, -1);  // val | direction
+    cell_dirs = std::vector<int>(ncells, -1);  // val | direction
                                                // 0   | +x
                                                // 1   | -x
                                                // 2   | +y
@@ -606,7 +592,7 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
           dim = d;
         }
       }
-      dir_cells[c] = 2 * dim + (freal(grad[dim]) < 0.0 ? 0 : 1);
+      cell_dirs[c] = 2 * dim + (freal(grad[dim]) < 0.0 ? 0 : 1);
     }
 
     int num_nodes_old = num_nodes;
@@ -659,6 +645,110 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
 #endif
   }
 
+  void update_mesh_spiral() {
+    update_mesh_init();
+
+    for (int elem = 0; elem < num_elements; elem++) {
+      // Initialize elem -> nodes
+      std::vector<int>& nodes = elem_nodes[elem];
+      nodes.reserve(max_nnodes_per_element);
+
+      /*
+       * Next, we populate the nodes associated to the element in a spiral
+       * following the order of R0 -> D0 -> L0 -> U0 -> R1 -> ..., where the
+       * four letters represent right, down, left and upper set of nodes (spiral
+       * legs), and the numbers represent the level of the spiral legs
+       *
+       *             ┌── U0 ───┐
+       *
+       *    ┌   x →  x .. x .. x   ..  x   ┐
+       *    │   ↑                          │
+       *    L0  x    x----x    x   ┐   x   │
+       *    │   ↑    |elem|    ↓   │       │
+       *    └   x    x----x    x   R0  x   │
+       *        ↑              ↓   │       R1
+       *        x  ← x  ← x  ← x   ┘   x   │
+       *                                   │
+       *        └─── D0 ──┘            x   │
+       *                                   │
+       *                   ..  x   x   x   ┘
+       * */
+
+      // First, we add the corner nodes, which are guaranteed to be the dof
+      // nodes
+      int cnodes[corner_nodes_per_element];
+      get_elem_corner_nodes(elem, cnodes);
+      for (int i = 0; i < corner_nodes_per_element; i++) {
+        nodes.push_back(cnodes[i]);
+      }
+
+      /*
+       * Next, we follow the spiral and attempt to populate nodes on the spiral
+       * legs. This is when we might encounter a grid vertex on the spiral
+       * pattern that is not a valid node due to one of the following two
+       * reasons:
+       *   1. the vertex is not an active node
+       *   2. the vertex is outside the grid at all (for example, for a high
+       *      degree element residing on the edge of the grid)
+       * */
+
+      // Np_1d = 4 -> levels = 0
+      // Np_1d = 6 -> levels = 0, 1
+      // Np_1d = 8 -> levels = 0, 1, 2
+      // ...
+      for (int level = 0; level < Np_1d / 2 - 1; level++) {
+        // Prepare
+        int exy[2] = {-1, -1};
+        this->grid.get_cell_coords(elem_cells[elem], exy);
+        int nnodes_per_leg = 2 * level + 3;
+
+        // Work on vertices on each leg
+        // clang-format off
+        add_leg<Leg::RIGHT>(exy[0] + 2 + level, exy[1] + 1 + level, nnodes_per_leg, nodes);
+        add_leg<Leg::DOWN>( exy[0] + 1 + level, exy[1] - 1 - level, nnodes_per_leg, nodes);
+        add_leg<Leg::LEFT>( exy[0] - 1 - level, exy[1]     - level, nnodes_per_leg, nodes);
+        add_leg<Leg::UP>(   exy[0]     - level, exy[1] + 2 + level, nnodes_per_leg, nodes);
+        // clang-format on
+      }
+    }
+  }
+
+  void update_mesh_push() {
+    update_mesh_init();
+
+    for (int elem = 0; elem < num_elements; elem++) {
+      // Initialize elem -> nodes
+      std::vector<int>& nodes = elem_nodes[elem];
+      nodes.reserve(max_nnodes_per_element);
+
+      // Get ground stencils
+      int verts[max_nnodes_per_element];
+      int cell = elem_cells.at(elem);
+      this->grid.template get_cell_ground_stencil<Np_1d>(cell, verts);
+
+      // Get push direction
+      int dir = cell_dirs[cell];
+      int dim = dir / spatial_dim;
+      int sign = dir % spatial_dim == 0 ? 1 : -1;
+
+      // Add nodes
+      for (int i = 0; i < max_nnodes_per_element; i++) {
+        int ixy[2] = {-1, -1};
+        this->grid.get_vert_coords(verts[i], ixy);
+
+        if (not is_valid_node(ixy[0], ixy[1])) {
+          ixy[dim] += sign * Np_1d;
+
+          if (not is_valid_node(ixy[0], ixy[1])) {
+            continue;
+          }
+        }
+
+        nodes.push_back(vert_nodes.at(this->grid.get_coords_vert(ixy)));
+      }
+    }
+  }
+
   // Given the lsf dof, interpolate the gradient of the lsf at the centroid
   // a cell using bilinear quad element
   std::array<T, spatial_dim> interp_lsf_grad(int cell) {
@@ -683,7 +773,7 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
    */
   void adjust_stencil(int cell, int* verts) const {
     // Get push direction
-    int dir = dir_cells[cell];
+    int dir = cell_dirs[cell];
     int dim = dir / spatial_dim;
     int sign = dir % spatial_dim == 0 ? 1 : -1;
 
@@ -715,6 +805,76 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
     */
   }
 
+  bool is_valid_node(int ix, int iy) {
+    if (not this->grid.is_valid_vert(ix, iy)) {
+      return false;
+    }
+    return vert_nodes.count(this->grid.get_coords_vert(ix, iy)) != 0;
+  };
+
+  enum class Leg { LEFT, RIGHT, UP, DOWN };
+
+  /**
+   * @brief Attempt to add verts on a spiral leg as dof nodes
+   *
+   * @param ix, iy coordinartes for the beginning vert of the spiral leg
+   */
+  template <Leg leg>
+  void add_leg(int ix, int iy, int nnodes_per_leg, std::vector<int>& nodes) {
+    for (int i = 0; i < nnodes_per_leg; i++) {
+      // Case 2 candidate:
+      int ix_2 = ix, iy_2 = iy;
+      if constexpr (leg == Leg::RIGHT) {
+        ix_2 -= Np_1d;
+      } else if constexpr (leg == Leg::LEFT) {
+        ix_2 += Np_1d;
+      } else if constexpr (leg == Leg::DOWN) {
+        iy_2 += Np_1d;
+      } else {  // leg == Leg::UP
+        iy_2 -= Np_1d;
+      }
+
+      // Case 3 candidate:
+      int ix_3 = ix, iy_3 = iy;
+      if constexpr (leg == Leg::RIGHT) {
+        iy_3 += Np_1d;
+      } else if constexpr (leg == Leg::LEFT) {
+        iy_3 -= Np_1d;
+      } else if constexpr (leg == Leg::DOWN) {
+        ix_3 += Np_1d;
+      } else {  // leg == Leg::UP
+        ix_3 -= Np_1d;
+      }
+
+      // Case 1: stencil vertex hit, nice and easy!
+      if (is_valid_node(ix, iy)) {
+        nodes.push_back(vert_nodes[this->grid.get_coords_vert(ix, iy)]);
+
+      }
+      // Case 2: stencil vert miss, but the symmetric vert on the other side of
+      // the stencil hit
+      else if (is_valid_node(ix_2, iy_2)) {
+        nodes.push_back(vert_nodes[this->grid.get_coords_vert(ix_2, iy_2)]);
+      }
+      // Case 3: Case 2 still miss, but this vert is a corner vert, hence we
+      // have another symmetric vert to try
+      else if (i == nnodes_per_leg - 1 and is_valid_node(ix_3, iy_3)) {
+        nodes.push_back(vert_nodes[this->grid.get_coords_vert(ix_3, iy_3)]);
+      }
+
+      // Move to the next candidate vertex
+      if constexpr (leg == Leg::RIGHT) {
+        iy--;  // move down for next candidate
+      } else if constexpr (leg == Leg::LEFT) {
+        iy++;  // move up for next candidate
+      } else if constexpr (leg == Leg::DOWN) {
+        ix--;   // move left for next candidate
+      } else {  // leg == Leg::UP
+        ix++;   // move right for next candidate
+      }
+    }
+  }
+
   LSFMesh lsf_mesh;
 
   int num_nodes = -1;
@@ -732,7 +892,6 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
    * and nodes are defined on the dynamic mesh itself */
 
   Map<int, std::vector<int>> elem_nodes;
-  Map<int, std::vector<std::vector<bool>>> elem_pstencils;
 
   // indices of vertices that are dof nodes, i.e. vertices that have active
   // degrees of freedom
@@ -745,7 +904,7 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
   std::map<int, int> cell_elems;  // cell-> elem
 
   // push direction for each cell
-  std::vector<int> dir_cells;
+  std::vector<int> cell_dirs;
 
   // Whether the element is cut element or interior element
   std::set<int> cut_elems;
@@ -804,7 +963,7 @@ void get_computational_coordinates_limits(const Mesh& mesh, int elem, T* xi_min,
  * pstencil is a Np_1d-by-Np_1d boolean matrix, given a stencil vertex
  * represented by the index coordinates (i, j), boolearn pstencil[i][j]
  * indicates whether the vertex is active or not. e.g. for a regular internal
- * stencil, entries of pstencil is all true.
+ * stencil, entries of pstencil are all 1.
  *
  * Given a pstencil, this function determines which polynomial terms (1, x, y,
  * xy, x^2, y^2, x^2y, xy^2, etc.) to use to construct the basis function by
@@ -847,7 +1006,7 @@ void get_computational_coordinates_limits(const Mesh& mesh, int elem, T* xi_min,
  *
  */
 template <int Np_1d>
-std::vector<std::pair<int, int>> pstencil_to_pterms(
+std::vector<std::pair<int, int>> pstencil_to_pterms_deprecated(
     const std::vector<std::vector<bool>>& pstencil) {
   // Populate count for each column
   std::vector<int> counts(Np_1d, 0);
@@ -870,6 +1029,46 @@ std::vector<std::pair<int, int>> pstencil_to_pterms(
     }
   }
 
+  return pterms;
+}
+
+inline std::vector<std::pair<int, int>> verts_to_pterms(
+    const std::vector<std::pair<int, int>>& verts, bool vertical_first = true) {
+  std::map<int, int> ix_counts, iy_counts;
+
+  for (auto& [ix, iy] : verts) {
+    ix_counts[ix]++;  // how many verts for each ix index
+    iy_counts[iy]++;  // how many verts for each iy index
+  }
+
+  std::vector<int> ix_counts_v, iy_counts_v;
+  ix_counts_v.reserve(ix_counts.size());
+  iy_counts_v.reserve(iy_counts.size());
+
+  for (auto& [_, v] : ix_counts) {
+    ix_counts_v.push_back(v);
+  }
+
+  for (auto& [_, v] : iy_counts) {
+    iy_counts_v.push_back(v);
+  }
+
+  // Sort count in descending order
+  auto& counts = vertical_first ? ix_counts_v : iy_counts_v;
+  std::sort(counts.begin(), counts.end(), std::greater<>());
+
+  // Populate polynomial terms, note that x^m y^n is represented by tuple (m, n)
+  std::vector<std::pair<int, int>> pterms;
+  pterms.reserve(verts.size());
+  for (int m = 0; m < counts.size(); m++) {
+    for (int n = 0; n < counts[m]; n++) {
+      if (vertical_first) {
+        pterms.push_back({m, n});
+      } else {
+        pterms.push_back({n, m});
+      }
+    }
+  }
   return pterms;
 }
 

@@ -25,11 +25,6 @@ class MeshBase {
   virtual void get_node_xloc(int node, T* xloc) const = 0;
   virtual int get_elem_dof_nodes(int elem, int* nodes) const = 0;
   virtual void get_elem_corner_nodes(int elem, int* nodes) const = 0;
-
-  // Optional methods
-  virtual std::vector<std::vector<bool>> get_elem_pstencil(int elem) const {
-    throw NotImplemented("get_elem_pstencil() is not implemented");
-  }
 };
 
 template <typename T>

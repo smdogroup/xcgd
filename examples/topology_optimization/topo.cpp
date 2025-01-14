@@ -23,6 +23,7 @@
 #include "utils/json.h"
 #include "utils/loggers.h"
 #include "utils/misc.h"
+#include "utils/timer.h"
 #include "utils/vtk.h"
 
 #define PI 3.141592653589793
@@ -504,6 +505,12 @@ class TopoAnalysis {
         bc_dof.push_back(spatial_dim * n + d);
       }
     }
+
+    // TODO: delete
+    auto mesh = elastic.get_mesh();
+    StencilToVTK<T, Mesh> stencil_vtk(mesh,
+                                      fspath(prefix) / "debug_stencil.vtk");
+    stencil_vtk.write_stencils(mesh.get_elem_nodes());
   }
 
   std::vector<T> update_mesh_and_solve(
@@ -512,9 +519,7 @@ class TopoAnalysis {
     // Solve the static problem
     update_mesh(x);
 
-    DegenerateStencilLogger::clear();
     VandermondeCondLogger::clear();
-
     VandermondeCondLogger::enable();
 
     try {
@@ -856,12 +861,15 @@ class TopoAnalysis {
     }
     vtk.write_cell_sol("cond", conds.data());
 
-    std::vector<double> nstencils(mesh.get_num_elements(),
-                                  Mesh::max_nnodes_per_element);
-    auto degenerate_stencils = DegenerateStencilLogger::get_stencils();
-    for (auto e : degenerate_stencils) {
-      int elem = e.first;
-      nstencils[elem] = e.second.size();
+    auto& stencils = mesh.get_elem_nodes();
+    std::map<int, std::vector<int>> degenerate_stencils;
+    std::vector<double> nstencils(stencils.size(), -1);
+    for (auto& [elem, stencil] : stencils) {
+      int num = stencil.size();
+      nstencils[elem] = num;
+      if (num < Mesh::max_nnodes_per_element) {
+        degenerate_stencils[elem] = stencil;
+      }
     }
     vtk.write_cell_sol("nstencils", nstencils.data());
 
@@ -875,10 +883,13 @@ class TopoAnalysis {
       vtk.write_cell_vec(name, vals.data());
     }
 
-    // Save degenerate stencils
+    // Save stencils and degenerate stencils
     auto [base, suffix] = split_path(vtk_path);
-    StencilToVTK<T, Mesh> stencil_vtk(mesh, base + "_degen_stencils" + suffix);
-    stencil_vtk.write_stencils(degenerate_stencils);
+    StencilToVTK<T, Mesh> stencil_vtk(mesh, base + "_stencils" + suffix);
+    stencil_vtk.write_stencils(stencils);
+    StencilToVTK<T, Mesh> degen_stencil_vtk(mesh,
+                                            base + "_degen_stencils" + suffix);
+    degen_stencil_vtk.write_stencils(degenerate_stencils);
   }
 
   void write_prob_json(const std::string json_path, const ConfigParser& parser,
@@ -969,19 +980,21 @@ class TopoProb : public ParOptProblem {
       std::snprintf(phead, 20, "pen(c:%8.1e)",
                     parser.get_double_option("grad_penalty_coeff"));
       char line[2048];
-      std::snprintf(line, 2048, "\n%5s%20s%20s%20s%15s%20s%20s%20s%15s\n",
+      std::snprintf(line, 2048, "\n%5s%20s%20s%20s%15s%20s%20s%20s%15s%15s\n",
                     "iter", "obj", "comp", phead, "vol (\%)", "stress_max",
-                    "stress_ratio_max", "stress_ratio_ks", "ks relerr(\%)");
+                    "stress_ratio_max", "stress_ratio_ks", "ks relerr(\%)",
+                    "uptime(s)");
       std::cout << line;
       progress_file << line;
     }
     char line[2048];
     std::snprintf(
         line, 2048,
-        "%5d%20.10e%20.10e%20.10e%15.5f%20.10e%20.10e%20.10e%15.5f\n", counter,
-        obj, comp, pterm, 100.0 * vol_frac, max_stress, max_stress_ratio,
-        ks_stress_ratio,
-        (ks_stress_ratio - max_stress_ratio) / max_stress_ratio * 100.0);
+        "%5d%20.10e%20.10e%20.10e%15.5f%20.10e%20.10e%20.10e%15.5f%15s\n",
+        counter, obj, comp, pterm, 100.0 * vol_frac, max_stress,
+        max_stress_ratio, ks_stress_ratio,
+        (ks_stress_ratio - max_stress_ratio) / max_stress_ratio * 100.0,
+        watch.format_time(watch.lap()).c_str());
     std::cout << line;
     progress_file << line;
     progress_file.close();
@@ -992,7 +1005,6 @@ class TopoProb : public ParOptProblem {
     checkGradients(dh);
     is_gradient_check = false;
     reset_counter();
-    DegenerateStencilLogger::clear();
     VandermondeCondLogger::clear();
   }
 
@@ -1245,6 +1257,7 @@ class TopoProb : public ParOptProblem {
   int nineq = -1;
 
   int counter = -1;
+  StopWatch watch;
   bool is_gradient_check = false;
 };
 
@@ -1409,7 +1422,6 @@ void execute(int argc, char* argv[]) {
 }
 
 int main(int argc, char* argv[]) {
-  DegenerateStencilLogger::enable();
   VandermondeCondLogger::enable();
 
   if (argc == 1) {

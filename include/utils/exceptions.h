@@ -17,6 +17,18 @@ class StencilConstructionFailed : public std::exception {
   int elem;
 };
 
+class LapackFailed : public std::exception {
+ public:
+  LapackFailed(std::string rountine, int exit_code) {
+    std::snprintf(msg, 256, "Lapack rountine %s failed with exit code %d",
+                  rountine.c_str(), exit_code);
+  }
+  const char *what() const noexcept { return msg; }
+
+ private:
+  char msg[256];
+};
+
 class NotImplemented : public std::exception {
  public:
   NotImplemented(const std::string &msg) : msg(msg) {}

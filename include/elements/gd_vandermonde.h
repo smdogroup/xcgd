@@ -156,36 +156,16 @@ class VandermondeEvaluator {
 
     Ck.resize(nnodes * nnodes);
 
-    // Create the index sequence for polynomial terms, for example, for p=3,
-    // we want the following sequence of polynomial terms:
-    // 1
-    // x,      y
-    // x^2,    xy,       y^2
-    // x^3,    x^2y,     xy^2,     y^3
-    // x^3y,   x^2y^2,   xy^3
-    // x^3y^2, x^2y^3
-    // x^3y^3
-    //
-    // Hence the sequence of the index pairs is:
-    // (0, 0)
-    // (1, 0)  (0, 1)
-    // (2, 0)  (1, 1)  (0, 2)
-    // (3, 0)  (2, 1)  (1, 2)   (0, 3)
-    // (3, 1)  (2, 2)  (1, 3)
-    // (3, 2)  (2, 3)
-    // (3, 3)
-    //
-    // So that when we drop terms when available nodes are less than needed,
-    // we drop terms in the reverse order of this sequence
-    // for (int sum = 0; sum <= 2 * p; sum++) {
-    //   for (int j = 0; j <= sum; j++) {
-    //     int i = sum - j;
-    //     if (i > p or j > p) continue;
-    //     pterms.push_back({i, j});
-    //   }
-    // }
-    std::vector<std::vector<bool>> pstencil = mesh.get_elem_pstencil(elem);
-    pterms = pstencil_to_pterms<Np_1d>(pstencil);
+    std::vector<std::pair<int, int>> verts(nnodes, {-1, -1});
+    for (int i = 0; i < verts.size(); i++) {
+      int ixy[2] = {-1, -1};
+      mesh.get_grid().get_vert_coords(mesh.get_node_vert(nodes[i]), ixy);
+      verts[i] = {ixy[0], ixy[1]};
+    }
+
+    int dir = mesh.get_elem_dir(elem);
+    int dim = dir / spatial_dim;
+    pterms = verts_to_pterms(verts, dim == 1);
 
     std::vector<T> xpows(Np_1d), ypows(Np_1d);
 

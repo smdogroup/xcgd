@@ -494,7 +494,8 @@ class StencilToVTK {
     std::fclose(fp);
   }
 
-  void write_stencils(std::map<int, std::vector<int>>& stencils) {
+  template <class Map>
+  void write_stencils(const Map& stencils) {
     int nelems = mesh.get_num_elements();
     int poly_data_size = nelems;
     for (const auto& [elem, nodes] : stencils) {
@@ -505,8 +506,8 @@ class StencilToVTK {
     std::fprintf(fp, "CELLS %d %d\n", nelems, poly_data_size);
     for (int elem = 0; elem < nelems; elem++) {
       if (stencils.count(elem)) {
-        std::fprintf(fp, "%zu ", stencils[elem].size());
-        for (int n : stencils[elem]) {
+        std::fprintf(fp, "%zu ", stencils.at(elem).size());
+        for (int n : stencils.at(elem)) {
           std::fprintf(fp, "%d ", n);
         }
         std::fprintf(fp, "\n");

@@ -8,6 +8,7 @@
 #include "elements/element_utils.h"
 #include "physics/volume.h"
 #include "sparse_utils/sparse_matrix.h"
+#include "utils/exceptions.h"
 #include "utils/linalg.h"
 #include "utils/misc.h"
 
@@ -449,7 +450,17 @@ class GalerkinAnalysis final {
       int num_quad_pts = quadrature.get_quadrature_pts(i, pts, wts, ns);
 
       std::vector<T> N, Nxi;
-      basis.eval_basis_grad(i, pts, N, Nxi);
+      // TODO: delete
+
+      try {
+        basis.eval_basis_grad(i, pts, N, Nxi);
+      } catch (const LapackFailed& e) {
+        std::printf(
+            "jacobian() called failed at basis.eval_basis_grad() for element: "
+            "%d\n",
+            i);
+        throw;
+      }
 
       for (int j = 0; j < num_quad_pts; j++) {
         int offset_n = j * max_nnodes_per_element;
@@ -596,7 +607,7 @@ class GalerkinAnalysis final {
         typename Physics::dof_t coef_uq{};      // ∂e/∂uq
         typename Physics::grad_t coef_ugrad{};  // ∂e/∂(∇_x)uq
         typename Physics::dof_t jp_uq{};        // ∂2e/∂uq2 * psiq
-        typename Physics::grad_t jp_ugrad{};  // ∂2e/∂(∇_x)uq2 * (∇_x)psiq
+        typename Physics::grad_t jp_ugrad{};    // ∂2e/∂(∇_x)uq2 * (∇_x)psiq
 
         T detJ;
         A2D::MatDet(J, detJ);
@@ -607,7 +618,7 @@ class GalerkinAnalysis final {
                                  psiq, pgrad, jp_uq, jp_ugrad);
 
         typename Physics::grad_t coef_ugrad_ref{};  // ∂e/∂(∇_ξ)uq
-        typename Physics::grad_t jp_ugrad_ref{};  // ∂2e/∂(∇_ξ)uq2 * (∇_ξ)psiq
+        typename Physics::grad_t jp_ugrad_ref{};    // ∂2e/∂(∇_ξ)uq2 * (∇_ξ)psiq
 
         // Transform gradient from physical coordinates back to ref
         // coordinates

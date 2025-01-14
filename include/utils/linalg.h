@@ -6,6 +6,7 @@
 
 #include "sparse_utils/lapack_helpers.h"
 #include "sparse_utils/sparse_matrix.h"
+#include "utils/exceptions.h"
 #include "utils/misc.h"
 
 template <typename T>
@@ -32,13 +33,11 @@ void direct_solve(int n, T A[], T b[]) {
   std::vector<int> ipiv(n);
   int info = -1;
   SparseUtils::LAPACKgetrf(n, n, A, n, ipiv.data(), &info);
+  if (info != 0) throw LapackFailed("getrf", info);
+
   int nrhs = 1;
   SparseUtils::LAPACKgetrs('N', n, nrhs, A, n, ipiv.data(), b, n, &info);
-  if (info != 0) {
-    char msg[256];
-    std::snprintf(msg, 256, "direct inverse failed with exit code %d", info);
-    throw std::runtime_error(msg);
-  }
+  if (info != 0) throw LapackFailed("getrs", info);
 }
 
 /**
@@ -70,28 +69,14 @@ void direct_inverse(int n, T A[], double *rcond = nullptr, char norm = '1') {
   if (rcond) {
     assert(Anorm > 0.0);
     SparseUtils::LAPACKgecon(norm, n, A, n, Anorm, rcond, &info);
-    if (info != 0) {
-      char msg[256];
-      std::snprintf(
-          msg, 256,
-          "direct_inverse() failed to evaluate the rcond with exit code %d",
-          info);
-      throw std::runtime_error(msg);
-    }
+    if (info != 0) throw LapackFailed("gecon", info);
   }
 
   // First we let LAPACK determine the optimal lwork value
   std::vector<T> work(1);
   int lwork = -1;
   SparseUtils::LAPACKgetri(n, A, n, ipiv.data(), work.data(), lwork, &info);
-  if (info != 0) {
-    char msg[256];
-    std::snprintf(msg, 256,
-                  "direct_inverse() failed to determine the optimal lwork with "
-                  "exit code %d",
-                  info);
-    throw std::runtime_error(msg);
-  }
+  if (info != 0) throw LapackFailed("getri", info);
   lwork = int(freal(work[0]));
   if (lwork < 1) {
     lwork = 1;
@@ -100,11 +85,7 @@ void direct_inverse(int n, T A[], double *rcond = nullptr, char norm = '1') {
   // Compute the inverse of the matrix using LU factorization
   work.resize(lwork);
   SparseUtils::LAPACKgetri(n, A, n, ipiv.data(), work.data(), lwork, &info);
-  if (info != 0) {
-    char msg[256];
-    std::snprintf(msg, 256, "direct_inverse() failed with exit code %d", info);
-    throw std::runtime_error(msg);
-  }
+  if (info != 0) throw LapackFailed("getri", info);
 }
 
 // A squared specialization of the general block sparse row matrix tailored for

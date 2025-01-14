@@ -57,7 +57,19 @@ class GridMeshDropOrder : public GridMesh<T, Np_1d> {
     assert(Np_bc >= 2);
   }
 
-  int get_elem_dof_nodes(
+  int get_elem_dof_nodes(int elem, int* nodes) const {
+    return get_elem_dof_nodes_old(elem, nodes);
+  }
+
+  std::vector<std::vector<bool>> get_elem_pstencil(int elem) const {
+    int nodes[Np_1d * Np_1d];
+    std::vector<std::vector<bool>> pstencil;
+    get_elem_dof_nodes_old(elem, nodes, &pstencil);
+    return pstencil;
+  }
+
+ private:
+  int get_elem_dof_nodes_old(
       int elem, int* nodes,
       std::vector<std::vector<bool>>* pstencil = nullptr) const {
     if (pstencil) {
@@ -131,7 +143,6 @@ class GridMeshDropOrder : public GridMesh<T, Np_1d> {
     return nnodes;
   }
 
- private:
   int Np_bc;
 };
 

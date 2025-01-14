@@ -16,6 +16,16 @@ class StopWatch {
   }
   void reset_start() { t_start = std::chrono::steady_clock::now(); }
 
+  std::string format_time(double t) {
+    int h = t / 3600.0;
+    t -= h * 3600.0;
+    int m = t / 60.0;
+    t -= m * 60.0;
+    char msg[256];
+    std::snprintf(msg, 256, "%02d:%02d:%04.1f", h, m, t);
+    return msg;
+  }
+
  private:
   std::chrono::time_point<std::chrono::steady_clock> t_start;
 };

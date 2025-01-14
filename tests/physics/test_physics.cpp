@@ -291,8 +291,7 @@ void test_stress_aggregation(
   T E = 15.6, nu = 5.6;
 
   Physics physics(ksrho, E, nu, yield_stress);
-  test_physics(tuple, physics, h, tol, true);  // TODO: delete
-  // test_physics(tuple, physics, h, tol, false, true);
+  test_physics(tuple, physics, h, tol, false, true);
 }
 
 TEST(physics, NeohookeanQuad) { test_neohookean(create_quad_basis()); }
