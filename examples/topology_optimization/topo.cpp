@@ -246,7 +246,9 @@ class LbracketMesh final : public ProbMeshBase<T, Np_1d, StructuredGrid2D<T>> {
   std::vector<int> reduce_mapping, expand_mapping;
 };
 
-template <typename T, int Np_1d>
+// load_top: true to put load on the top of the lbracket arm, false to put load
+// on the side
+template <typename T, int Np_1d, bool load_top = false>
 class LbracketGridMesh final
     : public ProbMeshBase<T, Np_1d, LbracketGrid2D<T>> {
  private:
@@ -270,30 +272,37 @@ class LbracketGridMesh final
         loaded_frac(loaded_frac),
         domain_area(lxy[0] * lxy[1] *
                     (1.0 - (1.0 - lbracket_frac) * (1.0 - lbracket_frac))) {
-    // // Find loaded cells and verts
-    // for (int iy = 0; iy < ny1; iy++) {
-    //   T xloc[Grid::spatial_dim];
-    //   int c = this->grid.get_coords_cell(nx1 - 1, iy);
-    //   this->grid.get_cell_xloc(c, xloc);
-    //   if (xloc[1] >= ly1 - lxy[1] * loaded_frac and xloc[1] <= ly1) {
-    //     loaded_cells.insert(c);
-    //   }
-    // }
-
-    for (int ix = 0; ix < nx1; ix++) {
-      T xloc[Grid::spatial_dim];
-      int c = this->grid.get_coords_cell(ix, ny1 - 1);
-      this->grid.get_cell_xloc(c, xloc);
-      if (xloc[0] >= lx1 * (1.0 - loaded_frac) and xloc[0] <= lx1) {
-        loaded_cells.insert(c);
+    // Find loaded cells and verts
+    if constexpr (load_top) {
+      for (int ix = 0; ix < nx1; ix++) {
+        T xloc[Grid::spatial_dim];
+        int c = this->grid.get_coords_cell(ix, ny1 - 1);
+        this->grid.get_cell_xloc(c, xloc);
+        if (xloc[0] >= lx1 * (1.0 - loaded_frac) and xloc[0] <= lx1) {
+          loaded_cells.insert(c);
+        }
+      }
+    } else {
+      for (int iy = 0; iy < ny1; iy++) {
+        T xloc[Grid::spatial_dim];
+        int c = this->grid.get_coords_cell(nx1 - 1, iy);
+        this->grid.get_cell_xloc(c, xloc);
+        if (xloc[1] >= ly1 - lxy[1] * loaded_frac and xloc[1] <= ly1) {
+          loaded_cells.insert(c);
+        }
       }
     }
 
     for (int cell : loaded_cells) {
       int verts[Grid::nverts_per_cell];
       this->grid.get_cell_verts(cell, verts);
-      loaded_verts.insert(verts[2]);
-      loaded_verts.insert(verts[3]);
+      if constexpr (load_top) {
+        loaded_verts.insert(verts[2]);
+        loaded_verts.insert(verts[3]);
+      } else {
+        loaded_verts.insert(verts[1]);
+        loaded_verts.insert(verts[2]);
+      }
     }
 
     N = this->grid.get_num_verts();
@@ -395,7 +404,7 @@ class TopoAnalysis {
   using LoadPhysics =
       ElasticityExternalLoad<T, Basis::spatial_dim, typeof(load_func)>;
   using LoadQuadrature =
-      GDGaussQuadrature2D<T, Np_1d, QuadPtType::SURFACE, SurfQuad::TOP, Mesh>;
+      GDGaussQuadrature2D<T, Np_1d, QuadPtType::SURFACE, SurfQuad::RIGHT, Mesh>;
   using LoadAnalysis =
       GalerkinAnalysis<T, Mesh, LoadQuadrature, Basis, LoadPhysics, use_ersatz>;
 
