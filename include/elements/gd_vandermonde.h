@@ -433,13 +433,14 @@ template <typename T, class Mesh>
 class GDBasis2D;
 
 template <typename T, int Np_1d, QuadPtType quad_type = QuadPtType::INNER,
-          class Grid = StructuredGrid2D<T>>
+          class Grid = StructuredGrid2D<T>,
+          NodeStrategy node_strategy = NodeStrategy::AllowOutsideLSF>
 class GDLSFQuadrature2D final : public QuadratureBase<T, quad_type> {
  private:
   // algoim limit, see gaussquad.hpp
   static_assert(Np_1d <= algoim::GaussQuad::p_max);  // algoim limit
   using GridMesh_ = GridMesh<T, Np_1d, Grid>;
-  using CutMesh_ = CutMesh<T, Np_1d, Grid>;
+  using CutMesh_ = CutMesh<T, Np_1d, Grid, node_strategy>;
   using Basis = GDBasis2D<T, CutMesh_>;
 
   constexpr static int spatial_dim = Basis::spatial_dim;

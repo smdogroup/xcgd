@@ -10,6 +10,7 @@
 #include "elements/gd_vandermonde.h"
 #include "physics/linear_elasticity.h"
 #include "physics/poisson.h"
+#include "sparse_utils/sparse_utils.h"
 #include "utils/argparser.h"
 #include "utils/json.h"
 #include "utils/loggers.h"
@@ -100,22 +101,23 @@ class VecL2normSurf final : public PhysicsBase<T, spatial_dim, 0, dim> {
 
 enum class PhysicsType { Poisson, LinearElasticity };
 
-template <typename T, class Mesh>
-void write_vtk(std::string vtkpath, PhysicsType physics_type, const Mesh& mesh,
+template <typename T, class MeshBulk, class MeshBCs>
+void write_vtk(std::string vtkpath, PhysicsType physics_type,
+               const MeshBulk& mesh_bulk, const MeshBCs& mesh_bcs,
                const std::vector<T>& sol, const std::vector<T>& exact_sol,
                const std::vector<T>& source, bool save_stencils) {
-  ToVTK<T, Mesh> vtk(mesh, vtkpath);
+  ToVTK<T, MeshBulk> vtk(mesh_bulk, vtkpath);
   vtk.write_mesh();
 
-  std::vector<double> nstencils(mesh.get_num_elements(),
-                                Mesh::Np_1d * Mesh::Np_1d);
+  std::vector<double> nstencils(mesh_bulk.get_num_elements(),
+                                MeshBulk::Np_1d * MeshBulk::Np_1d);
   auto degenerate_stencils = DegenerateStencilLogger::get_stencils();
   for (auto e : degenerate_stencils) {
     int elem = e.first;
     nstencils[elem] = e.second.size();
   }
   vtk.write_cell_sol("nstencils", nstencils.data());
-  vtk.write_sol("lsf", mesh.get_lsf_nodes().data());
+  vtk.write_sol("lsf", mesh_bulk.get_lsf_nodes().data());
 
   if (physics_type == PhysicsType::Poisson) {
     vtk.write_sol("u", sol.data());
@@ -129,8 +131,24 @@ void write_vtk(std::string vtkpath, PhysicsType physics_type, const Mesh& mesh,
 
   if (save_stencils) {
     auto [base, suffix] = split_path(vtkpath);
-    StencilToVTK<T, Mesh> stencil_vtk(mesh, base + "_degen_stencils" + suffix);
-    stencil_vtk.write_stencils(degenerate_stencils);
+
+    StencilToVTK<T, MeshBulk> bulk_stencil_vtk(
+        mesh_bulk, base + "_bulk_stencils" + suffix);
+    bulk_stencil_vtk.write_stencils(mesh_bulk.get_elem_nodes());
+
+    std::unordered_map<int, std::vector<int>> bcs_stencils;
+    for (int elem = 0; elem < mesh_bulk.get_num_elements(); elem++) {
+      if (mesh_bulk.is_cut_elem(elem)) {
+        bcs_stencils[elem] = mesh_bcs.get_nodes(elem);
+      }
+    }
+    StencilToVTK<T, MeshBCs> bcs_stencil_vtk(mesh_bcs,
+                                             base + "_bcs_stencils" + suffix);
+    bcs_stencil_vtk.write_stencils(bcs_stencils);
+
+    StencilToVTK<T, MeshBulk> degen_stencil_vtk(
+        mesh_bulk, base + "_degen_stencils" + suffix);
+    degen_stencil_vtk.write_stencils(degenerate_stencils);
   }
 }
 
@@ -156,10 +174,10 @@ void write_field_vtk(std::string field_vtkpath, PhysicsType physics_type,
 
 // Given solution and f, we want to make sure the following equation holds:
 // σij,j + fi = 0
-template <typename T, class Basis, class BcFun, class IntFun>
+template <typename T, int spatial_dim, class BcFun, class IntFun>
 void test_consistency_elasticity(T E, T nu, const BcFun& bc_fun,
                                  const IntFun& int_fun, double rel_tol = 1e-5) {
-  A2D::Vec<double, Basis::spatial_dim> xloc;
+  A2D::Vec<double, spatial_dim> xloc;
   xloc(0) = 0.14;
   xloc(1) = 0.32;
 
@@ -167,20 +185,19 @@ void test_consistency_elasticity(T E, T nu, const BcFun& bc_fun,
   auto intf = int_fun(xloc);
 
   // Create a function that evaluates σ so we can FD it to obtain gradient
-  auto stress_fun = [E, nu,
-                     bc_fun](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
+  auto stress_fun = [E, nu, bc_fun](const A2D::Vec<T, spatial_dim>& xloc) {
     T mu = 0.5 * E / (1.0 + nu);
     T lambda = E * nu / ((1.0 + nu) * (1.0 - nu));
 
-    A2D::Vec<T, Basis::spatial_dim> u = bc_fun(xloc);
-    A2D::SymMat<T, Basis::spatial_dim> strain, stress;
-    A2D::Mat<T, Basis::spatial_dim, Basis::spatial_dim> grad;
+    A2D::Vec<T, spatial_dim> u = bc_fun(xloc);
+    A2D::SymMat<T, spatial_dim> strain, stress;
+    A2D::Mat<T, spatial_dim, spatial_dim> grad;
 
     double hc = 1e-30;
 
     using Tc = std::complex<T>;
 
-    A2D::Vec<Tc, Basis::spatial_dim> xloc_dx(xloc), xloc_dy(xloc);
+    A2D::Vec<Tc, spatial_dim> xloc_dx(xloc), xloc_dy(xloc);
     xloc_dx(0) += Tc(0.0, hc);
     xloc_dy(1) += Tc(0.0, hc);
 
@@ -196,14 +213,14 @@ void test_consistency_elasticity(T E, T nu, const BcFun& bc_fun,
   };
 
   // Compute σij,j
-  A2D::SymMat<T, Basis::spatial_dim> stress = stress_fun(xloc);
+  A2D::SymMat<T, spatial_dim> stress = stress_fun(xloc);
   double h = 1e-6;
-  A2D::Vec<T, Basis::spatial_dim> xloc_d(xloc);
-  A2D::Vec<double, Basis::spatial_dim> stress_grad;
-  for (int i = 0; i < Basis::spatial_dim; i++) {
-    for (int j = 0; j < Basis::spatial_dim; j++) {
+  A2D::Vec<T, spatial_dim> xloc_d(xloc);
+  A2D::Vec<double, spatial_dim> stress_grad;
+  for (int i = 0; i < spatial_dim; i++) {
+    for (int j = 0; j < spatial_dim; j++) {
       xloc_d(j) += h;
-      A2D::SymMat<T, Basis::spatial_dim> stress_d = stress_fun(xloc_d);
+      A2D::SymMat<T, spatial_dim> stress_d = stress_fun(xloc_d);
       stress_grad(i) += (stress_d(i, j) - stress(i, j)) / h;
       xloc_d(j) -= h;
     }
@@ -211,14 +228,14 @@ void test_consistency_elasticity(T E, T nu, const BcFun& bc_fun,
 
   // Compute error
   T err_2norm = 0.0, int_2norm = 0.0;
-  for (int i = 0; i < Basis::spatial_dim; i++) {
+  for (int i = 0; i < spatial_dim; i++) {
     err_2norm += (stress_grad(i) + intf(i)) * (stress_grad(i) + intf(i));
     int_2norm += intf(i) * intf(i);
   }
   err_2norm = sqrt(err_2norm);
   int_2norm = sqrt(int_2norm);
 
-  for (int i = 0; i < Basis::spatial_dim; i++) {
+  for (int i = 0; i < spatial_dim; i++) {
     std::printf("[i=%d]σij,j: %20.10e, fi: %20.10e, σij,j + fi: %20.10e\n", i,
                 stress_grad(i), intf(i), stress_grad(i) + intf(i));
   }
@@ -247,23 +264,42 @@ void execute_accuracy_study(std::string prefix, ProbInstance instance,
                             bool consistency_check) {
   using T = double;
   using Grid = StructuredGrid2D<T>;
-  using QuadratureBulk = GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER>;
-  using QuadratureBCs = GDLSFQuadrature2D<T, Np_1d, QuadPtType::SURFACE>;
-  using Mesh = CutMesh<T, Np_1d>;
-  using Basis = GDBasis2D<T, Mesh>;
 
-  static_assert(Basis::spatial_dim == 2,
-                "only 2-dimensional problem is implemented");
+  // constexpr NodeStrategy node_strategy_bulk =
+  //     NodeStrategy::StrictlyInsideLSF;  // this does not work
+  constexpr NodeStrategy node_strategy_bulk = NodeStrategy::AllowOutsideLSF;
+  constexpr NodeStrategy node_strategy_bcs = NodeStrategy::AllowOutsideLSF;
+
+  using QuadratureBulk =
+      GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER, Grid, node_strategy_bulk>;
+  using QuadratureBCs =
+      GDLSFQuadrature2D<T, Np_1d, QuadPtType::SURFACE, Grid, node_strategy_bcs>;
+  using MeshBulk =
+      CutMesh<T, Np_1d, StructuredGrid2D<T>, NodeStrategy::StrictlyInsideLSF>;
+  using MeshBCs =
+      CutMesh<T, Np_1d, StructuredGrid2D<T>, NodeStrategy::AllowOutsideLSF>;
+
+  using BasisBulk = GDBasis2D<T, MeshBulk>;
+  using BasisBCs = GDBasis2D<T, MeshBCs>;
+
+  static_assert(BasisBulk::spatial_dim == BasisBCs::spatial_dim,
+                "spatial_dim inconsistent between BasisBulk and BasisBCs");
+
+  int constexpr spatial_dim = BasisBulk::spatial_dim;
+  static_assert(spatial_dim == 2,
+                "only 2-dimensional "
+                "problem is "
+                "implemented");
 
   // Construct exact solution using the method of manufactured solutions
   // Strong form of the poisson equation takes the form of
   // Δu = f
-  auto poisson_bc_fun = [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
+  auto poisson_bc_fun = [](const A2D::Vec<T, spatial_dim>& xloc) {
     double k = 1.9 * PI;
     return sin(k * xloc(0)) * sin(k * xloc(1));
   };
 
-  auto poisson_source_fun = [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
+  auto poisson_source_fun = [](const A2D::Vec<T, spatial_dim>& xloc) {
     double k = 1.9 * PI;
     double k2 = k * k;
     return -2.0 * k2 * sin(k * xloc(0)) * sin(k * xloc(1));
@@ -272,8 +308,8 @@ void execute_accuracy_study(std::string prefix, ProbInstance instance,
   // Strong form of the linear elasticity equation takes the form of
   // σij,j + fi = 0
   auto elasticity_bc_fun =
-      []<typename T2>(const A2D::Vec<T2, Basis::spatial_dim>& xloc) {
-        A2D::Vec<T2, Basis::spatial_dim> u;
+      []<typename T2>(const A2D::Vec<T2, spatial_dim>& xloc) {
+        A2D::Vec<T2, spatial_dim> u;
         double k = 1.9 * PI;
         u(0) = sin(k * xloc(0)) * sin(k * xloc(1));
         u(1) = cos(k * xloc(0)) * cos(k * xloc(1));
@@ -283,9 +319,8 @@ void execute_accuracy_study(std::string prefix, ProbInstance instance,
 
   T E = 100.0, nu = 0.3;
   auto elasticity_int_fun =
-      [E, nu]<typename T2>(const A2D::Vec<T2, Basis::spatial_dim>& xloc) {
-        constexpr int spatial_dim = Basis::spatial_dim;
-        constexpr int dof_per_node = Basis::spatial_dim;
+      [E, nu]<typename T2>(const A2D::Vec<T2, spatial_dim>& xloc) {
+        constexpr int dof_per_node = spatial_dim;
 
         T2 mu = 0.5 * E / (1.0 + nu);
         T2 lambda = E * nu / ((1.0 + nu) * (1.0 - nu));
@@ -352,31 +387,32 @@ void execute_accuracy_study(std::string prefix, ProbInstance instance,
       };
 
   if (consistency_check and physics_type == PhysicsType::LinearElasticity) {
-    test_consistency_elasticity<T, Basis>(E, nu, elasticity_bc_fun,
-                                          elasticity_int_fun);
+    test_consistency_elasticity<T, spatial_dim>(E, nu, elasticity_bc_fun,
+                                                elasticity_int_fun);
   }
 
   using PhysicsBulk = typename std::conditional<
       physics_type == PhysicsType::Poisson,
-      PoissonPhysics<T, Basis::spatial_dim, typeof(poisson_source_fun)>,
-      LinearElasticity<T, Basis::spatial_dim,
-                       typeof(elasticity_int_fun)>>::type;
+      PoissonPhysics<T, spatial_dim, typeof(poisson_source_fun)>,
+      LinearElasticity<T, spatial_dim, typeof(elasticity_int_fun)>>::type;
   using PhysicsBCs = typename std::conditional<
       physics_type == PhysicsType::Poisson,
-      PoissonCutDirichlet<T, Basis::spatial_dim, typeof(poisson_bc_fun)>,
-      LinearElasticityCutDirichlet<T, Basis::spatial_dim, Basis::spatial_dim,
+      PoissonCutDirichlet<T, spatial_dim, typeof(poisson_bc_fun)>,
+      LinearElasticityCutDirichlet<T, spatial_dim, spatial_dim,
                                    typeof(elasticity_bc_fun)>>::type;
 
   using AnalysisBulk =
-      GalerkinAnalysis<T, Mesh, QuadratureBulk, Basis, PhysicsBulk>;
+      GalerkinAnalysis<T, MeshBulk, QuadratureBulk, BasisBulk, PhysicsBulk>;
   using AnalysisBCs =
-      GalerkinAnalysis<T, Mesh, QuadratureBCs, Basis, PhysicsBCs>;
+      GalerkinAnalysis<T, MeshBCs, QuadratureBCs, BasisBCs, PhysicsBCs>;
 
   using BSRMat = GalerkinBSRMat<T, PhysicsBulk::dof_per_node>;
   using CSCMat = SparseUtils::CSCMat<T>;
 
   std::shared_ptr<Grid> grid;
-  std::shared_ptr<Mesh> mesh;
+
+  std::shared_ptr<MeshBulk> mesh_bulk;
+  std::shared_ptr<MeshBCs> mesh_bcs;
 
   switch (instance) {
     case ProbInstance::Circle: {
@@ -384,7 +420,12 @@ void execute_accuracy_study(std::string prefix, ProbInstance instance,
       double R = 0.49;
       double lxy[2] = {1.0, 1.0};
       grid = std::make_shared<Grid>(nxy, lxy);
-      mesh = std::make_shared<Mesh>(*grid, [R](double x[]) {
+
+      mesh_bulk = std::make_shared<MeshBulk>(*grid, [R](double x[]) {
+        return (x[0] - 0.5) * (x[0] - 0.5) + (x[1] - 0.5) * (x[1] - 0.5) -
+               R * R;  // <= 0
+      });
+      mesh_bcs = std::make_shared<MeshBCs>(*grid, [R](double x[]) {
         return (x[0] - 0.5) * (x[0] - 0.5) + (x[1] - 0.5) * (x[1] - 0.5) -
                R * R;  // <= 0
       });
@@ -396,7 +437,13 @@ void execute_accuracy_study(std::string prefix, ProbInstance instance,
       double lxy[2] = {1.0, 1.0};
       double angle = PI / 6.0;
       grid = std::make_shared<Grid>(nxy, lxy);
-      mesh = std::make_shared<Mesh>(*grid, [angle](double x[]) {
+      mesh_bulk = std::make_shared<MeshBulk>(*grid, [angle](double x[]) {
+        T region1 = sin(angle) * (x[0] - 1.0) + cos(angle) * x[1];  // <= 0
+        T region2 = 1e-6 - x[0];
+        T region3 = 1e-6 - x[1];
+        return hard_max<T>({region1, region2, region3});
+      });
+      mesh_bcs = std::make_shared<MeshBCs>(*grid, [angle](double x[]) {
         T region1 = sin(angle) * (x[0] - 1.0) + cos(angle) * x[1];  // <= 0
         T region2 = 1e-6 - x[0];
         T region3 = 1e-6 - x[1];
@@ -418,18 +465,34 @@ void execute_accuracy_study(std::string prefix, ProbInstance instance,
       int nxy[2] = {j["nxy"], j["nxy"]};
       double lxy[2] = {1.0, 1.0};
       grid = std::make_shared<Grid>(nxy, lxy);
-      mesh = std::make_shared<Mesh>(*grid);
-      if (mesh->get_lsf_dof().size() != lsf_dof.size()) {
+
+      mesh_bulk = std::make_shared<MeshBulk>(*grid);
+      mesh_bcs = std::make_shared<MeshBCs>(*grid);
+
+      if (mesh_bulk->get_lsf_dof().size() != lsf_dof.size()) {
         std::string msg =
             "Attempting to populate the LSF dof from input image, but the "
             "dimensions don't match, the mesh has " +
-            std::to_string(mesh->get_lsf_dof().size()) +
+            std::to_string(mesh_bulk->get_lsf_dof().size()) +
             " LSF nodes, but the input json has " +
             std::to_string(lsf_dof.size()) + " entries.";
         throw std::runtime_error(msg.c_str());
       }
-      mesh->get_lsf_dof() = lsf_dof;
-      mesh->update_mesh();
+      mesh_bulk->get_lsf_dof() = lsf_dof;
+      mesh_bulk->update_mesh();
+
+      if (mesh_bcs->get_lsf_dof().size() != lsf_dof.size()) {
+        std::string msg =
+            "Attempting to populate the LSF dof from input image, but the "
+            "dimensions don't match, the mesh has " +
+            std::to_string(mesh_bcs->get_lsf_dof().size()) +
+            " LSF nodes, but the input json has " +
+            std::to_string(lsf_dof.size()) + " entries.";
+        throw std::runtime_error(msg.c_str());
+      }
+      mesh_bcs->get_lsf_dof() = lsf_dof;
+      mesh_bcs->update_mesh();
+
       break;
     }
 
@@ -450,27 +513,53 @@ void execute_accuracy_study(std::string prefix, ProbInstance instance,
     physics_bcs = std::make_shared<PhysicsBCs>(nitsche_eta, elasticity_bc_fun);
   }
 
-  QuadratureBulk quadrature_bulk(*mesh);
-  QuadratureBCs quadrature_bcs(*mesh);
-  Basis basis(*mesh);
+  QuadratureBulk quadrature_bulk(*mesh_bulk);
+  QuadratureBCs quadrature_bcs(*mesh_bcs);
 
-  AnalysisBulk analysis_bulk(*mesh, quadrature_bulk, basis, *physics_bulk);
-  AnalysisBCs analysis_bcs(*mesh, quadrature_bcs, basis, *physics_bcs);
+  BasisBulk basis_bulk(*mesh_bulk);
+  BasisBCs basis_bcs(*mesh_bcs);
 
-  int nnodes = mesh->get_num_nodes();
+  AnalysisBulk analysis_bulk(*mesh_bulk, quadrature_bulk, basis_bulk,
+                             *physics_bulk);
+  AnalysisBCs analysis_bcs(*mesh_bcs, quadrature_bcs, basis_bcs, *physics_bcs);
+
+  xcgd_assert(mesh_bulk->get_num_nodes() == mesh_bcs->get_num_nodes(),
+              "mesh_bulk and mesh_bcs have different num_nodes");
+  xcgd_assert(mesh_bulk->get_num_elements() == mesh_bcs->get_num_elements(),
+              "mesh_bulk and mesh_bcs have different num_elements");
+
+  int nnodes = mesh_bulk->get_num_nodes();
+  int nelems = mesh_bulk->get_num_elements();
+
   int ndof = nnodes * PhysicsBulk::dof_per_node;
 
   // Set up the Jacobian matrix for Poisson's problem with Nitsche's boundary
   // conditions
   int *rowp = nullptr, *cols = nullptr;
+  static constexpr int max_nnodes_per_element =
+      2 * MeshBulk::max_nnodes_per_element;
   SparseUtils::CSRFromConnectivityFunctor(
-      mesh->get_num_nodes(), mesh->get_num_elements(),
-      mesh->max_nnodes_per_element,
-      [&mesh](int elem, int* nodes) -> int {
-        return mesh->get_elem_dof_nodes(elem, nodes);
+      nnodes, nelems, max_nnodes_per_element,
+      [&mesh_bulk, &mesh_bcs](int elem, int* nodes) -> int {
+        if (mesh_bulk->is_cut_elem(elem)) {
+          int nodes_work[max_nnodes_per_element];
+
+          int nnodes_this_elem = 0;
+          nnodes_this_elem += mesh_bcs->get_elem_dof_nodes(elem, nodes_work);
+          nnodes_this_elem += mesh_bulk->get_elem_dof_nodes(
+              elem, nodes_work + nnodes_this_elem);
+
+          for (int i = 0; i < nnodes_this_elem; i++) {
+            nodes[i] = nodes_work[i];
+          }
+
+          return nnodes_this_elem;
+        } else {
+          return mesh_bulk->get_elem_dof_nodes(elem, nodes);
+        }
       },
       &rowp, &cols);
-  int nnz = rowp[mesh->get_num_nodes()];
+  int nnz = rowp[nnodes];
   BSRMat* jac_bsr = new BSRMat(nnodes, nnz, rowp, cols);
   std::vector<T> zeros(ndof, 0.0);
   analysis_bulk.jacobian(nullptr, zeros.data(), jac_bsr);
@@ -502,18 +591,18 @@ void execute_accuracy_study(std::string prefix, ProbInstance instance,
   // Get exact solution and source
   std::vector<T> sol_exact(ndof, 0.0), source(ndof, 0.0);
   for (int i = 0; i < nnodes; i++) {
-    T xloc[Basis::spatial_dim];
-    mesh->get_node_xloc(i, xloc);
+    T xloc[spatial_dim];
+    mesh_bulk->get_node_xloc(i, xloc);
 
     if constexpr (physics_type == PhysicsType::Poisson) {
-      sol_exact[i] = poisson_bc_fun(A2D::Vec<T, Basis::spatial_dim>(xloc));
-      source[i] = poisson_source_fun(A2D::Vec<T, Basis::spatial_dim>(xloc));
+      sol_exact[i] = poisson_bc_fun(A2D::Vec<T, spatial_dim>(xloc));
+      source[i] = poisson_source_fun(A2D::Vec<T, spatial_dim>(xloc));
     } else {
-      auto bc = elasticity_bc_fun(A2D::Vec<T, Basis::spatial_dim>(xloc));
-      auto s = elasticity_int_fun(A2D::Vec<T, Basis::spatial_dim>(xloc));
-      for (int d = 0; d < Basis::spatial_dim; d++) {
-        sol_exact[i * Basis::spatial_dim + d] = bc(d);
-        source[i * Basis::spatial_dim + d] = s(d);
+      auto bc = elasticity_bc_fun(A2D::Vec<T, spatial_dim>(xloc));
+      auto s = elasticity_int_fun(A2D::Vec<T, spatial_dim>(xloc));
+      for (int d = 0; d < spatial_dim; d++) {
+        sol_exact[i * spatial_dim + d] = bc(d);
+        source[i * spatial_dim + d] = s(d);
       }
     }
   }
@@ -525,19 +614,18 @@ void execute_accuracy_study(std::string prefix, ProbInstance instance,
   }
 
   GalerkinAnalysis<
-      T, Mesh, QuadratureBulk, Basis,
+      T, MeshBulk, QuadratureBulk, BasisBulk,
       typename std::conditional<
-          physics_type == PhysicsType::Poisson,
-          L2normBulk<T, Basis::spatial_dim>,
-          VecL2normBulk<T, Basis::spatial_dim, Basis::spatial_dim>>::type>
-      integrator_bulk(*mesh, quadrature_bulk, basis, {});
+          physics_type == PhysicsType::Poisson, L2normBulk<T, spatial_dim>,
+          VecL2normBulk<T, spatial_dim, spatial_dim>>::type>
+      integrator_bulk(*mesh_bulk, quadrature_bulk, basis_bulk, {});
+
   GalerkinAnalysis<
-      T, Mesh, QuadratureBCs, Basis,
+      T, MeshBCs, QuadratureBCs, BasisBCs,
       typename std::conditional<
-          physics_type == PhysicsType::Poisson,
-          L2normBulk<T, Basis::spatial_dim>,
-          VecL2normBulk<T, Basis::spatial_dim, Basis::spatial_dim>>::type>
-      integrator_bcs(*mesh, quadrature_bcs, basis, {});
+          physics_type == PhysicsType::Poisson, L2normBulk<T, spatial_dim>,
+          VecL2normBulk<T, spatial_dim, spatial_dim>>::type>
+      integrator_bcs(*mesh_bcs, quadrature_bcs, basis_bcs, {});
 
   std::vector<T> ones(sol.size(), 1.0);
   T area = integrator_bulk.energy(nullptr, ones.data());
@@ -565,7 +653,8 @@ void execute_accuracy_study(std::string prefix, ProbInstance instance,
 
   write_vtk<T>(
       std::filesystem::path(prefix) / std::filesystem::path("solution.vtk"),
-      physics_type, *mesh, sol, sol_exact, source, save_stencils);
+      physics_type, *mesh_bulk, *mesh_bcs, sol, sol_exact, source,
+      save_stencils);
 
   // write_field_vtk<T>(std::filesystem::path(prefix) /
   //                        std::filesystem::path("field_solution_bulk.vtk"),
@@ -580,7 +669,7 @@ int main(int argc, char* argv[]) {
   DegenerateStencilLogger::enable();
 
   ArgParser p;
-  p.add_argument<int>("--save-degenerate-stencils", 1);
+  p.add_argument<int>("--save-stencils", 1);
   p.add_argument<int>("--consistency-check", 1);
   p.add_argument<int>("--Np_1d", 2);
   p.add_argument<int>("--nxy", 64);
@@ -594,7 +683,7 @@ int main(int argc, char* argv[]) {
   p.parse_args(argc, argv);
 
   bool consistency_check = p.get<int>("consistency-check");
-  bool save_stencils = p.get<int>("save-degenerate-stencils");
+  bool save_stencils = p.get<int>("save-stencils");
 
   std::string prefix = p.get<std::string>("prefix");
   if (prefix.empty()) {

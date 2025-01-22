@@ -40,6 +40,7 @@ class ProbMeshBase {
   virtual int get_nvars() = 0;
   virtual std::set<int> get_loaded_cells() = 0;
   virtual std::set<int> get_loaded_verts() = 0;
+  virtual std::set<int> get_protected_verts() = 0;
   virtual std::vector<int> get_bc_nodes() = 0;
   virtual std::vector<T> expand(std::vector<T> x) = 0;  // expand xr -> x
   virtual std::vector<T> reduce(std::vector<T> x) = 0;  // reduce x -> xr
@@ -101,6 +102,7 @@ class CantileverMesh final
 
   std::set<int> get_loaded_cells() { return loaded_cells; }
   std::set<int> get_loaded_verts() { return loaded_verts; }
+  std::set<int> get_protected_verts() { return loaded_verts; }
 
   std::vector<int> get_bc_nodes() {
     return this->mesh.get_left_boundary_nodes();
@@ -205,6 +207,7 @@ class LbracketMesh final : public ProbMeshBase<T, Np_1d, StructuredGrid2D<T>> {
 
   std::set<int> get_loaded_cells() { return loaded_cells; }
   std::set<int> get_loaded_verts() { return loaded_verts; }
+  std::set<int> get_protected_verts() { return loaded_verts; }
 
   std::vector<int> get_bc_nodes() {
     return this->mesh.get_upper_boundary_nodes();
@@ -305,6 +308,18 @@ class LbracketGridMesh final
       }
     }
 
+    for (int v : loaded_verts) {
+      int ixy[2] = {-1, -1};
+      grid.get_vert_coords(v, ixy);
+      for (auto [dx, dy] : std::vector<std::pair<int, int>>{
+               {0, 0}, {0, 1}, {0, -1}, {-1, 0}, {-1, -1}}) {
+        if (grid.is_valid_vert(ixy[0] + dx, ixy[1] + dy)) {
+          protected_verts.insert(
+              grid.get_coords_vert(ixy[0] + dx, ixy[1] + dy));
+        };
+      }
+    }
+
     N = this->grid.get_num_verts();
 
     // Find xr -> x mapping, identical mapping since we don't have non-design
@@ -322,6 +337,7 @@ class LbracketGridMesh final
 
   std::set<int> get_loaded_cells() { return loaded_cells; }
   std::set<int> get_loaded_verts() { return loaded_verts; }
+  std::set<int> get_protected_verts() { return protected_verts; }
 
   std::vector<int> get_bc_nodes() {
     return this->mesh.get_upper_boundary_nodes();
@@ -353,7 +369,7 @@ class LbracketGridMesh final
   Grid grid;
   Mesh mesh;
   double loaded_frac, domain_area;
-  std::set<int> loaded_cells, loaded_verts;
+  std::set<int> loaded_cells, loaded_verts, protected_verts;
   std::set<int> inactive_cells, inactive_verts;
   int N, Nr;
   std::vector<int> reduce_mapping, expand_mapping;
@@ -1070,9 +1086,10 @@ class TopoProb : public ParOptProblem {
       lb[i] = lbval;
     }
 
-    const auto& loaded_verts = topo.get_prob_mesh().get_loaded_verts();
+    const auto& loaded_verts = topo.get_prob_mesh().get_protected_verts();
     for (int i : loaded_verts) {
-      ub[i] = 1e-3;  // we prescribe x < 0 for loaded verts
+      ub[i] =
+          -0.01;  // we prescribe x to be sufficient negative for loaded verts
     }
   }
 
@@ -1109,11 +1126,20 @@ class TopoProb : public ParOptProblem {
       // Write design to vtk
       std::string vtk_path =
           fspath(prefix) / fspath("grid_" + std::to_string(counter) + ".vtk");
+      std::vector<double> protected_verts_v(x.size(), 0.0);
+      const auto& protected_verts = topo.get_prob_mesh().get_protected_verts();
+      for (auto v : protected_verts) {
+        protected_verts_v[v] = 1.0;
+      }
+
       if constexpr (TopoAnalysis::use_ersatz) {
-        topo.write_grid_vtk(vtk_path, x, topo.get_phi(), {}, {},
+        topo.write_grid_vtk(vtk_path, x, topo.get_phi(),
+                            {{"pertected_verts", protected_verts_v}}, {},
                             {{"displacement", u}, {"rhs", topo.get_rhs()}}, {});
       } else {
-        topo.write_grid_vtk(vtk_path, x, topo.get_phi(), {}, {}, {}, {});
+        topo.write_grid_vtk(vtk_path, x, topo.get_phi(),
+                            {{"pertected_verts", protected_verts_v}}, {}, {},
+                            {});
       }
 
       // Write cut mesh to vtk
@@ -1142,8 +1168,6 @@ class TopoProb : public ParOptProblem {
       topo.write_quad_pts_to_vtk(fspath(prefix) / fspath(vtk_name));
 
       vtk_name = "fdcheck_grid_" + std::to_string(counter) + ".vtk";
-      std::vector<T> dvr(nvars, 0.0);
-      std::vector<T> dv = topo.get_prob_mesh().expand(dvr);
 
       std::vector<T> vert_loaded_or_not(
           topo.get_prob_mesh().get_grid().get_num_verts(), 0.0);
@@ -1160,13 +1184,13 @@ class TopoProb : public ParOptProblem {
       if constexpr (TopoAnalysis::use_ersatz) {
         topo.write_grid_vtk(fspath(prefix) / fspath(vtk_name), x,
                             topo.get_phi(),
-                            {{"dv", dv}, {"loaded_verts", vert_loaded_or_not}},
+                            {{"loaded_verts", vert_loaded_or_not}},
                             {{"loaded_cells", cell_loaded_or_not}},
                             {{"displacement", u}, {"rhs", topo.get_rhs()}}, {});
       } else {
         topo.write_grid_vtk(fspath(prefix) / fspath(vtk_name), x,
                             topo.get_phi(),
-                            {{"dv", dv}, {"loaded_verts", vert_loaded_or_not}},
+                            {{"loaded_verts", vert_loaded_or_not}},
                             {{"loaded_cells", cell_loaded_or_not}}, {}, {});
       }
 
@@ -1312,6 +1336,15 @@ void execute(int argc, char* argv[]) {
   std::filesystem::copy(
       cfg_path,
       fspath(prefix) / fspath(std::filesystem::absolute(cfg_path).filename()));
+
+  std::string init_topo_json_path =
+      parser.get_str_option("init_topology_from_json");
+  if (!init_topo_json_path.empty()) {
+    std::filesystem::copy(
+        init_topo_json_path,
+        fspath(prefix) /
+            fspath(std::filesystem::absolute(init_topo_json_path).filename()));
+  }
 
   // Set up grid
   std::array<int, 2> nxy = {parser.get_int_option("nx"),

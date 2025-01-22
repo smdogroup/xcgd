@@ -14,10 +14,10 @@ import argparse
 
 class StepsizeStudy:
 
-    def __init__(self):
+    def __init__(self, cfg):
         self.working_dir = "step_size_study"
         self.exec_name = "topo"
-        self.cfg_template_name = "topo.cfg"
+        self.cfg_template_name = cfg
 
     def remove_file_if_exists(self, file_path):
         if os.path.isfile(file_path):
@@ -107,11 +107,12 @@ class StepsizeStudy:
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
+    p.add_argument("--cfg", type=str, default="topo.cfg")
     p.add_argument("--csv", type=str)
     p.add_argument("--num-points", type=int, default=10)
     args = p.parse_args()
 
-    study = StepsizeStudy()
+    study = StepsizeStudy(args.cfg)
 
     if args.csv:
         df = pd.read_csv(args.csv).drop(columns=["Unnamed: 0"])

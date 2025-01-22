@@ -169,7 +169,7 @@ def run_experiments(
                 cmd = [
                     "./nitsche_accuracy",
                     f"--instance={instance}",
-                    "--save-degenerate-stencils=1",
+                    "--save-stencils=1",
                     f"--Np_1d={Np_1d}",
                     f"--nxy={nxy}",
                     f"--prefix={prefix}",

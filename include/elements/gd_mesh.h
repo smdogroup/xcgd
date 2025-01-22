@@ -317,11 +317,19 @@ class GridMesh : public GDMeshBase<T, Np_1d, Grid_> {
   std::set<int> regular_stencil_elems;
 };
 
+// - AllowOutsideLSF: when creating element -> dof node mapping, allow nodes to
+// reside outside the boundary defined by the level-set function, which usually
+// happens at the cut cells, default option
+// - StrictlyInsideLSF: typically for cut elements, don't allow vertices outside
+// the boundary defined by the level-set function to be used as dof nodes
+enum class NodeStrategy { AllowOutsideLSF, StrictlyInsideLSF };
+
 /**
  * @brief The Galerkin difference mesh defined on a structured
  * grid with cuts defined by a level set function
  */
-template <typename T, int Np_1d, class Grid_ = StructuredGrid2D<T>>
+template <typename T, int Np_1d, class Grid_ = StructuredGrid2D<T>,
+          NodeStrategy node_strategy = NodeStrategy::AllowOutsideLSF>
 class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
  private:
   using MeshBase = GDMeshBase<T, Np_1d, Grid_>;
@@ -435,6 +443,9 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
 
   const Map<int, std::vector<int>>& get_elem_nodes() const {
     return elem_nodes;
+  }
+  const std::vector<int>& get_nodes(int elem) const {
+    return elem_nodes.at(elem);
   }
 
   // Similar to get_elem_dof_nodes, but use grid indices (i.e. cell, vert)
@@ -736,10 +747,10 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
         int ixy[2] = {-1, -1};
         this->grid.get_vert_coords(verts[i], ixy);
 
-        if (not is_valid_node(ixy[0], ixy[1])) {
+        if (not vert_is_valid_dof_node(ixy[0], ixy[1])) {
           ixy[dim] += sign * Np_1d;
 
-          if (not is_valid_node(ixy[0], ixy[1])) {
+          if (not vert_is_valid_dof_node(ixy[0], ixy[1])) {
             continue;
           }
         }
@@ -805,11 +816,21 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
     */
   }
 
-  bool is_valid_node(int ix, int iy) {
-    if (not this->grid.is_valid_vert(ix, iy)) {
-      return false;
+  bool vert_is_valid_dof_node(int ix, int iy) {
+    // If the vertex is in the cut mesh
+    if constexpr (node_strategy == NodeStrategy::AllowOutsideLSF) {
+      if (not this->grid.is_valid_vert(ix, iy)) {
+        return false;
+      }
+      return vert_nodes.count(this->grid.get_coords_vert(ix, iy)) != 0;
+
     }
-    return vert_nodes.count(this->grid.get_coords_vert(ix, iy)) != 0;
+
+    // If the vertex is in the cut mesh and within the region defined by the
+    // level set function, i.e. phi <= 0
+    else {  // node_strategy == NodeStrategy::StrictlyInsideLSF
+      return (lsf_dof[this->grid.get_coords_vert(ix, iy)] <= 0.0);
+    }
   };
 
   enum class Leg { LEFT, RIGHT, UP, DOWN };
@@ -847,18 +868,18 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
       }
 
       // Case 1: stencil vertex hit, nice and easy!
-      if (is_valid_node(ix, iy)) {
+      if (vert_is_valid_dof_node(ix, iy)) {
         nodes.push_back(vert_nodes[this->grid.get_coords_vert(ix, iy)]);
 
       }
       // Case 2: stencil vert miss, but the symmetric vert on the other side of
       // the stencil hit
-      else if (is_valid_node(ix_2, iy_2)) {
+      else if (vert_is_valid_dof_node(ix_2, iy_2)) {
         nodes.push_back(vert_nodes[this->grid.get_coords_vert(ix_2, iy_2)]);
       }
       // Case 3: Case 2 still miss, but this vert is a corner vert, hence we
       // have another symmetric vert to try
-      else if (i == nnodes_per_leg - 1 and is_valid_node(ix_3, iy_3)) {
+      else if (i == nnodes_per_leg - 1 and vert_is_valid_dof_node(ix_3, iy_3)) {
         nodes.push_back(vert_nodes[this->grid.get_coords_vert(ix_3, iy_3)]);
       }
 
@@ -1057,7 +1078,6 @@ inline std::vector<std::pair<int, int>> verts_to_pterms(
   auto& counts = vertical_first ? ix_counts_v : iy_counts_v;
   std::sort(counts.begin(), counts.end(), std::greater<>());
 
-  // Populate polynomial terms, note that x^m y^n is represented by tuple (m, n)
   std::vector<std::pair<int, int>> pterms;
   pterms.reserve(verts.size());
   for (int m = 0; m < counts.size(); m++) {
