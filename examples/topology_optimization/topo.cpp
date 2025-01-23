@@ -852,6 +852,7 @@ class TopoAnalysis {
     }
     vtk.write_sol("x", mesh.get_lsf_nodes(x).data());
     vtk.write_sol("phi", mesh.get_lsf_nodes().data());
+
     std::vector<T> bc_nodes_v(mesh.get_num_nodes(), 0.0);
     const auto& bc_nodes = prob_mesh.get_bc_nodes();
     for (int n : bc_nodes) {
@@ -871,6 +872,14 @@ class TopoAnalysis {
     }
 
     // Cell solutions
+    int nelems = mesh.get_num_elements();
+    std::vector<T> is_cut_elem_v(nelems, 0.0);
+    for (int i = 0; i < nelems; i++) {
+      if (mesh.is_cut_elem(i)) {
+        is_cut_elem_v[i] = 1.0;
+      }
+    }
+    vtk.write_cell_sol("is_cut_element", is_cut_elem_v.data());
     for (auto [name, vals] : cell_sols) {
       if (vals.size() != mesh.get_num_elements()) {
         throw std::runtime_error(

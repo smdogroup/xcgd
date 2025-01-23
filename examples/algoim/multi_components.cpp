@@ -35,6 +35,8 @@ void quadratures_multipoly() {
 
   algoim::ImplicitPolyQuadrature<spatial_dim> ipquad(phi);
 
+  std::cout << "no interfaces?: " << (ipquad.k == spatial_dim) << "\n";
+
   // Compute quadrature nodes
   std::vector<algoim::uvector<T, spatial_dim>> quad_nodes;
   std::vector<T> quad_wts;

@@ -523,6 +523,24 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
   }
 
  private:
+  void populate_cut_elems() {
+    cut_elems.clear();
+
+    for (int i = 0; i < num_elements; i++) {
+      int verts[Grid::nverts_per_cell];
+      T lsf_vals[Grid::nverts_per_cell];
+      this->grid.get_cell_verts(get_elem_cell(i), verts);
+      for (int j = 0; j < Grid::nverts_per_cell; j++) {
+        lsf_vals[j] = lsf_dof[verts[j]];
+      }
+
+      std::sort(lsf_vals, lsf_vals + Grid::nverts_per_cell);
+      if (lsf_vals[0] * lsf_vals[Grid::nverts_per_cell - 1] <= 0.0) {
+        cut_elems.insert(i);
+      }
+    }
+  }
+
   // Update the mesh when the lsf_dof is updated
   void update_mesh_init() {
     elem_nodes.clear();
@@ -531,7 +549,6 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
     elem_cells.clear();
     cell_elems.clear();
     cell_dirs.clear();
-    cut_elems.clear();
     regular_stencil_elems.clear();
 
     // LSF values are always associated with the ground grid verts, unlike the
@@ -618,19 +635,7 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
     }
 
     // Identify all cut elements
-    for (int i = 0; i < num_elements; i++) {
-      int verts[Grid::nverts_per_cell];
-      T lsf_vals[Grid::nverts_per_cell];
-      this->grid.get_cell_verts(get_elem_cell(i), verts);
-      for (int j = 0; j < Grid::nverts_per_cell; j++) {
-        lsf_vals[j] = lsf_dof[verts[j]];
-      }
-
-      std::sort(lsf_vals, lsf_vals + Grid::nverts_per_cell);
-      if (lsf_vals[0] * lsf_vals[Grid::nverts_per_cell - 1] <= 0.0) {
-        cut_elems.insert(i);
-      }
-    }
+    populate_cut_elems();
 
     // Identify all the elements with regular stencils
     for (int i = 0; i < num_elements; i++) {
@@ -976,120 +981,6 @@ void get_computational_coordinates_limits(const Mesh& mesh, int elem, T* xi_min,
   xi_min[1] = cy;
   xi_max[0] = cx + dx;
   xi_max[1] = cy + dy;
-}
-
-/**
- * @brief convert pstencil to polynomial term indices
- *
- * pstencil is a Np_1d-by-Np_1d boolean matrix, given a stencil vertex
- * represented by the index coordinates (i, j), boolearn pstencil[i][j]
- * indicates whether the vertex is active or not. e.g. for a regular internal
- * stencil, entries of pstencil are all 1.
- *
- * Given a pstencil, this function determines which polynomial terms (1, x, y,
- * xy, x^2, y^2, x^2y, xy^2, etc.) to use to construct the basis function by
- * the following process:
- *   1. count number of active stencils for each column
- *   2. sort the counts in descending order
- *
- * For example, for the pstencil below,
- *
- *      0    0    1    1
- *
- *      0    1    0    1
- *
- *      1    1    1    0
- *
- *      0    1    1    0
- *
- * Number of active stencils per each column in descending order is
- *
- *      3    3    2    1
- *
- * As a result, the polynomial terms used could be represented by the
- * following table
- *
- *      1    x   x^2  x^3
- *      -----------------
- *   1 |✓    ✓    ✓    ✓
- *     |
- *   y |✓    ✓    ✓
- *     |
- *  y^2|✓    ✓
- *     |
- *  y^3|
- *
- * which are the following terms, to explicitly enumerate:
- *
- *      1    x    x^2   x^3
- *      y    xy   x^2y
- *      y^2  xy^2
- *
- */
-template <int Np_1d>
-std::vector<std::pair<int, int>> pstencil_to_pterms_deprecated(
-    const std::vector<std::vector<bool>>& pstencil) {
-  // Populate count for each column
-  std::vector<int> counts(Np_1d, 0);
-  for (int i = 0; i < Np_1d; i++) {
-    for (int j = 0; j < Np_1d; j++) {
-      if (pstencil[i][j]) {
-        counts[i]++;
-      }
-    }
-  }
-
-  // Sort count in descending order
-  std::sort(counts.begin(), counts.end(), std::greater<>());
-
-  // Populate polynomial terms, note that x^m y^n is represented by tuple (m, n)
-  std::vector<std::pair<int, int>> pterms;
-  for (int m = 0; m < counts.size(); m++) {
-    for (int n = 0; n < counts[m]; n++) {
-      pterms.push_back({m, n});
-    }
-  }
-
-  return pterms;
-}
-
-inline std::vector<std::pair<int, int>> verts_to_pterms(
-    const std::vector<std::pair<int, int>>& verts, bool vertical_first = true) {
-  std::map<int, int> ix_counts, iy_counts;
-
-  for (auto& [ix, iy] : verts) {
-    ix_counts[ix]++;  // how many verts for each ix index
-    iy_counts[iy]++;  // how many verts for each iy index
-  }
-
-  std::vector<int> ix_counts_v, iy_counts_v;
-  ix_counts_v.reserve(ix_counts.size());
-  iy_counts_v.reserve(iy_counts.size());
-
-  for (auto& [_, v] : ix_counts) {
-    ix_counts_v.push_back(v);
-  }
-
-  for (auto& [_, v] : iy_counts) {
-    iy_counts_v.push_back(v);
-  }
-
-  // Sort count in descending order
-  auto& counts = vertical_first ? ix_counts_v : iy_counts_v;
-  std::sort(counts.begin(), counts.end(), std::greater<>());
-
-  std::vector<std::pair<int, int>> pterms;
-  pterms.reserve(verts.size());
-  for (int m = 0; m < counts.size(); m++) {
-    for (int n = 0; n < counts[m]; n++) {
-      if (vertical_first) {
-        pterms.push_back({m, n});
-      } else {
-        pterms.push_back({n, m});
-      }
-    }
-  }
-  return pterms;
 }
 
 #endif  // XCGD_GD_MESH_H

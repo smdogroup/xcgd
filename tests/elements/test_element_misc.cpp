@@ -1,7 +1,7 @@
 #include <utility>
 #include <vector>
 
-#include "elements/gd_mesh.h"
+#include "elements/element_utils.h"
 #include "test_commons.h"
 
 TEST(elements, pstencil_Np_1d_2) {

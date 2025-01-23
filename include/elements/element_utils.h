@@ -7,7 +7,6 @@
 
 #include "a2dcore.h"
 #include "element_commons.h"
-#include "gd_mesh.h"
 #include "physics/physics_commons.h"
 #include "utils/vtk.h"
 
@@ -882,6 +881,120 @@ void add_energy_partial_deriv(
                         pts_grad[spatial_dim * n + d];
     }
   }
+}
+
+/**
+ * @brief convert pstencil to polynomial term indices
+ *
+ * pstencil is a Np_1d-by-Np_1d boolean matrix, given a stencil vertex
+ * represented by the index coordinates (i, j), boolearn pstencil[i][j]
+ * indicates whether the vertex is active or not. e.g. for a regular internal
+ * stencil, entries of pstencil are all 1.
+ *
+ * Given a pstencil, this function determines which polynomial terms (1, x, y,
+ * xy, x^2, y^2, x^2y, xy^2, etc.) to use to construct the basis function by
+ * the following process:
+ *   1. count number of active stencils for each column
+ *   2. sort the counts in descending order
+ *
+ * For example, for the pstencil below,
+ *
+ *      0    0    1    1
+ *
+ *      0    1    0    1
+ *
+ *      1    1    1    0
+ *
+ *      0    1    1    0
+ *
+ * Number of active stencils per each column in descending order is
+ *
+ *      3    3    2    1
+ *
+ * As a result, the polynomial terms used could be represented by the
+ * following table
+ *
+ *      1    x   x^2  x^3
+ *      -----------------
+ *   1 |✓    ✓    ✓    ✓
+ *     |
+ *   y |✓    ✓    ✓
+ *     |
+ *  y^2|✓    ✓
+ *     |
+ *  y^3|
+ *
+ * which are the following terms, to explicitly enumerate:
+ *
+ *      1    x    x^2   x^3
+ *      y    xy   x^2y
+ *      y^2  xy^2
+ *
+ */
+template <int Np_1d>
+std::vector<std::pair<int, int>> pstencil_to_pterms_deprecated(
+    const std::vector<std::vector<bool>> &pstencil) {
+  // Populate count for each column
+  std::vector<int> counts(Np_1d, 0);
+  for (int i = 0; i < Np_1d; i++) {
+    for (int j = 0; j < Np_1d; j++) {
+      if (pstencil[i][j]) {
+        counts[i]++;
+      }
+    }
+  }
+
+  // Sort count in descending order
+  std::sort(counts.begin(), counts.end(), std::greater<>());
+
+  // Populate polynomial terms, note that x^m y^n is represented by tuple (m, n)
+  std::vector<std::pair<int, int>> pterms;
+  for (int m = 0; m < counts.size(); m++) {
+    for (int n = 0; n < counts[m]; n++) {
+      pterms.push_back({m, n});
+    }
+  }
+
+  return pterms;
+}
+
+inline std::vector<std::pair<int, int>> verts_to_pterms(
+    const std::vector<std::pair<int, int>> &verts, bool vertical_first = true) {
+  std::map<int, int> ix_counts, iy_counts;
+
+  for (auto &[ix, iy] : verts) {
+    ix_counts[ix]++;  // how many verts for each ix index
+    iy_counts[iy]++;  // how many verts for each iy index
+  }
+
+  std::vector<int> ix_counts_v, iy_counts_v;
+  ix_counts_v.reserve(ix_counts.size());
+  iy_counts_v.reserve(iy_counts.size());
+
+  for (auto &[_, v] : ix_counts) {
+    ix_counts_v.push_back(v);
+  }
+
+  for (auto &[_, v] : iy_counts) {
+    iy_counts_v.push_back(v);
+  }
+
+  // Sort count in descending order
+  auto &counts = vertical_first ? ix_counts_v : iy_counts_v;
+  std::sort(counts.begin(), counts.end(), std::greater<>());
+
+  std::vector<std::pair<int, int>> pterms;
+  pterms.reserve(verts.size());
+  for (int m = 0; m < counts.size(); m++) {
+    for (int n = 0; n < counts[m]; n++) {
+      if (vertical_first) {
+        pterms.push_back({m, n});
+      } else {
+        pterms.push_back({n, m});
+      }
+    }
+  }
+  return pterms;
 }
 
 template <typename T, int samples_1d, class Mesh>
