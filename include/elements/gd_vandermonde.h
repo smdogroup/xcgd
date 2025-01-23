@@ -243,22 +243,6 @@ class GDLSFQuadrature2D final : public QuadratureBase<T, quad_type> {
 
  private:
   template <typename T2>
-  void get_phi_vals(const VandermondeEvaluator<T, GridMesh_>& eval,
-                    const T2 element_dof[],
-                    algoim::xarray<T2, spatial_dim>& phi) const {
-    algoim::bernstein::bernsteinInterpolate<spatial_dim>(
-        [&](const algoim::uvector<T2, spatial_dim>& xi) {  // xi in [0, 1]
-          T2 N[max_nnodes_per_element];
-          // xi in [xi_min, xi_max]
-          eval(-1, xi.data(), N, (T2*)nullptr);
-          T2 val;
-          interp_val_grad<T2, Basis>(element_dof, N, nullptr, &val, nullptr);
-          return val;
-        },
-        phi);
-  }
-
-  template <typename T2>
   void getQuadrature(const T2 element_lsf[],
                      const VandermondeEvaluator<T, GridMesh_>& eval,
                      std::vector<T>& pts, std::vector<T>& wts,

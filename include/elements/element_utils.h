@@ -158,6 +158,19 @@ void get_element_xloc(const Mesh &mesh, int e, T element_xloc[]) {
   }
 }
 
+template <typename T, int dim, class Mesh, int max_nnodes_per_element,
+          int spatial_dim>
+void get_element_vars(const Mesh &mesh, int e, const T dof[], T element_dof[]) {
+  std::fill(element_dof, element_dof + max_nnodes_per_element * dim, T(0.0));
+  int nodes[max_nnodes_per_element];
+  int nnodes = mesh.get_elem_dof_nodes(e, nodes);
+  for (int j = 0; j < nnodes; j++) {
+    for (int k = 0; k < dim; k++, element_dof++) {
+      element_dof[0] = dof[dim * nodes[j] + k];
+    }
+  }
+}
+
 template <typename T, int dim, class Mesh, class Basis>
 void get_element_vars(const Mesh &mesh, int e, const T dof[], T element_dof[]) {
   int constexpr max_nnodes_per_element = Basis::max_nnodes_per_element;
@@ -252,13 +265,10 @@ void add_element_dfdphi(const Mesh &lsf_mesh, int c, const T element_dfdphi[],
  * @param vals interpolated dof
  * @param grad gradients of vals w.r.t. computational coordinates dv/dxi
  */
-template <typename T, class Basis, int dim>
+template <typename T, int spatial_dim, int max_nnodes_per_element, int dim>
 void interp_val_grad(const T dof[], const T N[], const T Nxi[],
                      A2D::Vec<T, dim> *vals,
-                     A2D::Mat<T, dim, Basis::spatial_dim> *grad) {
-  static constexpr int spatial_dim = Basis::spatial_dim;
-  static constexpr int max_nnodes_per_element = Basis::max_nnodes_per_element;
-
+                     A2D::Mat<T, dim, spatial_dim> *grad) {
   if (vals) {
     for (int k = 0; k < dim; k++) {
       (*vals)(k) = 0.0;
@@ -285,13 +295,19 @@ void interp_val_grad(const T dof[], const T N[], const T Nxi[],
   }
 }
 
-// dim == 1
-template <typename T, class Basis>
-void interp_val_grad(const T *dof, const T *N, const T *Nxi, T *val,
-                     A2D::Vec<T, Basis::spatial_dim> *grad) {
-  static constexpr int spatial_dim = Basis::spatial_dim;
-  static constexpr int max_nnodes_per_element = Basis::max_nnodes_per_element;
+// Back compatibility
+template <typename T, class Basis, int dim>
+inline void interp_val_grad(const T dof[], const T N[], const T Nxi[],
+                            A2D::Vec<T, dim> *vals,
+                            A2D::Mat<T, dim, Basis::spatial_dim> *grad) {
+  return interp_val_grad<T, Basis::spatial_dim, Basis::max_nnodes_per_element,
+                         dim>(dof, N, Nxi, vals, grad);
+}
 
+// dim == 1
+template <typename T, int spatial_dim, int max_nnodes_per_element>
+void interp_val_grad(const T *dof, const T *N, const T *Nxi, T *val,
+                     A2D::Vec<T, spatial_dim> *grad) {
   if (val) {
     *val = 0.0;
   }
@@ -312,6 +328,14 @@ void interp_val_grad(const T *dof, const T *N, const T *Nxi, T *val,
       }
     }
   }
+}
+
+// Back compatibility
+template <typename T, class Basis>
+inline void interp_val_grad(const T *dof, const T *N, const T *Nxi, T *val,
+                            A2D::Vec<T, Basis::spatial_dim> *grad) {
+  return interp_val_grad<T, Basis::spatial_dim, Basis::max_nnodes_per_element>(
+      dof, N, Nxi, val, grad);
 }
 
 /**

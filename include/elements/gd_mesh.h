@@ -9,8 +9,8 @@
 #include <vector>
 
 #include "elements/element_commons.h"
-#include "quadrature_general.hpp"
-#include "utils/exceptions.h"
+#include "elements/vandermonde_evaluator.h"
+#include "quadrature_multipoly.hpp"
 #include "utils/loggers.h"
 #include "utils/misc.h"
 
@@ -523,7 +523,7 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
   }
 
  private:
-  void populate_cut_elems() {
+  void populate_cut_elems_deprecated() {
     cut_elems.clear();
 
     for (int i = 0; i < num_elements; i++) {
@@ -537,6 +537,35 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
       std::sort(lsf_vals, lsf_vals + Grid::nverts_per_cell);
       if (lsf_vals[0] * lsf_vals[Grid::nverts_per_cell - 1] <= 0.0) {
         cut_elems.insert(i);
+      }
+    }
+  }
+
+  void populate_cut_elems() {
+    cut_elems.clear();
+
+    for (int elem = 0; elem < num_elements; elem++) {
+      int cell = get_elem_cell(elem);
+
+      VandermondeEvaluator<T, LSFMesh> eval(lsf_mesh, cell);
+
+      // Get element LSF dofs
+      T element_lsf[max_nnodes_per_element];
+      constexpr int lsf_dim = 1;
+      get_element_vars<T, lsf_dim, LSFMesh, max_nnodes_per_element,
+                       spatial_dim>(lsf_mesh, cell, lsf_dof.data(),
+                                    element_lsf);
+
+      T data[Np_1d * Np_1d];
+      algoim::xarray<T, spatial_dim> phi(
+          data, algoim::uvector<int, spatial_dim>(Np_1d, Np_1d));
+      get_phi_vals(eval, element_lsf, phi);
+
+      algoim::ImplicitPolyQuadrature<spatial_dim, T> ipquad(phi);
+
+      bool has_interface = (ipquad.k != spatial_dim);
+      if (has_interface) {
+        cut_elems.insert(elem);
       }
     }
   }
