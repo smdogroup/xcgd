@@ -1,8 +1,24 @@
 #include <vector>
 
-#include "quadrature_general.hpp"
+#include "bernstein.hpp"
 #include "quadrature_multipoly.hpp"
+#include "sparkstack.hpp"
 #include "utils/vtk.h"
+
+template <typename T, int Np_1d, int spatial_dim>
+void find_roots(algoim::xarray<T, spatial_dim>& phi, int k, T x0) {
+  constexpr int P = Np_1d;
+  T pline[P], roots[P - 1];
+  algoim::uvector<T, spatial_dim - 1> xbase{x0};
+  algoim::bernstein::collapseAlongAxis(phi, xbase, k, pline);
+  int rcount =
+      algoim::bernstein::bernsteinUnitIntervalRealRoots(pline, P, roots);
+
+  for (int i = 0; i < rcount; i++) {
+    auto x = add_component(xbase, k, roots[i]);
+    std::printf("[root %d]: (%20.10e, %20.10e)\n", i, x(0), x(1));
+  }
+}
 
 template <int Np_1d>
 void quadratures_multipoly() {
@@ -26,6 +42,7 @@ void quadratures_multipoly() {
   T data[Np_1d * Np_1d];
   algoim::xarray<T, spatial_dim> phi(
       data, algoim::uvector<int, spatial_dim>(Np_1d, Np_1d));
+
   algoim::bernstein::bernsteinInterpolate<spatial_dim>(
       [&](const algoim::uvector<T, spatial_dim>& x) {
         // std::printf("x: (%15.5e, %15.5e)\n", x(0), x(1));
@@ -33,8 +50,17 @@ void quadratures_multipoly() {
       },
       phi);
 
-  algoim::ImplicitPolyQuadrature<spatial_dim> ipquad(phi);
+  // Compute root on left edge
+  std::printf("Left edge:\n");
+  find_roots<T, Np_1d, spatial_dim>(phi, 1, 0.0);
+  std::printf("Right edge:\n");
+  find_roots<T, Np_1d, spatial_dim>(phi, 1, 1.0);
+  std::printf("Lower edge:\n");
+  find_roots<T, Np_1d, spatial_dim>(phi, 0, 0.0);
+  std::printf("Upper edge:\n");
+  find_roots<T, Np_1d, spatial_dim>(phi, 0, 1.0);
 
+  algoim::ImplicitPolyQuadrature<spatial_dim> ipquad(phi);
   std::cout << "no interfaces?: " << (ipquad.k == spatial_dim) << "\n";
 
   // Compute quadrature nodes
@@ -42,7 +68,7 @@ void quadratures_multipoly() {
   std::vector<T> quad_wts;
   ipquad.integrate(algoim::AutoMixed, Np_1d,
                    [&](const algoim::uvector<T, spatial_dim>& x, T w) {
-                     printf("pt: %.5f %.5f wt: %.5f\n", x(0), x(1), w);
+                     // printf("pt: %.5f %.5f wt: %.5f\n", x(0), x(1), w);
                      if (algoim::bernstein::evalBernsteinPoly(phi, x) > 0) {
                        quad_nodes.push_back(x);
                        quad_wts.push_back(w);
@@ -70,4 +96,4 @@ void quadratures_multipoly() {
   vtk.write_sol("quad_wts");
 }
 
-int main() { quadratures_multipoly<4>(); }
+int main() { quadratures_multipoly<6>(); }
