@@ -429,13 +429,15 @@ class TopoAnalysis {
  public:
   TopoAnalysis(ProbMesh& prob_mesh, T r0, T E, T nu, T penalty, T stress_ksrho,
                T yield_stress, bool use_robust_projection, double proj_beta,
-               double proj_eta, std::string prefix, double compliance_scalar)
+               double proj_eta, double proj_xmin, double proj_xmax,
+               std::string prefix, double compliance_scalar)
       : prob_mesh(prob_mesh),
         grid(prob_mesh.get_grid()),
         mesh(prob_mesh.get_mesh()),
         quadrature(mesh),
         basis(mesh),
-        filter(r0, grid, use_robust_projection, proj_beta, proj_eta),
+        filter(r0, grid, use_robust_projection, proj_beta, proj_eta, proj_xmin,
+               proj_xmax),
         elastic(E, nu, mesh, quadrature, basis, int_func),
         vol_analysis(mesh, quadrature, basis, vol),
         pen(penalty),
@@ -1417,6 +1419,8 @@ void execute(int argc, char* argv[]) {
   bool use_robust_projection = parser.get_bool_option("use_robust_projection");
   double robust_proj_beta = parser.get_double_option("robust_proj_beta");
   double robust_proj_eta = parser.get_double_option("robust_proj_eta");
+  double robust_proj_xmin = parser.get_double_option("opt_x_lb");
+  double robust_proj_xmax = parser.get_double_option("opt_x_ub");
   T penalty = parser.get_double_option("grad_penalty_coeff");
   T stress_ksrho = parser.get_double_option("stress_ksrho");
   T yield_stress = parser.get_double_option("yield_stress");
@@ -1432,6 +1436,8 @@ void execute(int argc, char* argv[]) {
                     use_robust_projection,
                     robust_proj_beta,
                     robust_proj_eta,
+                    robust_proj_xmin,
+                    robust_proj_xmax,
                     prefix,
                     compliance_scalar};
 

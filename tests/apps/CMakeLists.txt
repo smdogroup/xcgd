@@ -3,6 +3,8 @@ add_executable(test_robust_projection test_robust_projection.cpp)
 add_executable(test_poisson_app test_poisson_app.cpp)
 add_executable(test_elastic_app test_elastic_app.cpp)
 
+configure_file(${CMAKE_SOURCE_DIR}/tests/apps/plot_robust_projection.py plot_robust_projection.py COPYONLY)
+
 target_include_directories(test_helmholtz_filter PRIVATE
     ${PROJECT_SOURCE_DIR}/include ${PROJECT_SOURCE_DIR}/tests)
 target_include_directories(test_robust_projection PRIVATE

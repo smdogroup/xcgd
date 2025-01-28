@@ -13,7 +13,7 @@
  *
  * M is defined as follows:
  *
- * M(H(x)) = H(x - offset) * (ymax - ymin) + ymin
+ * M(x) = H((x - xmin) / (xmax - xmin)) * (ymax - ymin) + ymin
  *
  * For example, for a common topology optimization application with a
  * level-set function ranging from [-1, 1], M(H(x)) maps from
@@ -28,6 +28,9 @@
  *            /
  *       ----               ymin
  *              x
+ *
+ * ref: Level set topology and shape optimization by density methods using cut
+ * elements with length scale control.
  * */
 #include <cmath>
 #include <cstdio>
@@ -42,13 +45,15 @@ class RobustProjection {
    * @param size [in] the size of the vectors to operate on
    */
  public:
-  RobustProjection(double beta, double eta, int size)
+  RobustProjection(double beta, double eta, int size, double xmin = -1.0,
+                   double xmax = 1.0)
       : beta(beta),
         eta(eta),
         size(size),
-        xoffset(-0.5),
-        ymax(1.0),
-        ymin(-1.0),
+        xmax(xmax),
+        xmin(xmin),
+        ymax(xmax),
+        ymin(xmin),
         c1(std::tanh(beta * eta)),
         denom((std::tanh(beta * eta) + std::tanh(beta * (1.0 - eta))) /
               (ymax - ymin)) {
@@ -70,23 +75,24 @@ class RobustProjection {
   }
 
   void apply(const T* x, T* y) {
+    T h = xmax - xmin;
     for (int i = 0; i < size; i++) {
-      y[i] =
-          (c1 + std::tanh(beta * (0.5 * x[i] - eta - xoffset))) / denom + ymin;
+      y[i] = (c1 + std::tanh(beta * ((x[i] - xmin) / h - eta))) / denom + ymin;
     }
   }
 
   void applyGradient(const T* x, const T* dfdy, T* dfdx) {
+    T h = xmax - xmin;
     for (int i = 0; i < size; i++) {
-      dfdx[i] = 0.5 * dfdy[i] * beta / denom *
-                (1.0 - std::tanh(beta * (0.5 * x[i] - eta - xoffset)) *
-                           std::tanh(beta * (0.5 * x[i] - eta - xoffset)));
+      dfdx[i] = dfdy[i] / h * beta / denom *
+                (1.0 - std::tanh(beta * ((x[i] - xmin) / h - eta)) *
+                           std::tanh(beta * ((x[i] - xmin) / h - eta)));
     }
   }
 
  private:
   double beta, eta;
   int size;
-  double xoffset, ymax, ymin;
+  double xmax, xmin, ymax, ymin;
   T c1, denom;
 };

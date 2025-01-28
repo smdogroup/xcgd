@@ -33,7 +33,8 @@ class HelmholtzFilter final {
 
  public:
   HelmholtzFilter(T r0, Grid& grid, bool use_robust_projection = false,
-                  double proj_beta = -1.0, double proj_eta = -1.0)
+                  double proj_beta = -1.0, double proj_eta = -1.0,
+                  T proj_xmin = -1.0, T proj_xmax = 1.0)
       : mesh(grid),
         quadrature(mesh),
         basis(mesh),
@@ -73,7 +74,7 @@ class HelmholtzFilter final {
 
     // Set up the robust projector if specified
     if (use_robust_projection) {
-      proj = new Proj(proj_beta, proj_eta, num_nodes);
+      proj = new Proj(proj_beta, proj_eta, num_nodes, proj_xmin, proj_xmax);
     }
   }
 

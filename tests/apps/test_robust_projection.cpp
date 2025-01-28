@@ -98,3 +98,22 @@ TEST(apps, HelmholtzFilter) {
   test_helmholtz_filter<4, 4>();
   test_helmholtz_filter<4, 2>();
 }
+
+TEST(apps, visualizeRobustProjection) {
+  double beta = 5.0, eta = 0.5001;
+  int ndv = 101;
+
+  std::vector<double> x(ndv, 0.0), y(ndv, 0.0);
+  double xmin = -10.0, xmax = 10.0;
+  RobustProjection<double> proj(beta, eta, ndv, xmin, xmax);
+
+  for (int i = 0; i < ndv; i++) {
+    x[i] = (double)i / (ndv - 1) * (xmax - xmin) + xmin;
+  }
+
+  proj.apply(x.data(), y.data());
+
+  for (int i = 0; i < ndv; i++) {
+    printf("proj: %10.10e %20.10e\n", x[i], y[i]);
+  }
+}
