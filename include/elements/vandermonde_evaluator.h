@@ -322,6 +322,7 @@ class VandermondeEvaluator {
 
   bool reorder_nodes = false;
 };
+
 template <typename T, typename T2, class Mesh>
 void get_phi_vals(const VandermondeEvaluator<T, Mesh>& eval,
                   const T2 element_dof[],
@@ -337,4 +338,40 @@ void get_phi_vals(const VandermondeEvaluator<T, Mesh>& eval,
         return val;
       },
       phi);
+}
+
+enum class CellEdge { LEFT, RIGHT, UPPER, LOWER };
+
+// Find all points on an edge of a cell where LSF boundary and the edge
+// intersects
+template <typename T, int Np_1d, int spatial_dim, CellEdge edge>
+int find_cuts_on_edge(algoim::xarray<T, spatial_dim>& phi) {
+  T pline[Np_1d], roots[Np_1d - 1];
+
+  int k;  // along which axis we find root, 0 for x, 1 for y, etc.
+  T x0;   // at which station we find root
+  if constexpr (edge == CellEdge::LEFT) {
+    k = 1;
+    x0 = 0.0;
+  } else if constexpr (edge == CellEdge::RIGHT) {
+    k = 1;
+    x0 = 1.0;
+  } else if constexpr (edge == CellEdge::LOWER) {
+    k = 0;
+    x0 = 0.0;
+  } else {  // edge == CellEdge::UPPER
+    k = 0;
+    x0 = 1.0;
+  }
+
+  algoim::uvector<T, spatial_dim - 1> xbase{x0};
+  algoim::bernstein::collapseAlongAxis(phi, xbase, k, pline);
+  int rcount =
+      algoim::bernstein::bernsteinUnitIntervalRealRoots(pline, Np_1d, roots);
+
+  for (int i = 0; i < rcount; i++) {
+    auto x = add_component(xbase, k, roots[i]);
+  }
+
+  return rcount;
 }

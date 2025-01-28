@@ -1143,11 +1143,11 @@ class TopoProb : public ParOptProblem {
 
       if constexpr (TopoAnalysis::use_ersatz) {
         topo.write_grid_vtk(vtk_path, x, topo.get_phi(),
-                            {{"pertected_verts", protected_verts_v}}, {},
+                            {{"protected_verts", protected_verts_v}}, {},
                             {{"displacement", u}, {"rhs", topo.get_rhs()}}, {});
       } else {
         topo.write_grid_vtk(vtk_path, x, topo.get_phi(),
-                            {{"pertected_verts", protected_verts_v}}, {}, {},
+                            {{"protected_verts", protected_verts_v}}, {}, {},
                             {});
       }
 

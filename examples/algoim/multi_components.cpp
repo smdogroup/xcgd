@@ -61,19 +61,39 @@ void quadratures_multipoly() {
   find_roots<T, Np_1d, spatial_dim>(phi, 0, 1.0);
 
   algoim::ImplicitPolyQuadrature<spatial_dim> ipquad(phi);
+  std::cout << "direction k: " << ipquad.k << "\n";
   std::cout << "no interfaces?: " << (ipquad.k == spatial_dim) << "\n";
 
   // Compute quadrature nodes
   std::vector<algoim::uvector<T, spatial_dim>> quad_nodes;
+  std::vector<algoim::uvector<int, spatial_dim>> quad_partitions;
   std::vector<T> quad_wts;
   ipquad.integrate(algoim::AutoMixed, Np_1d,
-                   [&](const algoim::uvector<T, spatial_dim>& x, T w) {
-                     // printf("pt: %.5f %.5f wt: %.5f\n", x(0), x(1), w);
+                   [&](const algoim::uvector<T, spatial_dim>& x, T w,
+                       const algoim::uvector<int, spatial_dim>& block_index) {
+                     printf("pt: %.5f %.5f wt: %.5f\n", x(0), x(1), w);
                      if (algoim::bernstein::evalBernsteinPoly(phi, x) > 0) {
                        quad_nodes.push_back(x);
                        quad_wts.push_back(w);
+                       quad_partitions.push_back(block_index);
                      }
                    });
+
+  std::vector<T> bernstein_grad;
+  for (const auto& x : quad_nodes) {
+    algoim::uvector<T, spatial_dim> g =
+        algoim::bernstein::evalBernsteinPolyGradient(phi, x);
+    for (int d = 0; d < spatial_dim; d++) {
+      bernstein_grad.push_back(g(d));
+    }
+  }
+
+  std::vector<T> partition;
+  for (const auto& part : quad_partitions) {
+    for (int d = 0; d < spatial_dim; d++) {
+      partition.push_back(part(d));
+    }
+  }
 
   std::vector<T> pts;
   for (auto node : quad_nodes) {
@@ -94,6 +114,12 @@ void quadratures_multipoly() {
   vtk.write_mesh();
   vtk.add_sol("quad_wts", quad_wts);
   vtk.write_sol("quad_wts");
+
+  vtk.add_vec("bernstein_grad", bernstein_grad);
+  vtk.write_vec("bernstein_grad");
+
+  vtk.add_vec("partition", partition);
+  vtk.write_vec("partition");
 }
 
 int main() { quadratures_multipoly<6>(); }

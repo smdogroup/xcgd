@@ -264,7 +264,8 @@ class GDLSFQuadrature2D final : public QuadratureBase<T, quad_type> {
     if constexpr (quad_type == QuadPtType::INNER) {
       ipquad.integrate(
           algoim::AutoMixed, Np_1d,
-          [&](const algoim::uvector<T2, spatial_dim>& x, T2 w) {
+          [&](const algoim::uvector<T2, spatial_dim>& x, T2 w,
+              const algoim::uvector<int, spatial_dim>& block_index) {
             if (algoim::bernstein::evalBernsteinPoly(phi, x) <= 0.0) {
               for (int d = 0; d < spatial_dim; d++) {
                 if constexpr (is_dual) {
