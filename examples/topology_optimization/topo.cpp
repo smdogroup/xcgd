@@ -1004,7 +1004,7 @@ class TopoProb : public ParOptProblem {
     reset_counter();
   }
 
-  void print_progress(T obj, T comp, T pterm, T vol_frac, T max_stress,
+  void print_progress(T obj, T comp, T reg, T pterm, T vol_frac, T max_stress,
                       T max_stress_ratio, T ks_stress_ratio,
                       int header_every = 10) {
     std::ofstream progress_file(fspath(prefix) / fspath("optimization.log"),
@@ -1014,18 +1014,20 @@ class TopoProb : public ParOptProblem {
       std::snprintf(phead, 20, "pen(c:%8.1e)",
                     parser.get_double_option("grad_penalty_coeff"));
       char line[2048];
-      std::snprintf(line, 2048, "\n%5s%20s%20s%20s%15s%20s%20s%20s%15s%15s\n",
-                    "iter", "obj", "comp", phead, "vol (\%)", "stress_max",
-                    "stress_ratio_max", "stress_ratio_ks", "ks relerr(\%)",
-                    "uptime(H:M:S)");
+      std::snprintf(line, 2048,
+                    "\n%5s%20s%20s%20s%20s%15s%20s%20s%20s%15s%15s\n", "iter",
+                    "obj", "comp", "regularization", phead, "vol (\%)",
+                    "stress_max", "stress_ratio_max", "stress_ratio_ks",
+                    "ks relerr(\%)", "uptime(H:M:S)");
       std::cout << line;
       progress_file << line;
     }
     char line[2048];
     std::snprintf(
         line, 2048,
-        "%5d%20.10e%20.10e%20.10e%15.5f%20.10e%20.10e%20.10e%15.5f%15s\n",
-        counter, obj, comp, pterm, 100.0 * vol_frac, max_stress,
+        "%5d%20.10e%20.10e%20.10e%20.10e%15.5f%20.10e%20.10e%20.10e%15.5f%"
+        "15s\n",
+        counter, obj, comp, reg, pterm, 100.0 * vol_frac, max_stress,
         max_stress_ratio, ks_stress_ratio,
         (ks_stress_ratio - max_stress_ratio) / max_stress_ratio * 100.0,
         watch.format_time(watch.lap()).c_str());
@@ -1108,6 +1110,16 @@ class TopoProb : public ParOptProblem {
     std::vector<T> xr(xptr, xptr + nvars);
     std::vector<T> x = topo.get_prob_mesh().expand(xr);
 
+    // Regularization term
+    double reg_coeff = parser.get_double_option("regularization_coeff") / nvars;
+    double ubval = parser.get_double_option("opt_x_ub");
+    double lbval = parser.get_double_option("opt_x_lb");
+    T reg = 0.0;
+    for (int i = 0; i < nvars; i++) {
+      reg += (xr[i] - lbval) * (ubval - xr[i]);
+    }
+    reg *= reg_coeff;
+
     // Save the elastic problem instance to json
     if (counter % parser.get_int_option("save_prob_json_every") == 0) {
       std::string json_path = fspath(prefix) / fspath("json") /
@@ -1122,9 +1134,9 @@ class TopoProb : public ParOptProblem {
       *fobj =
           (1.0 - stress_objective_theta) * comp +
           stress_objective_theta * stress_objective_scalar * ks_stress_ratio +
-          pterm;
+          pterm + reg;
     } else {
-      *fobj = comp + pterm;
+      *fobj = comp + pterm + reg;
     }
     cons[0] = 1.0 - area / (domain_area * area_frac);  // >= 0
     if (has_stress_constraint) {
@@ -1214,7 +1226,7 @@ class TopoProb : public ParOptProblem {
     }
 
     // print optimization progress
-    print_progress(*fobj, comp, pterm, area / domain_area, max_stress,
+    print_progress(*fobj, comp, reg, pterm, area / domain_area, max_stress,
                    max_stress_ratio, ks_stress_ratio);
 
     counter++;
@@ -1252,15 +1264,23 @@ class TopoProb : public ParOptProblem {
       gstressr = topo.get_prob_mesh().reduce(gstress);
     }
 
+    std::vector<T> greg(nvars, 0.0);
+    double reg_coeff = parser.get_double_option("regularization_coeff") / nvars;
+    double ubval = parser.get_double_option("opt_x_ub");
+    double lbval = parser.get_double_option("opt_x_lb");
+    for (int i = 0; i < nvars; i++) {
+      greg[i] = reg_coeff * (ubval + lbval - 2.0 * xr[i]);
+    }
+
     if (has_stress_objective) {
       T a = 1.0 - stress_objective_theta;
       T b = stress_objective_theta * stress_objective_scalar;
       for (int i = 0; i < nvars; i++) {
-        g[i] = a * gcompr[i] + b * gstressr[i] + gpenr[i];
+        g[i] = a * gcompr[i] + b * gstressr[i] + gpenr[i] + greg[i];
       }
     } else {
       for (int i = 0; i < nvars; i++) {
-        g[i] = gcompr[i] + gpenr[i];
+        g[i] = gcompr[i] + gpenr[i] + greg[i];
       }
     }
 
