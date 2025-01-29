@@ -7,13 +7,15 @@ void test_partition_of_unity(const Grid& grid, const Mesh& mesh, double r0,
                              double tol = 1e-13) {
   ConvolutionFilter<double, Grid> conv_filter(r0, grid);
 
-  std::vector<double> x(grid.get_num_verts(), 0.0), phi(grid.get_num_verts());
+  std::vector<double> x(grid.get_num_verts(), 0.0);
 
   for (int i = 0; i < grid.get_num_verts(); i++) {
     x[i] = 0.6789;
   }
 
-  conv_filter.apply(x.data(), phi.data());
+  std::vector<double> phi = x;
+
+  conv_filter.apply(phi.data(), phi.data());
 
   for (int i = 0; i < grid.get_num_verts(); i++) {
     EXPECT_NEAR(x[i], phi[i], tol);

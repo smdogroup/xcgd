@@ -132,9 +132,15 @@ class HelmholtzFilter final {
 
  private:
   void filterApply(const T* x, T* phi) {
+    const T* xin = x;
+    std::vector<T> xdata;
+    if (x == phi) {
+      xdata = std::vector<T>(x, x + num_nodes);
+      xin = xdata.data();
+    }
     std::fill(phi, phi + num_nodes, 0.0);
     std::vector<T> zeros(num_nodes, 0.0);
-    analysis.residual(x, zeros.data(), phi);
+    analysis.residual(xin, zeros.data(), phi);
     for (int i = 0; i < num_nodes; i++) {
       phi[i] *= -1.0;
     }

@@ -36,9 +36,16 @@ class ConvolutionFilter final {
 
   void apply(const T* x, T* phi) {
     int nverts = grid.get_num_verts();
-    int nset = vert_set.size();
+
+    const T* xin = x;
+    std::vector<T> xdata;
+    if (x == phi) {
+      xdata = std::vector<T>(x, x + nverts);
+      xin = xdata.data();
+    }
     std::fill(phi, phi + nverts, 0.0);
 
+    int nset = vert_set.size();
     for (int i = 0; i < nverts; i++) {
       int ixy[2] = {-1, -1};
       grid.get_vert_coords(i, ixy);
@@ -50,7 +57,7 @@ class ConvolutionFilter final {
         if (grid.is_valid_vert(jxy[0], jxy[1])) {
           int j = grid.get_coords_vert(jxy);
           denom += wts[index];
-          phi[i] += wts[index] * x[j];
+          phi[i] += wts[index] * xin[j];
         }
       }
       phi[i] /= denom;
@@ -59,9 +66,16 @@ class ConvolutionFilter final {
 
   void applyGradient(const T* dfdphi, T* dfdx) {
     int nverts = grid.get_num_verts();
-    int nset = vert_set.size();
+
+    const T* dfdphi_in = dfdphi;
+    std::vector<T> dfdphi_data;
+    if (dfdphi == dfdx) {
+      dfdphi_data = std::vector<T>(dfdphi, dfdphi + nverts);
+      dfdphi_in = dfdphi_data.data();
+    }
     std::fill(dfdx, dfdx + nverts, 0.0);
 
+    int nset = vert_set.size();
     for (int i = 0; i < nverts; i++) {
       int ixy[2] = {-1, -1};
       grid.get_vert_coords(i, ixy);
@@ -80,7 +94,7 @@ class ConvolutionFilter final {
                       ixy[1] + vert_set[index].second};
         if (grid.is_valid_vert(jxy[0], jxy[1])) {
           int j = grid.get_coords_vert(jxy);
-          dfdx[j] += wts[index] * dfdphi[i] / denom;
+          dfdx[j] += wts[index] * dfdphi_in[i] / denom;
         }
       }
     }
