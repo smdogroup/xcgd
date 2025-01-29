@@ -1027,7 +1027,12 @@ class TopoProb : public ParOptProblem {
         parser(parser),
         domain_area(topo.get_prob_mesh().get_domain_area()),
         area_frac(parser.get_double_option("area_frac")),
-        stress_ratio_ub(parser.get_double_option("stress_ratio_upper_bound")),
+        stress_ratio_ub_init(
+            parser.get_double_option("stress_ratio_upper_bound_init")),
+        stress_ratio_ub_final(
+            parser.get_double_option("stress_ratio_upper_bound_final")),
+        stress_ratio_ub_decay_rate(
+            parser.get_double_option("stress_ratio_upper_bound_decay_rate")),
         has_stress_constraint(parser.get_bool_option("has_stress_constraint")),
         has_stress_objective(parser.get_bool_option("has_stress_objective")),
         stress_objective_scalar(
@@ -1049,7 +1054,7 @@ class TopoProb : public ParOptProblem {
 
   void print_progress(T obj, T comp, T reg, T pterm, T vol_frac, T max_stress,
                       T max_stress_ratio, T ks_stress_ratio,
-                      int header_every = 10) {
+                      T ks_stress_ratio_ub, int header_every = 10) {
     std::ofstream progress_file(fspath(prefix) / fspath("optimization.log"),
                                 std::ios::app);
     if (counter % header_every == 0) {
@@ -1058,22 +1063,22 @@ class TopoProb : public ParOptProblem {
                     parser.get_double_option("grad_penalty_coeff"));
       char line[2048];
       std::snprintf(line, 2048,
-                    "\n%5s%20s%20s%20s%20s%15s%20s%20s%20s%15s%15s\n", "iter",
-                    "obj", "comp", "regularization", phead, "vol (\%)",
+                    "\n%5s%20s%20s%20s%20s%15s%20s%20s%20s%15s%12s%15s\n",
+                    "iter", "obj", "comp", "regularization", phead, "vol (\%)",
                     "stress_max", "stress_ratio_max", "stress_ratio_ks",
-                    "ks relerr(\%)", "uptime(H:M:S)");
+                    "ks relerr(\%)", "ks ub", "uptime(H:M:S)");
       std::cout << line;
       progress_file << line;
     }
     char line[2048];
     std::snprintf(
         line, 2048,
-        "%5d%20.10e%20.10e%20.10e%20.10e%15.5f%20.10e%20.10e%20.10e%15.5f%"
-        "15s\n",
+        "%5d%20.10e%20.10e%20.10e%20.10e%15.5f%20.10e%20.10e%20.10e%15.5f%12."
+        "4e%15s\n",
         counter, obj, comp, reg, pterm, 100.0 * vol_frac, max_stress,
         max_stress_ratio, ks_stress_ratio,
         (ks_stress_ratio - max_stress_ratio) / max_stress_ratio * 100.0,
-        watch.format_time(watch.lap()).c_str());
+        ks_stress_ratio_ub, watch.format_time(watch.lap()).c_str());
     std::cout << line;
     progress_file << line;
     progress_file.close();
@@ -1152,6 +1157,17 @@ class TopoProb : public ParOptProblem {
     xvec->getArray(&xptr);
     std::vector<T> xr(xptr, xptr + nvars);
     std::vector<T> x = topo.get_prob_mesh().expand(xr);
+
+    // Update stress constraint
+    stress_ratio_ub =
+        stress_ratio_ub_init - stress_ratio_ub_decay_rate * counter;
+    if (stress_ratio_ub < stress_ratio_ub_final) {
+      stress_ratio_ub = stress_ratio_ub_final;
+    }
+
+    if (is_gradient_check) {
+      stress_ratio_ub = 1.234;
+    }
 
     // Regularization term
     double reg_coeff = parser.get_double_option("regularization_coeff") / nvars;
@@ -1270,7 +1286,7 @@ class TopoProb : public ParOptProblem {
 
     // print optimization progress
     print_progress(*fobj, comp, reg, pterm, area / domain_area, max_stress,
-                   max_stress_ratio, ks_stress_ratio);
+                   max_stress_ratio, ks_stress_ratio, stress_ratio_ub);
 
     counter++;
 
@@ -1352,6 +1368,9 @@ class TopoProb : public ParOptProblem {
   const ConfigParser& parser;
   double domain_area = 0.0;
   double area_frac = 0.0;
+  double stress_ratio_ub_init = 0.0;
+  double stress_ratio_ub_final = 0.0;
+  double stress_ratio_ub_decay_rate = 0.0;
   double stress_ratio_ub = 0.0;
   bool has_stress_constraint = false;
   bool has_stress_objective = false;
