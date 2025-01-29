@@ -14,7 +14,7 @@
 #include "apps/static_elastic.h"
 #include "elements/element_utils.h"
 #include "elements/gd_vandermonde.h"
-#include "lbracket_mesh.h"
+#include "elements/lbracket_mesh.h"
 #include "physics/grad_penalization.h"
 #include "physics/stress.h"
 #include "physics/volume.h"

@@ -2,7 +2,7 @@
 #include "apps/helmholtz_filter.h"
 #include "elements/element_utils.h"
 #include "elements/gd_vandermonde.h"
-#include "lbracket_mesh.h"
+#include "elements/lbracket_mesh.h"
 #include "physics/volume.h"
 #include "test_commons.h"
 #include "utils/vtk.h"
