@@ -10,6 +10,7 @@
 
 #include "ParOptOptimizer.h"
 #include "analysis.h"
+#include "apps/convolution_filter.h"
 #include "apps/helmholtz_filter.h"
 #include "apps/static_elastic.h"
 #include "elements/element_utils.h"
@@ -388,7 +389,8 @@ class TopoAnalysis {
   using Mesh = typename ProbMesh::Mesh;
   using Quadrature = GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER, Grid>;
   using Basis = GDBasis2D<T, Mesh>;
-  using Filter = HelmholtzFilter<T, Np_1d_filter, Grid>;
+  using HFilter = HelmholtzFilter<T, Np_1d_filter, Grid>;
+  using CFilter = ConvolutionFilter<T, Grid>;
 
   constexpr static auto int_func =
       [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
@@ -411,8 +413,8 @@ class TopoAnalysis {
   using StressKS = LinearElasticity2DVonMisesStressAggregation<T>;
   using VolAnalysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Volume>;
   using PenalizationAnalysis =
-      GalerkinAnalysis<T, typename Filter::Mesh, typename Filter::Quadrature,
-                       typename Filter::Basis, Penalization>;
+      GalerkinAnalysis<T, typename HFilter::Mesh, typename HFilter::Quadrature,
+                       typename HFilter::Basis, Penalization>;
   using StressAnalysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Stress>;
   using StressKSAnalysis =
       GalerkinAnalysis<T, Mesh, Quadrature, Basis, StressKS, use_ersatz>;
@@ -427,22 +429,26 @@ class TopoAnalysis {
   int constexpr static spatial_dim = Basis::spatial_dim;
 
  public:
-  TopoAnalysis(ProbMesh& prob_mesh, T r0, T E, T nu, T penalty, T stress_ksrho,
-               T yield_stress, bool use_robust_projection, double proj_beta,
-               double proj_eta, double proj_xmin, double proj_xmax,
-               std::string prefix, double compliance_scalar)
+  TopoAnalysis(ProbMesh& prob_mesh, bool use_helmholtz_filter,
+               int num_conv_filter_apply, T r0, T E, T nu, T penalty,
+               T stress_ksrho, T yield_stress, bool use_robust_projection,
+               double proj_beta, double proj_eta, double proj_xmin,
+               double proj_xmax, std::string prefix, double compliance_scalar)
       : prob_mesh(prob_mesh),
         grid(prob_mesh.get_grid()),
         mesh(prob_mesh.get_mesh()),
         quadrature(mesh),
         basis(mesh),
-        filter(r0, grid, use_robust_projection, proj_beta, proj_eta, proj_xmin,
-               proj_xmax),
+        use_helmholtz_filter(use_helmholtz_filter),
+        num_conv_filter_apply(num_conv_filter_apply),
+        hfilter(r0, grid, use_robust_projection, proj_beta, proj_eta, proj_xmin,
+                proj_xmax),
+        cfilter(r0, grid),
         elastic(E, nu, mesh, quadrature, basis, int_func),
         vol_analysis(mesh, quadrature, basis, vol),
         pen(penalty),
-        pen_analysis(filter.get_mesh(), filter.get_quadrature(),
-                     filter.get_basis(), pen),
+        pen_analysis(hfilter.get_mesh(), hfilter.get_quadrature(),
+                     hfilter.get_basis(), pen),
         stress(E, nu),
         stress_analysis(mesh, quadrature, basis, stress),
         stress_ks(stress_ksrho, E, nu, yield_stress),
@@ -506,7 +512,14 @@ class TopoAnalysis {
     }
 
     // Update mesh based on new LSF
-    filter.apply(x.data(), phi.data());
+    if (use_helmholtz_filter) {
+      hfilter.apply(x.data(), phi.data());
+    } else {
+      cfilter.apply(x.data(), phi.data());
+      for (int i = 0; i < num_conv_filter_apply - 1; i++) {
+        cfilter.apply(phi.data(), phi.data());
+      }
+    }
     mesh.update_mesh();
 
     if constexpr (use_ersatz) {
@@ -721,7 +734,13 @@ class TopoAnalysis {
       elastic.get_analysis_ersatz().LSF_jacobian_adjoint_product(
           sol.data(), sol.data() /*this is effectively -psi*/, gcomp.data());
     }
-    filter.applyGradient(x.data(), gcomp.data(), gcomp.data());
+    if (use_helmholtz_filter) {
+      hfilter.applyGradient(x.data(), gcomp.data(), gcomp.data());
+    } else {
+      for (int i = 0; i < num_conv_filter_apply; i++) {
+        cfilter.applyGradient(gcomp.data(), gcomp.data());
+      }
+    }
     std::transform(
         gcomp.begin(), gcomp.end(), gcomp.begin(),
         [this](const T& val) { return val * this->compliance_scalar; });
@@ -729,12 +748,25 @@ class TopoAnalysis {
     garea.resize(x.size());
     std::fill(garea.begin(), garea.end(), 0.0);
     vol_analysis.LSF_volume_derivatives(garea.data());
-    filter.applyGradient(x.data(), garea.data(), garea.data());
+
+    if (use_helmholtz_filter) {
+      hfilter.applyGradient(x.data(), garea.data(), garea.data());
+    } else {
+      for (int i = 0; i < num_conv_filter_apply; i++) {
+        cfilter.applyGradient(garea.data(), garea.data());
+      }
+    }
 
     gpen.resize(x.size());
     std::fill(gpen.begin(), gpen.end(), 0.0);
     pen_analysis.residual(nullptr, phi.data(), gpen.data());
-    filter.applyGradient(x.data(), gpen.data(), gpen.data());
+    if (use_helmholtz_filter) {
+      hfilter.applyGradient(x.data(), gpen.data(), gpen.data());
+    } else {
+      for (int i = 0; i < num_conv_filter_apply; i++) {
+        cfilter.applyGradient(gpen.data(), gpen.data());
+      }
+    }
 
     gstress.resize(x.size());
     std::fill(gstress.begin(), gstress.end(), 0.0);
@@ -750,7 +782,13 @@ class TopoAnalysis {
           sol.data(), psi_stress_neg.data(), gstress.data());
     }
 
-    filter.applyGradient(x.data(), gstress.data(), gstress.data());
+    if (use_helmholtz_filter) {
+      hfilter.applyGradient(x.data(), gstress.data(), gstress.data());
+    } else {
+      for (int i = 0; i < num_conv_filter_apply; i++) {
+        cfilter.applyGradient(gstress.data(), gstress.data());
+      }
+    }
 
     // Now gstress is really just denergy/dx, next, compute dks/dx:
     // dks/dx = (1.0 / energy * denergy/dx - 1.0 / area * darea/dx) / rho
@@ -776,7 +814,7 @@ class TopoAnalysis {
       throw std::runtime_error("sizes don't match");
     }
 
-    ToVTK<T, typename Filter::Mesh> vtk(filter.get_mesh(), vtk_path);
+    ToVTK<T, typename HFilter::Mesh> vtk(hfilter.get_mesh(), vtk_path);
     vtk.write_mesh();
 
     // Node solutions
@@ -950,7 +988,10 @@ class TopoAnalysis {
   Quadrature quadrature;
   Basis basis;
 
-  Filter filter;
+  bool use_helmholtz_filter;
+  int num_conv_filter_apply;
+  HFilter hfilter;
+  CFilter cfilter;
   Elastic elastic;
   Volume vol;
   VolAnalysis vol_analysis;
@@ -1413,7 +1454,9 @@ void execute(int argc, char* argv[]) {
     }
   }
 
-  T r0 = parser.get_double_option("helmholtz_r0");
+  bool use_helmholtz_filter = parser.get_bool_option("use_helmholtz_filter");
+  int num_conv_filter_apply = parser.get_int_option("num_conv_filter_apply");
+  T r0 = parser.get_double_option("filter_r0");
   T E = parser.get_double_option("E");
   T nu = parser.get_double_option("nu");
   bool use_robust_projection = parser.get_bool_option("use_robust_projection");
@@ -1427,6 +1470,8 @@ void execute(int argc, char* argv[]) {
   double compliance_scalar = parser.get_double_option("compliance_scalar");
 
   TopoAnalysis topo{*prob_mesh,
+                    use_helmholtz_filter,
+                    num_conv_filter_apply,
                     r0,
                     E,
                     nu,
