@@ -433,7 +433,7 @@ class TopoAnalysis {
   TopoAnalysis(ProbMesh& prob_mesh, bool use_helmholtz_filter,
                int num_conv_filter_apply, T r0, T E, T nu, T penalty,
                T stress_ksrho, T yield_stress, bool use_robust_projection,
-               double proj_beta, double proj_eta, std::string prefix,
+               double proj_beta, double proj_delta_eta, std::string prefix,
                double compliance_scalar)
       : prob_mesh(prob_mesh),
         grid(prob_mesh.get_grid()),
@@ -443,7 +443,9 @@ class TopoAnalysis {
         use_helmholtz_filter(use_helmholtz_filter),
         num_conv_filter_apply(num_conv_filter_apply),
         use_robust_projection(use_robust_projection),
-        projector(proj_beta, proj_eta, grid.get_num_verts()),
+        projector_blueprint(proj_beta, 0.5, grid.get_num_verts()),
+        projector_dilate(proj_beta, 0.5 + proj_delta_eta, grid.get_num_verts()),
+        projector_erode(proj_beta, 0.5 - proj_delta_eta, grid.get_num_verts()),
         hfilter(r0, grid),
         cfilter(r0, grid),
         elastic(E, nu, mesh, quadrature, basis, int_func),
@@ -456,6 +458,9 @@ class TopoAnalysis {
         stress_ks(stress_ksrho, E, nu, yield_stress),
         stress_ks_analysis(mesh, quadrature, basis, stress_ks),
         phi(mesh.get_lsf_dof()),
+        phi_blueprint(phi),
+        phi_dilate(phi),
+        phi_erode(phi),
         prefix(prefix),
         cache({{"x", {}}, {"sol", {}}, {"chol", nullptr}}),
         compliance_scalar(compliance_scalar) {
@@ -565,14 +570,25 @@ class TopoAnalysis {
 
     // Apply projection
     if (use_robust_projection) {
-      projector.apply(phi.data(), phi.data());
+      projector_blueprint.apply(phi.data(), phi_blueprint.data());
+      projector_dilate.apply(phi.data(), phi_dilate.data());
+      projector_erode.apply(phi.data(), phi_erode.data());
+    } else {
+      phi_blueprint = phi;
+      phi_dilate = phi;
+      phi_erode = phi;
     }
 
     // Save H(F(x))
-    std::vector<T> HFx = phi;
+    std::vector<T> HFx = phi_blueprint;
 
     // Apply design mapping
-    design_mapping_apply(phi.data(), phi.data());
+    design_mapping_apply(phi_blueprint.data(), phi_blueprint.data());
+    design_mapping_apply(phi_dilate.data(), phi_dilate.data());
+    design_mapping_apply(phi_erode.data(), phi_erode.data());
+
+    // we use the erode realization for physical analysis
+    phi = phi_erode;
 
     // Update the mesh given new phi value
     mesh.update_mesh();
@@ -803,7 +819,7 @@ class TopoAnalysis {
 
     design_mapping_apply_gradient(gcomp.data(), gcomp.data());
     if (use_robust_projection) {
-      projector.applyGradient(Fx.data(), gcomp.data(), gcomp.data());
+      projector_erode.applyGradient(Fx.data(), gcomp.data(), gcomp.data());
     }
     if (use_helmholtz_filter) {
       hfilter.applyGradient(gcomp.data(), gcomp.data());
@@ -823,7 +839,7 @@ class TopoAnalysis {
 
     design_mapping_apply_gradient(garea.data(), garea.data());
     if (use_robust_projection) {
-      projector.applyGradient(Fx.data(), garea.data(), garea.data());
+      projector_erode.applyGradient(Fx.data(), garea.data(), garea.data());
     }
     if (use_helmholtz_filter) {
       hfilter.applyGradient(garea.data(), garea.data());
@@ -839,7 +855,7 @@ class TopoAnalysis {
 
     design_mapping_apply_gradient(gpen.data(), gpen.data());
     if (use_robust_projection) {
-      projector.applyGradient(Fx.data(), gpen.data(), gpen.data());
+      projector_erode.applyGradient(Fx.data(), gpen.data(), gpen.data());
     }
     if (use_helmholtz_filter) {
       hfilter.applyGradient(gpen.data(), gpen.data());
@@ -865,7 +881,7 @@ class TopoAnalysis {
 
     design_mapping_apply_gradient(gstress.data(), gstress.data());
     if (use_robust_projection) {
-      projector.applyGradient(Fx.data(), gstress.data(), gstress.data());
+      projector_erode.applyGradient(Fx.data(), gstress.data(), gstress.data());
     }
     if (use_helmholtz_filter) {
       hfilter.applyGradient(gstress.data(), gstress.data());
@@ -913,7 +929,9 @@ class TopoAnalysis {
     }
 
     vtk.write_sol("x", x.data());
-    vtk.write_sol("phi", phi.data());
+    vtk.write_sol("phi_blueprint", phi_blueprint.data());
+    vtk.write_sol("phi_dilate", phi_dilate.data());
+    vtk.write_sol("phi_erode", phi_erode.data());
 
     // Node vectors
     for (auto [name, vals] : node_vecs) {
@@ -976,7 +994,9 @@ class TopoAnalysis {
       vtk.write_sol(name, vals.data());
     }
     vtk.write_sol("x", mesh.get_lsf_nodes(x).data());
-    vtk.write_sol("phi", mesh.get_lsf_nodes().data());
+    vtk.write_sol("phi_blueprint", mesh.get_lsf_nodes(phi_blueprint).data());
+    vtk.write_sol("phi_dilate", mesh.get_lsf_nodes(phi_dilate).data());
+    vtk.write_sol("phi_erode", mesh.get_lsf_nodes(phi_erode).data());
 
     std::vector<T> bc_nodes_v(mesh.get_num_nodes(), 0.0);
     const auto& bc_nodes = prob_mesh.get_bc_nodes();
@@ -1076,7 +1096,7 @@ class TopoAnalysis {
   bool use_helmholtz_filter;
   int num_conv_filter_apply;
   bool use_robust_projection;
-  RobustProjection<T> projector;
+  RobustProjection<T> projector_blueprint, projector_dilate, projector_erode;
   HFilter hfilter;
   CFilter cfilter;
   Elastic elastic;
@@ -1089,7 +1109,9 @@ class TopoAnalysis {
   StressKS stress_ks;
   StressKSAnalysis stress_ks_analysis;
 
-  std::vector<T>& phi;  // LSF values (filtered design variables)
+  std::vector<T>& phi;  // level-set values for the mesh
+  std::vector<T> phi_blueprint, phi_dilate,
+      phi_erode;  // level-set values for blueprint, dilate and erode design
 
   std::string prefix;
 
@@ -1582,7 +1604,8 @@ void execute(int argc, char* argv[]) {
   T nu = parser.get_double_option("nu");
   bool use_robust_projection = parser.get_bool_option("use_robust_projection");
   double robust_proj_beta = parser.get_double_option("robust_proj_beta");
-  double robust_proj_eta = parser.get_double_option("robust_proj_eta");
+  double robust_proj_delta_eta =
+      parser.get_double_option("robust_proj_delta_eta");
   T penalty = parser.get_double_option("grad_penalty_coeff");
   T stress_ksrho = parser.get_double_option("stress_ksrho");
   T yield_stress = parser.get_double_option("yield_stress");
@@ -1599,7 +1622,7 @@ void execute(int argc, char* argv[]) {
                     yield_stress,
                     use_robust_projection,
                     robust_proj_beta,
-                    robust_proj_eta,
+                    robust_proj_delta_eta,
                     prefix,
                     compliance_scalar};
 
