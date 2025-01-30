@@ -1,25 +1,16 @@
 #pragma once
 
 /*
- * Robust projection is a technique often used for topology optimization.
+ * Robust projection using Heaviside function is a common technique for
+ * topology optimization.
  *
- * This implementation defines two operators: H and M, where H performs the
- * smooth Heaviside transformation, and M performs the shift.
- *
- * H is defined as follows:
+ * This implementation defines the smooth Heaviside operator H:
  *
  * H(x) = (tanh(beta * eta) + tanh(beta * (x - eta))
  *      / (tanh(beta * eta) + tanh(beta * (1 - eta))
  *
- * M is defined as follows:
+ * where x: [0, 1], H(x): [0, 1]
  *
- * M(x) = H((x - xmin) / (xmax - xmin)) * (ymax - ymin) + ymin
- *
- * For example, for a common topology optimization application with a
- * level-set function ranging from [-1, 1], M(H(x)) maps from
- * [-1, 1] -> [-1, 1] with the following shape (roughly):
- *
- *             0.0
  *                  ----    ymax
  *                /
  *               /
@@ -27,7 +18,6 @@
  *             /
  *            /
  *       ----               ymin
- *              x
  *
  * ref: Level set topology and shape optimization by density methods using cut
  * elements with length scale control.
@@ -45,18 +35,12 @@ class RobustProjection {
    * @param size [in] the size of the vectors to operate on
    */
  public:
-  RobustProjection(double beta, double eta, int size, double xmin = -1.0,
-                   double xmax = 1.0)
+  RobustProjection(double beta, double eta, int size)
       : beta(beta),
         eta(eta),
         size(size),
-        xmax(xmax),
-        xmin(xmin),
-        ymax(xmax),
-        ymin(xmin),
         c1(std::tanh(beta * eta)),
-        denom((std::tanh(beta * eta) + std::tanh(beta * (1.0 - eta))) /
-              (ymax - ymin)) {
+        denom((std::tanh(beta * eta) + std::tanh(beta * (1.0 - eta)))) {
     if (beta <= 0.0) {
       char msg[256];
       std::snprintf(msg, 256,
@@ -75,18 +59,16 @@ class RobustProjection {
   }
 
   void apply(const T* x, T* y) {
-    T h = xmax - xmin;
     for (int i = 0; i < size; i++) {
-      y[i] = (c1 + std::tanh(beta * ((x[i] - xmin) / h - eta))) / denom + ymin;
+      y[i] = (c1 + std::tanh(beta * (x[i] - eta))) / denom;
     }
   }
 
   void applyGradient(const T* x, const T* dfdy, T* dfdx) {
-    T h = xmax - xmin;
     for (int i = 0; i < size; i++) {
-      dfdx[i] = dfdy[i] / h * beta / denom *
-                (1.0 - std::tanh(beta * ((x[i] - xmin) / h - eta)) *
-                           std::tanh(beta * ((x[i] - xmin) / h - eta)));
+      dfdx[i] = dfdy[i] * beta / denom *
+                (1.0 - std::tanh(beta * (x[i] - eta)) *
+                           std::tanh(beta * (x[i] - eta)));
     }
   }
 

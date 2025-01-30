@@ -12,6 +12,7 @@
 #include "analysis.h"
 #include "apps/convolution_filter.h"
 #include "apps/helmholtz_filter.h"
+#include "apps/robust_projection.h"
 #include "apps/static_elastic.h"
 #include "elements/element_utils.h"
 #include "elements/gd_vandermonde.h"
@@ -103,14 +104,14 @@ class CantileverMesh final
 
   std::set<int> get_loaded_cells() { return loaded_cells; }
   std::set<int> get_loaded_verts() { return loaded_verts; }
-  std::set<int> get_protected_verts() { return loaded_verts; }
+  std::set<int> get_protected_verts() { return {}; }
 
   std::vector<int> get_bc_nodes() {
     return this->mesh.get_left_boundary_nodes();
   }
 
   std::vector<T> expand(std::vector<T> xr) {
-    std::vector<T> x(N, -1.0);  // lsf = -1.0 is material
+    std::vector<T> x(N, 0.0);  // dv = 0.0 is material
     for (int i = 0; i < Nr; i++) {
       x[expand_mapping[i]] = xr[i];
     }
@@ -208,7 +209,7 @@ class LbracketMesh final : public ProbMeshBase<T, Np_1d, StructuredGrid2D<T>> {
 
   std::set<int> get_loaded_cells() { return loaded_cells; }
   std::set<int> get_loaded_verts() { return loaded_verts; }
-  std::set<int> get_protected_verts() { return loaded_verts; }
+  std::set<int> get_protected_verts() { return {}; }
 
   std::vector<int> get_bc_nodes() {
     return this->mesh.get_upper_boundary_nodes();
@@ -432,8 +433,8 @@ class TopoAnalysis {
   TopoAnalysis(ProbMesh& prob_mesh, bool use_helmholtz_filter,
                int num_conv_filter_apply, T r0, T E, T nu, T penalty,
                T stress_ksrho, T yield_stress, bool use_robust_projection,
-               double proj_beta, double proj_eta, double proj_xmin,
-               double proj_xmax, std::string prefix, double compliance_scalar)
+               double proj_beta, double proj_eta, std::string prefix,
+               double compliance_scalar)
       : prob_mesh(prob_mesh),
         grid(prob_mesh.get_grid()),
         mesh(prob_mesh.get_mesh()),
@@ -441,8 +442,9 @@ class TopoAnalysis {
         basis(mesh),
         use_helmholtz_filter(use_helmholtz_filter),
         num_conv_filter_apply(num_conv_filter_apply),
-        hfilter(r0, grid, use_robust_projection, proj_beta, proj_eta, proj_xmin,
-                proj_xmax),
+        use_robust_projection(use_robust_projection),
+        projector(proj_beta, proj_eta, grid.get_num_verts()),
+        hfilter(r0, grid),
         cfilter(r0, grid),
         elastic(E, nu, mesh, quadrature, basis, int_func),
         vol_analysis(mesh, quadrature, basis, vol),
@@ -459,6 +461,26 @@ class TopoAnalysis {
         compliance_scalar(compliance_scalar) {
     // Get loaded cells
     loaded_cells = prob_mesh.get_loaded_cells();
+  }
+
+  // construct the initial design using sine waves
+  std::vector<T> create_initial_topology_sine(int period_x, int period_y,
+                                              double offset) {
+    const T* lxy = grid.get_lxy();
+    int nverts = grid.get_num_verts();
+    std::vector<T> dvs(nverts, 0.0);
+    for (int i = 0; i < nverts; i++) {
+      T xloc[Mesh::spatial_dim];
+      grid.get_vert_xloc(i, xloc);
+      T x = xloc[0];
+      T y = xloc[1];
+      dvs[i] = -cos(x / lxy[0] * 2.0 * PI * period_x) *
+                   cos(y / lxy[1] * 2.0 * PI * period_y) -
+               offset;
+      dvs[i] = dvs[i] / (1.0 + offset) / 2.0 +
+               0.5;  // scale dvs uniformly so it's in [0, 1]
+    }
+    return dvs;
   }
 
   // Create nodal design variables for a domain with periodic holes
@@ -506,12 +528,32 @@ class TopoAnalysis {
     return lsf;
   }
 
-  void update_mesh(const std::vector<T>& x) {
+  // Map filtered x -> phi, recall that
+  // x  -> filtered x -> phi
+  // where x, filtered x are in [0, 1], and phi in h * fx - 0.5h, h = element
+  // size
+  void design_mapping_apply(const T* x, T* y) {
+    double elem_h = 0.5 * (grid.get_h()[0] + grid.get_h()[1]);
+    int ndv = phi.size();
+    for (int i = 0; i < ndv; i++) {
+      y[i] = elem_h * (x[i] - 0.5);
+    }
+  }
+
+  void design_mapping_apply_gradient(const T* dfdy, T* dfdx) {
+    double elem_h = 0.5 * (grid.get_h()[0] + grid.get_h()[1]);
+    int ndv = phi.size();
+    for (int i = 0; i < ndv; i++) {
+      dfdx[i] = elem_h * dfdy[i];
+    }
+  }
+
+  std::vector<T> update_mesh(const std::vector<T>& x) {
     if (x.size() != phi.size()) {
       throw std::runtime_error("sizes don't match");
     }
 
-    // Update mesh based on new LSF
+    // Apply filter on design variables
     if (use_helmholtz_filter) {
       hfilter.apply(x.data(), phi.data());
     } else {
@@ -520,6 +562,19 @@ class TopoAnalysis {
         cfilter.apply(phi.data(), phi.data());
       }
     }
+
+    // Apply projection
+    if (use_robust_projection) {
+      projector.apply(phi.data(), phi.data());
+    }
+
+    // Save H(F(x))
+    std::vector<T> HFx = phi;
+
+    // Apply design mapping
+    design_mapping_apply(phi.data(), phi.data());
+
+    // Update the mesh given new phi value
     mesh.update_mesh();
 
     if constexpr (use_ersatz) {
@@ -551,13 +606,15 @@ class TopoAnalysis {
     StencilToVTK<T, Mesh> stencil_vtk(mesh,
                                       fspath(prefix) / "debug_stencil.vtk");
     stencil_vtk.write_stencils(mesh.get_elem_nodes());
+
+    return HFx;
   }
 
   std::vector<T> update_mesh_and_solve(
-      const std::vector<T>& x,
+      const std::vector<T>& x, std::vector<T>& HFx,
       std::shared_ptr<SparseUtils::SparseCholesky<T>>* chol = nullptr) {
     // Solve the static problem
-    update_mesh(x);
+    HFx = update_mesh(x);
 
     VandermondeCondLogger::clear();
     VandermondeCondLogger::enable();
@@ -600,7 +657,8 @@ class TopoAnalysis {
 
   auto eval_obj_con(const std::vector<T>& x) {
     std::shared_ptr<SparseUtils::SparseCholesky<T>> chol;
-    std::vector<T> sol = update_mesh_and_solve(x, &chol);
+    std::vector<T> HFx;
+    std::vector<T> sol = update_mesh_and_solve(x, HFx, &chol);
 
     T comp = std::inner_product(sol.begin(), sol.end(),
                                 elastic.get_rhs().begin(), T(0.0)) *
@@ -625,7 +683,7 @@ class TopoAnalysis {
     cache["ks_energy"] = ks_energy;
     cache["area"] = area;
 
-    return std::make_tuple(comp, area, pterm, max_stress, max_stress_ratio,
+    return std::make_tuple(HFx, comp, area, pterm, max_stress, max_stress_ratio,
                            ks_stress_ratio, sol, xloc_q, stress_q);
   }
 
@@ -695,7 +753,8 @@ class TopoAnalysis {
       ks_energy = std::get<T>(cache["ks_energy"]);
       area = std::get<T>(cache["area"]);
     } else {
-      sol = update_mesh_and_solve(x, &chol);
+      std::vector<T> HFx;
+      sol = update_mesh_and_solve(x, HFx, &chol);
       ks_energy = stress_ks_analysis.energy(nullptr, sol.data());
       std::vector<T> dummy(mesh.get_num_nodes(), 0.0);
       area = vol_analysis.energy(nullptr, dummy.data());
@@ -734,13 +793,26 @@ class TopoAnalysis {
       elastic.get_analysis_ersatz().LSF_jacobian_adjoint_product(
           sol.data(), sol.data() /*this is effectively -psi*/, gcomp.data());
     }
+
+    std::vector<T> Fx(x.size(), 0.0);
     if (use_helmholtz_filter) {
-      hfilter.applyGradient(x.data(), gcomp.data(), gcomp.data());
+      hfilter.apply(x.data(), Fx.data());
+    } else {
+      cfilter.apply(x.data(), Fx.data());
+    }
+
+    design_mapping_apply_gradient(gcomp.data(), gcomp.data());
+    if (use_robust_projection) {
+      projector.applyGradient(Fx.data(), gcomp.data(), gcomp.data());
+    }
+    if (use_helmholtz_filter) {
+      hfilter.applyGradient(gcomp.data(), gcomp.data());
     } else {
       for (int i = 0; i < num_conv_filter_apply; i++) {
         cfilter.applyGradient(gcomp.data(), gcomp.data());
       }
     }
+
     std::transform(
         gcomp.begin(), gcomp.end(), gcomp.begin(),
         [this](const T& val) { return val * this->compliance_scalar; });
@@ -749,8 +821,12 @@ class TopoAnalysis {
     std::fill(garea.begin(), garea.end(), 0.0);
     vol_analysis.LSF_volume_derivatives(garea.data());
 
+    design_mapping_apply_gradient(garea.data(), garea.data());
+    if (use_robust_projection) {
+      projector.applyGradient(Fx.data(), garea.data(), garea.data());
+    }
     if (use_helmholtz_filter) {
-      hfilter.applyGradient(x.data(), garea.data(), garea.data());
+      hfilter.applyGradient(garea.data(), garea.data());
     } else {
       for (int i = 0; i < num_conv_filter_apply; i++) {
         cfilter.applyGradient(garea.data(), garea.data());
@@ -760,8 +836,13 @@ class TopoAnalysis {
     gpen.resize(x.size());
     std::fill(gpen.begin(), gpen.end(), 0.0);
     pen_analysis.residual(nullptr, phi.data(), gpen.data());
+
+    design_mapping_apply_gradient(gpen.data(), gpen.data());
+    if (use_robust_projection) {
+      projector.applyGradient(Fx.data(), gpen.data(), gpen.data());
+    }
     if (use_helmholtz_filter) {
-      hfilter.applyGradient(x.data(), gpen.data(), gpen.data());
+      hfilter.applyGradient(gpen.data(), gpen.data());
     } else {
       for (int i = 0; i < num_conv_filter_apply; i++) {
         cfilter.applyGradient(gpen.data(), gpen.data());
@@ -782,8 +863,12 @@ class TopoAnalysis {
           sol.data(), psi_stress_neg.data(), gstress.data());
     }
 
+    design_mapping_apply_gradient(gstress.data(), gstress.data());
+    if (use_robust_projection) {
+      projector.applyGradient(Fx.data(), gstress.data(), gstress.data());
+    }
     if (use_helmholtz_filter) {
-      hfilter.applyGradient(x.data(), gstress.data(), gstress.data());
+      hfilter.applyGradient(gstress.data(), gstress.data());
     } else {
       for (int i = 0; i < num_conv_filter_apply; i++) {
         cfilter.applyGradient(gstress.data(), gstress.data());
@@ -990,6 +1075,8 @@ class TopoAnalysis {
 
   bool use_helmholtz_filter;
   int num_conv_filter_apply;
+  bool use_robust_projection;
+  RobustProjection<T> projector;
   HFilter hfilter;
   CFilter cfilter;
   Elastic elastic;
@@ -1041,7 +1128,8 @@ class TopoProb : public ParOptProblem {
             parser.get_double_option("stress_objective_theta")),
         nvars(topo.get_prob_mesh().get_nvars()),
         ncon(has_stress_constraint ? 2 : 1),
-        nineq(ncon) {
+        nineq(ncon),
+        HFx_old(nvars, 0.0) {
     setProblemSizes(nvars, ncon, 0);
     setNumInequalities(nineq, 0);
 
@@ -1054,31 +1142,29 @@ class TopoProb : public ParOptProblem {
 
   void print_progress(T obj, T comp, T reg, T pterm, T vol_frac, T max_stress,
                       T max_stress_ratio, T ks_stress_ratio,
-                      T ks_stress_ratio_ub, int header_every = 10) {
+                      T ks_stress_ratio_ub, T HFx_change,
+                      int header_every = 10) {
     std::ofstream progress_file(fspath(prefix) / fspath("optimization.log"),
                                 std::ios::app);
     if (counter % header_every == 0) {
-      char phead[30];
-      std::snprintf(phead, 20, "pen(c:%8.1e)",
-                    parser.get_double_option("grad_penalty_coeff"));
       char line[2048];
       std::snprintf(line, 2048,
-                    "\n%5s%20s%20s%20s%20s%15s%20s%20s%20s%15s%12s%15s\n",
-                    "iter", "obj", "comp", "regularization", phead, "vol (\%)",
-                    "stress_max", "stress_ratio_max", "stress_ratio_ks",
-                    "ks relerr(\%)", "ks ub", "uptime(H:M:S)");
+                    "\n%4s%15s%15s%15s%15s%11s%15s%15s%15s%13s%14s%13s%15s\n",
+                    "iter", "obj", "comp", "x regular", "grad pen", "vol(\%)",
+                    "max(vm)", "max(vm/yield)", "ks(vm/yield)", "ks relerr(\%)",
+                    "ks ub", "diffx_infty", "uptime(H:M:S)");
       std::cout << line;
       progress_file << line;
     }
     char line[2048];
     std::snprintf(
         line, 2048,
-        "%5d%20.10e%20.10e%20.10e%20.10e%15.5f%20.10e%20.10e%20.10e%15.5f%12."
-        "4e%15s\n",
+        "%4d%15.5e%15.5e%15.5e%15.5e%11.5f%15.5e%15.5e%15.5e%13.5f%14."
+        "4e%13.5f%15s\n",
         counter, obj, comp, reg, pterm, 100.0 * vol_frac, max_stress,
         max_stress_ratio, ks_stress_ratio,
         (ks_stress_ratio - max_stress_ratio) / max_stress_ratio * 100.0,
-        ks_stress_ratio_ub, watch.format_time(watch.lap()).c_str());
+        ks_stress_ratio_ub, HFx_change, watch.format_time(watch.lap()).c_str());
     std::cout << line;
     progress_file << line;
     progress_file.close();
@@ -1125,11 +1211,21 @@ class TopoProb : public ParOptProblem {
     }
 
     else {
-      x0 = topo.create_initial_topology(
-          parser.get_int_option("init_topology_nholes_x"),
-          parser.get_int_option("init_topology_nholes_y"),
-          parser.get_double_option("init_topology_r"),
-          parser.get_bool_option("init_topology_cell_center"));
+      std::string init_topology_method =
+          parser.get_str_option("init_topology_method");
+
+      if (init_topology_method == "circles") {
+        x0 = topo.create_initial_topology(
+            parser.get_int_option("init_topology_nholes_x"),
+            parser.get_int_option("init_topology_nholes_y"),
+            parser.get_double_option("init_topology_r"),
+            parser.get_bool_option("init_topology_cell_center"));
+      } else {  // init_topology_method == "sinusoidal"
+        x0 = topo.create_initial_topology_sine(
+            parser.get_int_option("init_topology_sine_period_x"),
+            parser.get_int_option("init_topology_sine_period_y"),
+            parser.get_double_option("init_topology_sine_offset"));
+      }
     }
 
     std::vector<T> x0r = topo.get_prob_mesh().reduce(x0);
@@ -1137,18 +1233,17 @@ class TopoProb : public ParOptProblem {
     // update mesh and bc dof, but don't perform the linear solve
     topo.update_mesh(topo.get_prob_mesh().expand(x0));
 
-    double ubval = parser.get_double_option("opt_x_ub");
-    double lbval = parser.get_double_option("opt_x_lb");
     for (int i = 0; i < nvars; i++) {
       xr[i] = x0r[i];
-      ub[i] = ubval;
-      lb[i] = lbval;
+      lb[i] = 0.0;
+      ub[i] = 1.0;
     }
 
-    const auto& loaded_verts = topo.get_prob_mesh().get_protected_verts();
-    for (int i : loaded_verts) {
+    const auto& protected_verts = topo.get_prob_mesh().get_protected_verts();
+    for (int i : protected_verts) {
       ub[i] =
-          -0.01;  // we prescribe x to be sufficient negative for loaded verts
+          0.5;  // we prescribe x to be sufficient low for protected
+                // verts such that material will be placed at those locations
     }
   }
 
@@ -1171,11 +1266,9 @@ class TopoProb : public ParOptProblem {
 
     // Regularization term
     double reg_coeff = parser.get_double_option("regularization_coeff") / nvars;
-    double ubval = parser.get_double_option("opt_x_ub");
-    double lbval = parser.get_double_option("opt_x_lb");
     T reg = 0.0;
     for (int i = 0; i < nvars; i++) {
-      reg += (xr[i] - lbval) * (ubval - xr[i]);
+      reg += xr[i] * (1.0 - xr[i]);
     }
     reg *= reg_coeff;
 
@@ -1187,8 +1280,16 @@ class TopoProb : public ParOptProblem {
       topo.write_prob_json(json_path, parser, x);
     }
 
-    auto [comp, area, pterm, max_stress, max_stress_ratio, ks_stress_ratio, u,
-          xloc_q, stress_q] = topo.eval_obj_con(x);
+    auto [HFx, comp, area, pterm, max_stress, max_stress_ratio, ks_stress_ratio,
+          u, xloc_q, stress_q] = topo.eval_obj_con(x);
+
+    // Evaluate the design change ||phi_new - phi_old||_infty
+    std::transform(
+        HFx_old.begin(), HFx_old.end(), HFx.begin(), HFx_old.begin(),
+        [](T a, T b) { return abs(b - a); });  // HFx_old = abs(HFx_old - HFx)
+    T HFx_change = *std::max_element(HFx_old.begin(), HFx_old.end());
+    HFx_old = HFx;
+
     if (has_stress_objective) {
       *fobj =
           (1.0 - stress_objective_theta) * comp +
@@ -1286,7 +1387,8 @@ class TopoProb : public ParOptProblem {
 
     // print optimization progress
     print_progress(*fobj, comp, reg, pterm, area / domain_area, max_stress,
-                   max_stress_ratio, ks_stress_ratio, stress_ratio_ub);
+                   max_stress_ratio, ks_stress_ratio, stress_ratio_ub,
+                   HFx_change);
 
     counter++;
 
@@ -1325,10 +1427,8 @@ class TopoProb : public ParOptProblem {
 
     std::vector<T> greg(nvars, 0.0);
     double reg_coeff = parser.get_double_option("regularization_coeff") / nvars;
-    double ubval = parser.get_double_option("opt_x_ub");
-    double lbval = parser.get_double_option("opt_x_lb");
     for (int i = 0; i < nvars; i++) {
-      greg[i] = reg_coeff * (ubval + lbval - 2.0 * xr[i]);
+      greg[i] = reg_coeff * (1.0 - 2.0 * xr[i]);
     }
 
     if (has_stress_objective) {
@@ -1379,6 +1479,8 @@ class TopoProb : public ParOptProblem {
   int nvars = -1;
   int ncon = -1;
   int nineq = -1;
+
+  std::vector<T> HFx_old;
 
   int counter = -1;
   StopWatch watch;
@@ -1481,8 +1583,6 @@ void execute(int argc, char* argv[]) {
   bool use_robust_projection = parser.get_bool_option("use_robust_projection");
   double robust_proj_beta = parser.get_double_option("robust_proj_beta");
   double robust_proj_eta = parser.get_double_option("robust_proj_eta");
-  double robust_proj_xmin = parser.get_double_option("opt_x_lb");
-  double robust_proj_xmax = parser.get_double_option("opt_x_ub");
   T penalty = parser.get_double_option("grad_penalty_coeff");
   T stress_ksrho = parser.get_double_option("stress_ksrho");
   T yield_stress = parser.get_double_option("yield_stress");
@@ -1500,8 +1600,6 @@ void execute(int argc, char* argv[]) {
                     use_robust_projection,
                     robust_proj_beta,
                     robust_proj_eta,
-                    robust_proj_xmin,
-                    robust_proj_xmax,
                     prefix,
                     compliance_scalar};
 
