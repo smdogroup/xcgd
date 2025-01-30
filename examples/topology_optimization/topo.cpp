@@ -493,44 +493,43 @@ class TopoAnalysis {
                                          bool cell_center = true) {
     const T* lxy = grid.get_lxy();
     int nverts = grid.get_num_verts();
-    std::vector<T> lsf(nverts, 0.0);
+    std::vector<T> dvs(nverts, 0.0);
     for (int i = 0; i < nverts; i++) {
       T xloc[Mesh::spatial_dim];
       grid.get_vert_xloc(i, xloc);
       T x = xloc[0];
       T y = xloc[1];
 
-      std::vector<T> lsf_vals;
+      std::vector<T> dvs_vals;
       for (int ix = 0; ix < nholes_x; ix++) {
         for (int iy = 0; iy < nholes_y; iy++) {
           if (cell_center) {
             T x0 = lxy[0] / nholes_x / 2.0 * (2.0 * ix + 1.0);
             T y0 = lxy[1] / nholes_y / 2.0 * (2.0 * iy + 1.0);
-            lsf_vals.push_back(r -
+            dvs_vals.push_back(r -
                                sqrt((x - x0) * (x - x0) + (y - y0) * (y - y0)));
           } else {
             T x0 = lxy[0] / (nholes_x - 1.0) * ix;
             T y0 = lxy[1] / (nholes_y - 1.0) * iy;
-            lsf_vals.push_back(r -
+            dvs_vals.push_back(r -
                                sqrt((x - x0) * (x - x0) + (y - y0) * (y - y0)));
           }
         }
       }
-      lsf[i] = hard_max(lsf_vals);
+      dvs[i] = hard_max(dvs_vals);
     }
 
-    // // Normalize lsf so values are within [-1, 1]
-    // T lsf_max = hard_max(lsf);
-    // T lsf_min = hard_min(lsf);
-    // for (int i = 0; i < nverts; i++) {
-    //   if (lsf[i] < 0.0) {
-    //     lsf[i] /= -lsf_min;
-    //   } else {
-    //     lsf[i] /= lsf_max;
-    //   }
-    // }
+    // This is a (conservative) maximum possible magnitude of the
+    // signed-distance function
+    T l_max = sqrt(lxy[0] * lxy[0] / nholes_x / nholes_x +
+                   lxy[1] * lxy[1] / nholes_y / nholes_y);
 
-    return lsf;
+    // scale dv values so they're in [0, 1]
+    for (int i = 0; i < nverts; i++) {
+      dvs[i] = (dvs[i] + l_max) / 2.0 / l_max;
+    }
+
+    return dvs;
   }
 
   // Map filtered x -> phi, recall that

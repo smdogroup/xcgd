@@ -14,10 +14,11 @@ import argparse
 
 class StepsizeStudy:
 
-    def __init__(self, cfg):
+    def __init__(self, cfg, x0_json):
         self.working_dir = "step_size_study"
         self.exec_name = "topo"
         self.cfg_template_name = cfg
+        self.x0_json = x0_json
 
     def remove_file_if_exists(self, file_path):
         if os.path.isfile(file_path):
@@ -36,6 +37,11 @@ class StepsizeStudy:
                 )
                 line = re.sub(
                     r"prefix.*\n", f'prefix = "{working_dir}/h_{h:.1e}"', line
+                )
+                line = re.sub(
+                    r"init_topology_from_json.*\n",
+                    f'init_topology_from_json = "{self.x0_json}"',
+                    line,
                 )
                 outfile.write(line)
 
@@ -109,10 +115,11 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--cfg", type=str, default="topo.cfg")
     p.add_argument("--csv", type=str)
+    p.add_argument("--x0-json", type=str, default="")
     p.add_argument("--num-points", type=int, default=10)
     args = p.parse_args()
 
-    study = StepsizeStudy(args.cfg)
+    study = StepsizeStudy(args.cfg, args.x0_json)
 
     if args.csv:
         df = pd.read_csv(args.csv).drop(columns=["Unnamed: 0"])
