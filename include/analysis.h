@@ -909,6 +909,11 @@ class GalerkinAnalysis final {
     return {xloc_q, energy_q};
   }
 
+  const Mesh& get_mesh() { return mesh; }
+  const Quadrature& get_quadrature() { return quadrature; }
+  const Basis& get_basis() { return basis; }
+  const Physics& get_physics() { return physics; }
+
  private:
   const Mesh& mesh;
   const Quadrature& quadrature;

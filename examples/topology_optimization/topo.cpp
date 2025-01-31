@@ -47,7 +47,8 @@ class ProbMeshBase {
   virtual std::vector<T> expand(std::vector<T> x) = 0;  // expand xr -> x
   virtual std::vector<T> reduce(std::vector<T> x) = 0;  // reduce x -> xr
   virtual Grid& get_grid() = 0;
-  virtual Mesh& get_mesh() = 0;
+  virtual Mesh& get_erode_mesh() = 0;
+  virtual Mesh& get_dilate_mesh() = 0;
 };
 
 template <typename T, int Np_1d>
@@ -65,7 +66,8 @@ class CantileverMesh final
       : nxy(nxy),
         lxy(lxy),
         grid(nxy.data(), lxy.data()),
-        mesh(grid),
+        erode_mesh(grid),
+        dilate_mesh(grid),
         loaded_frac(loaded_frac) {
     // Find loaded cells
     for (int iy = 0; iy < nxy[1]; iy++) {
@@ -107,7 +109,7 @@ class CantileverMesh final
   std::set<int> get_protected_verts() { return {}; }
 
   std::vector<int> get_bc_nodes() {
-    return this->mesh.get_left_boundary_nodes();
+    return this->erode_mesh.get_left_boundary_nodes();
   }
 
   std::vector<T> expand(std::vector<T> xr) {
@@ -128,13 +130,14 @@ class CantileverMesh final
 
   Grid& get_grid() { return grid; }
 
-  Mesh& get_mesh() { return mesh; }
+  Mesh& get_erode_mesh() { return erode_mesh; }
+  Mesh& get_dilate_mesh() { return dilate_mesh; }
 
  private:
   std::array<int, Grid::spatial_dim> nxy;
   std::array<T, Grid::spatial_dim> lxy;
   Grid grid;
-  Mesh mesh;
+  Mesh erode_mesh, dilate_mesh;
 
   double loaded_frac;
   std::set<int> loaded_cells, loaded_verts;
@@ -157,7 +160,8 @@ class LbracketMesh final : public ProbMeshBase<T, Np_1d, StructuredGrid2D<T>> {
       : nxy(nxy),
         lxy(lxy),
         grid(nxy.data(), lxy.data()),
-        mesh(grid),
+        erode_mesh(grid),
+        dilate_mesh(grid),
         loaded_frac(loaded_frac),
         domain_area(lxy[0] * lxy[1] *
                     (1.0 - (1.0 - lbracket_frac) * (1.0 - lbracket_frac))) {
@@ -212,7 +216,7 @@ class LbracketMesh final : public ProbMeshBase<T, Np_1d, StructuredGrid2D<T>> {
   std::set<int> get_protected_verts() { return {}; }
 
   std::vector<int> get_bc_nodes() {
-    return this->mesh.get_upper_boundary_nodes();
+    return this->erode_mesh.get_upper_boundary_nodes();
   }
 
   std::vector<T> expand(std::vector<T> xr) {
@@ -237,13 +241,14 @@ class LbracketMesh final : public ProbMeshBase<T, Np_1d, StructuredGrid2D<T>> {
 
   Grid& get_grid() { return grid; }
 
-  Mesh& get_mesh() { return mesh; }
+  Mesh& get_erode_mesh() { return erode_mesh; }
+  Mesh& get_dilate_mesh() { return dilate_mesh; }
 
  private:
   std::array<int, Grid::spatial_dim> nxy;
   std::array<T, Grid::spatial_dim> lxy;
   Grid grid;
-  Mesh mesh;
+  Mesh erode_mesh, dilate_mesh;
   double loaded_frac, domain_area;
   std::set<int> loaded_cells, loaded_verts;
   std::set<int> inactive_cells, inactive_verts;
@@ -273,7 +278,8 @@ class LbracketGridMesh final
         lx1(lxy[0]),
         ly1(lxy[1] * lbracket_frac),
         grid(nx1, nx2, ny1, ny2, lx1, ly1),
-        mesh(grid),
+        erode_mesh(grid),
+        dilate_mesh(grid),
         loaded_frac(loaded_frac),
         domain_area(lxy[0] * lxy[1] *
                     (1.0 - (1.0 - lbracket_frac) * (1.0 - lbracket_frac))) {
@@ -342,7 +348,7 @@ class LbracketGridMesh final
   std::set<int> get_protected_verts() { return protected_verts; }
 
   std::vector<int> get_bc_nodes() {
-    return this->mesh.get_upper_boundary_nodes();
+    return this->erode_mesh.get_upper_boundary_nodes();
   }
 
   std::vector<T> expand(std::vector<T> xr) {
@@ -363,13 +369,14 @@ class LbracketGridMesh final
 
   Grid& get_grid() { return grid; }
 
-  Mesh& get_mesh() { return mesh; }
+  Mesh& get_erode_mesh() { return erode_mesh; }
+  Mesh& get_dilate_mesh() { return dilate_mesh; }
 
  private:
   int nx1, nx2, ny1, ny2;
   T lx1, ly1;
   Grid grid;
-  Mesh mesh;
+  Mesh erode_mesh, dilate_mesh;
   double loaded_frac, domain_area;
   std::set<int> loaded_cells, loaded_verts, protected_verts;
   std::set<int> inactive_cells, inactive_verts;
@@ -437,9 +444,12 @@ class TopoAnalysis {
                double compliance_scalar)
       : prob_mesh(prob_mesh),
         grid(prob_mesh.get_grid()),
-        mesh(prob_mesh.get_mesh()),
-        quadrature(mesh),
-        basis(mesh),
+        erode_mesh(prob_mesh.get_erode_mesh()),
+        dilate_mesh(prob_mesh.get_dilate_mesh()),
+        erode_quadrature(erode_mesh),
+        dilate_quadrature(dilate_mesh),
+        erode_basis(erode_mesh),
+        dilate_basis(dilate_mesh),
         use_helmholtz_filter(use_helmholtz_filter),
         num_conv_filter_apply(num_conv_filter_apply),
         use_robust_projection(use_robust_projection),
@@ -448,19 +458,19 @@ class TopoAnalysis {
         projector_erode(proj_beta, 0.5 - proj_delta_eta, grid.get_num_verts()),
         hfilter(r0, grid),
         cfilter(r0, grid),
-        elastic(E, nu, mesh, quadrature, basis, int_func),
-        vol_analysis(mesh, quadrature, basis, vol),
+        elastic(E, nu, erode_mesh, erode_quadrature, erode_basis, int_func),
+        vol_analysis(dilate_mesh, dilate_quadrature, dilate_basis, vol),
         pen(penalty),
         pen_analysis(hfilter.get_mesh(), hfilter.get_quadrature(),
                      hfilter.get_basis(), pen),
         stress(E, nu),
-        stress_analysis(mesh, quadrature, basis, stress),
+        stress_analysis(dilate_mesh, dilate_quadrature, dilate_basis, stress),
         stress_ks(stress_ksrho, E, nu, yield_stress),
-        stress_ks_analysis(mesh, quadrature, basis, stress_ks),
-        phi(mesh.get_lsf_dof()),
-        phi_blueprint(phi),
-        phi_dilate(phi),
-        phi_erode(phi),
+        stress_ks_analysis(dilate_mesh, dilate_quadrature, dilate_basis,
+                           stress_ks),
+        phi_erode(erode_mesh.get_lsf_dof()),
+        phi_dilate(dilate_mesh.get_lsf_dof()),
+        phi_blueprint(phi_dilate.size(), 0.0),
         prefix(prefix),
         cache({{"x", {}}, {"sol", {}}, {"chol", nullptr}}),
         compliance_scalar(compliance_scalar) {
@@ -538,7 +548,7 @@ class TopoAnalysis {
   // size
   void design_mapping_apply(const T* x, T* y) {
     double elem_h = 0.5 * (grid.get_h()[0] + grid.get_h()[1]);
-    int ndv = phi.size();
+    int ndv = phi_blueprint.size();
     for (int i = 0; i < ndv; i++) {
       y[i] = elem_h * (x[i] - 0.5);
     }
@@ -546,36 +556,35 @@ class TopoAnalysis {
 
   void design_mapping_apply_gradient(const T* dfdy, T* dfdx) {
     double elem_h = 0.5 * (grid.get_h()[0] + grid.get_h()[1]);
-    int ndv = phi.size();
+    int ndv = phi_blueprint.size();
     for (int i = 0; i < ndv; i++) {
       dfdx[i] = elem_h * dfdy[i];
     }
   }
 
   std::vector<T> update_mesh(const std::vector<T>& x) {
-    if (x.size() != phi.size()) {
+    if (x.size() != phi_blueprint.size()) {
       throw std::runtime_error("sizes don't match");
     }
 
     // Apply filter on design variables
     if (use_helmholtz_filter) {
-      hfilter.apply(x.data(), phi.data());
+      hfilter.apply(x.data(), phi_blueprint.data());
     } else {
-      cfilter.apply(x.data(), phi.data());
+      cfilter.apply(x.data(), phi_blueprint.data());
       for (int i = 0; i < num_conv_filter_apply - 1; i++) {
-        cfilter.apply(phi.data(), phi.data());
+        cfilter.apply(phi_blueprint.data(), phi_blueprint.data());
       }
     }
 
     // Apply projection
     if (use_robust_projection) {
-      projector_blueprint.apply(phi.data(), phi_blueprint.data());
-      projector_dilate.apply(phi.data(), phi_dilate.data());
-      projector_erode.apply(phi.data(), phi_erode.data());
+      projector_dilate.apply(phi_blueprint.data(), phi_dilate.data());
+      projector_erode.apply(phi_blueprint.data(), phi_erode.data());
+      projector_blueprint.apply(phi_blueprint.data(), phi_blueprint.data());
     } else {
-      phi_blueprint = phi;
-      phi_dilate = phi;
-      phi_erode = phi;
+      phi_dilate = phi_blueprint;
+      phi_erode = phi_blueprint;
     }
 
     // Save H(F(x))
@@ -586,41 +595,31 @@ class TopoAnalysis {
     design_mapping_apply(phi_dilate.data(), phi_dilate.data());
     design_mapping_apply(phi_erode.data(), phi_erode.data());
 
-    // we use the erode realization for physical analysis
-    phi = phi_erode;
-
     // Update the mesh given new phi value
-    mesh.update_mesh();
+    erode_mesh.update_mesh();
+    dilate_mesh.update_mesh();
 
     if constexpr (use_ersatz) {
       int nverts = grid.get_num_verts();
-      auto& lsf_mesh = elastic.get_mesh_ersatz();
-      auto& lsf_ersatz = lsf_mesh.get_lsf_dof();
+      auto& elastic_phi = elastic.get_mesh().get_lsf_dof();
+      auto& elastic_ersatz_phi = elastic.get_mesh_ersatz().get_lsf_dof();
       for (int i = 0; i < nverts; i++) {
-        lsf_ersatz[i] = -phi[i];
+        elastic_ersatz_phi[i] = -elastic_phi[i];
       }
-      lsf_mesh.update_mesh();
+      elastic.get_mesh_ersatz().update_mesh();
     }
 
-    const std::unordered_map<int, int>& vert_nodes = mesh.get_vert_nodes();
-
-    // Update bc dof
+    // Update bc dof for elastic
     bc_dof.clear();
     std::vector<int> bc_nodes = prob_mesh.get_bc_nodes();
     for (int n : bc_nodes) {
       if constexpr (use_ersatz) {
-        n = mesh.get_node_vert(n);
+        n = elastic.get_mesh().get_node_vert(n);
       }
       for (int d = 0; d < spatial_dim; d++) {
         bc_dof.push_back(spatial_dim * n + d);
       }
     }
-
-    // TODO: delete
-    auto mesh = elastic.get_mesh();
-    StencilToVTK<T, Mesh> stencil_vtk(mesh,
-                                      fspath(prefix) / "debug_stencil.vtk");
-    stencil_vtk.write_stencils(mesh.get_elem_nodes());
 
     return HFx;
   }
@@ -637,13 +636,16 @@ class TopoAnalysis {
     try {
       LoadPhysics load_physics(load_func);
       std::set<int> load_elements;
-      for (int i = 0; i < mesh.get_num_elements(); i++) {
-        if (loaded_cells.count(mesh.get_elem_cell(i))) {
+      const auto& elastic_mesh = elastic.get_mesh();
+      int elastic_nelems = elastic_mesh.get_num_elements();
+      for (int i = 0; i < elastic_nelems; i++) {
+        if (loaded_cells.count(elastic_mesh.get_elem_cell(i))) {
           load_elements.insert(i);
         }
       }
-      LoadQuadrature load_quadrature(mesh, load_elements);
-      LoadAnalysis load_analysis(mesh, load_quadrature, basis, load_physics);
+      LoadQuadrature load_quadrature(elastic_mesh, load_elements);
+      LoadAnalysis load_analysis(elastic_mesh, load_quadrature,
+                                 elastic.get_basis(), load_physics);
 
       std::vector<T> sol =
           elastic.solve(bc_dof, std::vector<T>(bc_dof.size(), T(0.0)),
@@ -679,9 +681,10 @@ class TopoAnalysis {
                                 elastic.get_rhs().begin(), T(0.0)) *
              compliance_scalar;
 
-    std::vector<T> dummy(mesh.get_num_nodes(), 0.0);
-    T area = vol_analysis.energy(nullptr, dummy.data());
-    T pterm = pen_analysis.energy(nullptr, phi.data());
+    std::vector<T> vol_dummy(vol_analysis.get_mesh().get_num_nodes(), 0.0);
+    T area = vol_analysis.energy(nullptr, vol_dummy.data());
+
+    T pterm = pen_analysis.energy(nullptr, phi_blueprint.data());
 
     auto [xloc_q, stress_q] = eval_stress(sol);
     T max_stress = *std::max_element(stress_q.begin(), stress_q.end());
@@ -704,7 +707,7 @@ class TopoAnalysis {
 
   // only useful if ersatz material is used
   template <int dim>
-  std::vector<T> grid_dof_to_cut_dof(const std::vector<T> u) {
+  std::vector<T> grid_dof_to_cut_dof(const Mesh& mesh, const std::vector<T> u) {
     if (u.size() != mesh.get_grid().get_num_verts() * dim) {
       throw std::runtime_error(
           "grid_dof_to_cut_dof() only takes dof vectors of size nverts * dim "
@@ -725,7 +728,8 @@ class TopoAnalysis {
   }
 
   template <int dim>
-  std::vector<T> cut_dof_to_grid_dof(const std::vector<T> u0) {
+  std::vector<T> cut_dof_to_grid_dof(const Mesh& mesh,
+                                     const std::vector<T> u0) {
     if (u0.size() != mesh.get_num_nodes() * dim) {
       throw std::runtime_error(
           "cut_dof_to_grid_dof() only takes dof vectors of size nnodes * dim "
@@ -749,7 +753,8 @@ class TopoAnalysis {
       const std::vector<T>& u) {
     if constexpr (use_ersatz) {
       return stress_analysis.interpolate_energy(
-          grid_dof_to_cut_dof<spatial_dim>(u).data());
+          grid_dof_to_cut_dof<spatial_dim>(stress_analysis.get_mesh(), u)
+              .data());
     } else {
       return stress_analysis.interpolate_energy(u.data());
     }
@@ -771,8 +776,8 @@ class TopoAnalysis {
       std::vector<T> HFx;
       sol = update_mesh_and_solve(x, HFx, &chol);
       ks_energy = stress_ks_analysis.energy(nullptr, sol.data());
-      std::vector<T> dummy(mesh.get_num_nodes(), 0.0);
-      area = vol_analysis.energy(nullptr, dummy.data());
+      std::vector<T> vol_dummy(vol_analysis.get_mesh().get_num_nodes(), 0.0);
+      area = vol_analysis.energy(nullptr, vol_dummy.data());
     }
 
     // Compliance function is self-adjoint with a sign flip
@@ -838,7 +843,7 @@ class TopoAnalysis {
 
     design_mapping_apply_gradient(garea.data(), garea.data());
     if (use_robust_projection) {
-      projector_erode.applyGradient(Fx.data(), garea.data(), garea.data());
+      projector_dilate.applyGradient(Fx.data(), garea.data(), garea.data());
     }
     if (use_helmholtz_filter) {
       hfilter.applyGradient(garea.data(), garea.data());
@@ -850,11 +855,11 @@ class TopoAnalysis {
 
     gpen.resize(x.size());
     std::fill(gpen.begin(), gpen.end(), 0.0);
-    pen_analysis.residual(nullptr, phi.data(), gpen.data());
+    pen_analysis.residual(nullptr, phi_blueprint.data(), gpen.data());
 
     design_mapping_apply_gradient(gpen.data(), gpen.data());
     if (use_robust_projection) {
-      projector_erode.applyGradient(Fx.data(), gpen.data(), gpen.data());
+      projector_blueprint.applyGradient(Fx.data(), gpen.data(), gpen.data());
     }
     if (use_helmholtz_filter) {
       hfilter.applyGradient(gpen.data(), gpen.data());
@@ -880,7 +885,7 @@ class TopoAnalysis {
 
     design_mapping_apply_gradient(gstress.data(), gstress.data());
     if (use_robust_projection) {
-      projector_erode.applyGradient(Fx.data(), gstress.data(), gstress.data());
+      projector_dilate.applyGradient(Fx.data(), gstress.data(), gstress.data());
     }
     if (use_helmholtz_filter) {
       hfilter.applyGradient(gstress.data(), gstress.data());
@@ -899,21 +904,11 @@ class TopoAnalysis {
     }
   }
 
-  void write_quad_pts_to_vtk(const std::string vtk_path) {
-    Interpolator<T, Quadrature, Basis> interp{mesh, quadrature, basis};
-    interp.to_vtk(vtk_path);
-  }
-
   void write_grid_vtk(const std::string vtk_path, const std::vector<T>& x,
-                      const std::vector<T>& phi,
                       std::map<std::string, std::vector<T>&> node_sols = {},
                       std::map<std::string, std::vector<T>&> cell_sols = {},
                       std::map<std::string, std::vector<T>&> node_vecs = {},
                       std::map<std::string, std::vector<T>&> cell_vecs = {}) {
-    if (x.size() != phi.size()) {
-      throw std::runtime_error("sizes don't match");
-    }
-
     ToVTK<T, typename HFilter::Mesh> vtk(hfilter.get_mesh(), vtk_path);
     vtk.write_mesh();
 
@@ -968,17 +963,10 @@ class TopoAnalysis {
   }
 
   void write_cut_vtk(const std::string vtk_path, const std::vector<T>& x,
-                     const std::vector<T>& phi,
                      std::map<std::string, std::vector<T>&> node_sols = {},
                      std::map<std::string, std::vector<T>&> cell_sols = {},
                      std::map<std::string, std::vector<T>&> node_vecs = {},
                      std::map<std::string, std::vector<T>&> cell_vecs = {}) {
-    if (x.size() != phi.size()) {
-      throw std::runtime_error("size doesn't match for x and phi, dim(x): " +
-                               std::to_string(x.size()) +
-                               ", dim(phi): " + std::to_string(phi.size()));
-    }
-
     const Mesh& mesh = elastic.get_mesh();
     ToVTK<T, Mesh> vtk(mesh, vtk_path);
     vtk.write_mesh();
@@ -1074,23 +1062,23 @@ class TopoAnalysis {
                        const std::vector<T>& x) {
     json j;
     j["cfg"] = parser.get_options();
-    j["lsf_dof"] = mesh.get_lsf_dof();
+    j["phi_blueprint"] = phi_blueprint;
     j["bc_dof"] = bc_dof;
     j["loaded_cells"] = loaded_cells;
     j["dvs"] = x;
     write_json(json_path, j);
   }
 
-  std::vector<T>& get_phi() { return phi; }
   std::vector<T>& get_rhs() { return elastic.get_rhs(); }
   ProbMesh& get_prob_mesh() { return prob_mesh; }
 
  private:
   ProbMesh& prob_mesh;
   Grid& grid;
-  Mesh& mesh;
-  Quadrature quadrature;
-  Basis basis;
+  Mesh& erode_mesh;
+  Mesh& dilate_mesh;
+  Quadrature erode_quadrature, dilate_quadrature;
+  Basis erode_basis, dilate_basis;
 
   bool use_helmholtz_filter;
   int num_conv_filter_apply;
@@ -1108,9 +1096,10 @@ class TopoAnalysis {
   StressKS stress_ks;
   StressKSAnalysis stress_ks_analysis;
 
-  std::vector<T>& phi;  // level-set values for the mesh
-  std::vector<T> phi_blueprint, phi_dilate,
-      phi_erode;  // level-set values for blueprint, dilate and erode design
+  // level-set values for blueprint, dilate and erode design
+  std::vector<T>& phi_erode;
+  std::vector<T>& phi_dilate;
+  std::vector<T> phi_blueprint;
 
   std::string prefix;
 
@@ -1249,11 +1238,10 @@ class TopoProb : public ParOptProblem {
       }
     }
 
-    std::vector<T> x0r = topo.get_prob_mesh().reduce(x0);
-
     // update mesh and bc dof, but don't perform the linear solve
-    topo.update_mesh(topo.get_prob_mesh().expand(x0));
+    topo.update_mesh(x0);
 
+    std::vector<T> x0r = topo.get_prob_mesh().reduce(x0);
     for (int i = 0; i < nvars; i++) {
       xr[i] = x0r[i];
       lb[i] = 0.0;
@@ -1335,23 +1323,21 @@ class TopoProb : public ParOptProblem {
       }
 
       if constexpr (TopoAnalysis::use_ersatz) {
-        topo.write_grid_vtk(vtk_path, x, topo.get_phi(),
+        topo.write_grid_vtk(vtk_path, x,
                             {{"protected_verts", protected_verts_v}}, {},
                             {{"displacement", u}, {"rhs", topo.get_rhs()}}, {});
       } else {
-        topo.write_grid_vtk(vtk_path, x, topo.get_phi(),
-                            {{"protected_verts", protected_verts_v}}, {}, {},
-                            {});
+        topo.write_grid_vtk(
+            vtk_path, x, {{"protected_verts", protected_verts_v}}, {}, {}, {});
       }
 
       // Write cut mesh to vtk
       vtk_path =
           fspath(prefix) / fspath("cut_" + std::to_string(counter) + ".vtk");
       if constexpr (TopoAnalysis::use_ersatz) {
-        topo.write_cut_vtk(vtk_path, x, topo.get_phi(), {}, {}, {}, {});
+        topo.write_cut_vtk(vtk_path, x, {}, {}, {}, {});
       } else {
-        topo.write_cut_vtk(vtk_path, x, topo.get_phi(), {}, {},
-                           {{"displacement", u}}, {});
+        topo.write_cut_vtk(vtk_path, x, {}, {}, {{"displacement", u}}, {});
       }
 
       // Write quadrature-level data
@@ -1367,7 +1353,6 @@ class TopoProb : public ParOptProblem {
     // write quadrature to vtk for gradient check
     if (is_gradient_check) {
       std::string vtk_name = "fdcheck_quad_" + std::to_string(counter) + ".vtk";
-      topo.write_quad_pts_to_vtk(fspath(prefix) / fspath(vtk_name));
 
       vtk_name = "fdcheck_grid_" + std::to_string(counter) + ".vtk";
 
@@ -1385,24 +1370,22 @@ class TopoProb : public ParOptProblem {
 
       if constexpr (TopoAnalysis::use_ersatz) {
         topo.write_grid_vtk(fspath(prefix) / fspath(vtk_name), x,
-                            topo.get_phi(),
                             {{"loaded_verts", vert_loaded_or_not}},
                             {{"loaded_cells", cell_loaded_or_not}},
                             {{"displacement", u}, {"rhs", topo.get_rhs()}}, {});
       } else {
         topo.write_grid_vtk(fspath(prefix) / fspath(vtk_name), x,
-                            topo.get_phi(),
                             {{"loaded_verts", vert_loaded_or_not}},
                             {{"loaded_cells", cell_loaded_or_not}}, {}, {});
       }
 
       vtk_name = "fdcheck_cut_" + std::to_string(counter) + ".vtk";
       if constexpr (TopoAnalysis::use_ersatz) {
-        topo.write_cut_vtk(fspath(prefix) / fspath(vtk_name), x, topo.get_phi(),
-                           {}, {}, {}, {});
+        topo.write_cut_vtk(fspath(prefix) / fspath(vtk_name), x, {}, {}, {},
+                           {});
       } else {
-        topo.write_cut_vtk(fspath(prefix) / fspath(vtk_name), x, topo.get_phi(),
-                           {}, {}, {{"displacement", u}}, {});
+        topo.write_cut_vtk(fspath(prefix) / fspath(vtk_name), x, {}, {},
+                           {{"displacement", u}}, {});
       }
     }
 
@@ -1712,6 +1695,8 @@ int main(int argc, char* argv[]) {
       } else {
         if (use_lbracket_grid) {
           execute<2, false, true>(argc, argv);
+        } else {
+          execute<2, false, false>(argc, argv);
         }
       }
       break;
