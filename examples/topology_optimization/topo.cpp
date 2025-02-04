@@ -42,10 +42,22 @@ class ProbMeshBase {
   virtual int get_nvars() = 0;
   virtual std::set<int> get_loaded_cells() = 0;
   virtual std::set<int> get_loaded_verts() = 0;
-  virtual std::set<int> get_protected_verts() = 0;
+  virtual std::set<int> get_non_design_verts() = 0;
+  virtual std::set<int>
+  get_protected_verts() = 0;  // dv on protected verts are constrained
+                              // <= 0.5 by the optimizer
   virtual std::vector<int> get_bc_nodes() = 0;
-  virtual std::vector<T> expand(std::vector<T> x) = 0;  // expand xr -> x
+
+  // Convert between full vector and reduced vector
+  virtual std::vector<T> expand(std::vector<T> x,
+                                T non_design_val) = 0;  // expand xr -> x
   virtual std::vector<T> reduce(std::vector<T> x) = 0;  // reduce x -> xr
+
+  // Convert between the index in full vector and reduced vector
+  virtual int expand_index(
+      int ir) = 0;  // return -1 means ir is not a reduced index
+  virtual int reduce_index(int i) = 0;
+
   virtual Grid& get_grid() = 0;
   virtual Mesh& get_erode_mesh() = 0;
   virtual Mesh& get_dilate_mesh() = 0;
@@ -88,48 +100,40 @@ class CantileverMesh final
       loaded_verts.insert(verts[2]);
     }
 
-    N = this->grid.get_num_verts();
-    Nr = N - loaded_verts.size();
-
-    // Find xr -> x mapping
-    expand_mapping.reserve(Nr);  // xr -> x
-    for (int i = 0; i < N; i++) {
-      if (!loaded_verts.count(i)) {
-        expand_mapping.push_back(i);
+    // Find protected verts
+    for (int v : loaded_verts) {
+      int ixy[2] = {-1, -1};
+      grid.get_vert_coords(v, ixy);
+      for (auto [dx, dy] : std::vector<std::pair<int, int>>{
+               {0, 0}, {0, 1}, {0, -1}, {-1, 0}, {-1, -1}}) {
+        if (grid.is_valid_vert(ixy[0] + dx, ixy[1] + dy)) {
+          protected_verts.insert(
+              grid.get_coords_vert(ixy[0] + dx, ixy[1] + dy));
+        };
       }
     }
   }
 
-  int get_nvars() { return Nr; }
-
+  int get_nvars() { return this->grid.get_num_verts(); }
   T get_domain_area() { return lxy[0] * lxy[1]; }
 
   std::set<int> get_loaded_cells() { return loaded_cells; }
   std::set<int> get_loaded_verts() { return loaded_verts; }
-  std::set<int> get_protected_verts() { return {}; }
+  std::set<int> get_non_design_verts() { return {}; }
+  std::set<int> get_protected_verts() { return protected_verts; }
 
   std::vector<int> get_bc_nodes() {
     return this->erode_mesh.get_left_boundary_nodes();
   }
 
-  std::vector<T> expand(std::vector<T> xr) {
-    std::vector<T> x(N, 0.0);  // dv = 0.0 is material
-    for (int i = 0; i < Nr; i++) {
-      x[expand_mapping[i]] = xr[i];
-    }
-    return x;
-  }
+  // Dummy methods, since we don't have non-design nodes for this mesh
+  std::vector<T> expand(std::vector<T> xr, T _) { return xr; }
+  std::vector<T> reduce(std::vector<T> x) { return x; }
 
-  std::vector<T> reduce(std::vector<T> x) {
-    std::vector<T> xr(Nr);
-    for (int i = 0; i < Nr; i++) {
-      xr[i] = x[expand_mapping[i]];
-    }
-    return xr;
-  }
+  int expand_index(int ir) { return ir; }
+  int reduce_index(int i) { return i; }
 
   Grid& get_grid() { return grid; }
-
   Mesh& get_erode_mesh() { return erode_mesh; }
   Mesh& get_dilate_mesh() { return dilate_mesh; }
 
@@ -140,9 +144,7 @@ class CantileverMesh final
   Mesh erode_mesh, dilate_mesh;
 
   double loaded_frac;
-  std::set<int> loaded_cells, loaded_verts;
-  int N, Nr;
-  std::vector<int> reduce_mapping, expand_mapping;
+  std::set<int> loaded_cells, loaded_verts, protected_verts;
 };
 
 template <typename T, int Np_1d>
@@ -165,18 +167,21 @@ class LbracketMesh final : public ProbMeshBase<T, Np_1d, StructuredGrid2D<T>> {
         loaded_frac(loaded_frac),
         domain_area(lxy[0] * lxy[1] *
                     (1.0 - (1.0 - lbracket_frac) * (1.0 - lbracket_frac))) {
+    T ty_offset = 0.15;
     T ty = lxy[1] * lbracket_frac;
 
-    // Find loaded cells and verts
+    // Find loaded cells
     for (int iy = 0; iy < nxy[1]; iy++) {
       T xloc[Grid::spatial_dim];
       int c = this->grid.get_coords_cell(nxy[0] - 1, iy);
       this->grid.get_cell_xloc(c, xloc);
-      if (xloc[1] >= ty - lxy[1] * loaded_frac and xloc[1] <= ty) {
+      if (xloc[1] >= ty - lxy[1] * loaded_frac - ty_offset and
+          xloc[1] <= ty - ty_offset) {
         loaded_cells.insert(c);
       }
     }
 
+    // Find loaded verts
     for (int cell : loaded_cells) {
       int verts[Grid::nverts_per_cell];
       this->grid.get_cell_verts(cell, verts);
@@ -184,63 +189,98 @@ class LbracketMesh final : public ProbMeshBase<T, Np_1d, StructuredGrid2D<T>> {
       loaded_verts.insert(verts[2]);
     }
 
-    // Find inactive verts
+    // Find protected verts
+    for (int v : loaded_verts) {
+      int ixy[2] = {-1, -1};
+      grid.get_vert_coords(v, ixy);
+      for (auto [dx, dy] : std::vector<std::pair<int, int>>{
+               {0, 0}, {0, -1}, {-1, 0}, {-1, -1}}) {
+        if (grid.is_valid_vert(ixy[0] + dx, ixy[1] + dy)) {
+          protected_verts.insert(
+              grid.get_coords_vert(ixy[0] + dx, ixy[1] + dy));
+        };
+      }
+    }
+
+    // Find non-design verts
     T tx = lxy[0] * lbracket_frac;
-    inactive_verts = loaded_verts;
     for (int v = 0; v < this->grid.get_num_verts(); v++) {
       T xloc[Grid::spatial_dim];
       this->grid.get_vert_xloc(v, xloc);
       if (xloc[0] > tx and xloc[1] > ty) {
-        inactive_verts.insert(v);
+        non_design_verts.insert(v);
       }
     }
 
     N = this->grid.get_num_verts();
-    Nr = N - inactive_verts.size();
+    Nr = N - non_design_verts.size();
 
-    // Find xr -> x mapping
-    expand_mapping.reserve(Nr);  // xr -> x
+    // Find mappings
+    int ir = 0;
     for (int i = 0; i < N; i++) {
-      if (!inactive_verts.count(i)) {
-        expand_mapping.push_back(i);
+      if (non_design_verts.count(i)) {
+        reduce_mapping[i] = -1;
+      } else {
+        expand_mapping[ir] = i;
+        reduce_mapping[i] = ir;
+        ir++;
       }
     }
+
+    xcgd_assert(
+        ir == Nr,
+        "an error has occurred when constructing the expand-reduce mappings");
   }
 
-  int get_nvars() { return Nr; }
+  // int get_nvars() { return Nr; }  // TODO: revert
+  int get_nvars() { return N; }  // TODO: delete
 
-  T get_domain_area() { return domain_area; }
+  // T get_domain_area() { return domain_area; }  // TODO: revert
+  T get_domain_area() { return lxy[0] * lxy[1]; }  // TODO: delete
 
   std::set<int> get_loaded_cells() { return loaded_cells; }
   std::set<int> get_loaded_verts() { return loaded_verts; }
-  std::set<int> get_protected_verts() { return {}; }
+  // std::set<int> get_non_design_verts() { return non_design_verts; }  // TODO:
+  // revert
+  std::set<int> get_non_design_verts() { return {}; }  // TODO: delete
+  std::set<int> get_protected_verts() { return protected_verts; }
 
   std::vector<int> get_bc_nodes() {
     return this->erode_mesh.get_upper_boundary_nodes();
   }
 
-  std::vector<T> expand(std::vector<T> xr) {
-    std::vector<T> x(N, 1.0);  // lsf = 1.0 is void
-    for (int i = 0; i < Nr; i++) {
-      x[expand_mapping[i]] = xr[i];
-    }
+  // TODO: delete
+  std::vector<T> expand(std::vector<T> xr, T _) { return xr; }
+  std::vector<T> reduce(std::vector<T> x) { return x; }
 
-    for (int i : loaded_verts) {
-      x[i] = -1.0;  // lsf = -1.0 is material
+  int expand_index(int ir) { return ir; }
+  int reduce_index(int i) { return i; }
+
+  // TODO: revert
+  /*
+  std::vector<T> expand(std::vector<T> xr, T non_design_val) {
+    std::vector<T> x(N, non_design_val);
+    for (int ir = 0; ir < Nr; ir++) {
+      int i = expand_mapping[ir];
+      x[i] = xr[ir];
     }
     return x;
   }
 
   std::vector<T> reduce(std::vector<T> x) {
     std::vector<T> xr(Nr);
-    for (int i = 0; i < Nr; i++) {
-      xr[i] = x[expand_mapping[i]];
+    for (int ir = 0; ir < Nr; ir++) {
+      int i = expand_mapping[ir];
+      xr[ir] = x[i];
     }
     return xr;
   }
 
-  Grid& get_grid() { return grid; }
+  int expand_index(int ir) { return expand_mapping[ir]; }
+  int reduce_index(int i) { return reduce_mapping[i]; }
+  */
 
+  Grid& get_grid() { return grid; }
   Mesh& get_erode_mesh() { return erode_mesh; }
   Mesh& get_dilate_mesh() { return dilate_mesh; }
 
@@ -250,10 +290,10 @@ class LbracketMesh final : public ProbMeshBase<T, Np_1d, StructuredGrid2D<T>> {
   Grid grid;
   Mesh erode_mesh, dilate_mesh;
   double loaded_frac, domain_area;
-  std::set<int> loaded_cells, loaded_verts;
-  std::set<int> inactive_cells, inactive_verts;
+  std::set<int> loaded_cells, loaded_verts, protected_verts;
+  std::set<int> non_design_verts;
   int N, Nr;
-  std::vector<int> reduce_mapping, expand_mapping;
+  std::map<int, int> reduce_mapping, expand_mapping;
 };
 
 // load_top: true to put load on the top of the lbracket arm, false to put load
@@ -283,7 +323,7 @@ class LbracketGridMesh final
         loaded_frac(loaded_frac),
         domain_area(lxy[0] * lxy[1] *
                     (1.0 - (1.0 - lbracket_frac) * (1.0 - lbracket_frac))) {
-    // Find loaded cells and verts
+    // Find loaded cells
     if constexpr (load_top) {
       for (int ix = 0; ix < nx1; ix++) {
         T xloc[Grid::spatial_dim];
@@ -304,6 +344,7 @@ class LbracketGridMesh final
       }
     }
 
+    // Find loaded verts
     for (int cell : loaded_cells) {
       int verts[Grid::nverts_per_cell];
       this->grid.get_cell_verts(cell, verts);
@@ -316,6 +357,7 @@ class LbracketGridMesh final
       }
     }
 
+    // Find protected verts
     for (int v : loaded_verts) {
       int ixy[2] = {-1, -1};
       grid.get_vert_coords(v, ixy);
@@ -327,48 +369,29 @@ class LbracketGridMesh final
         };
       }
     }
-
-    N = this->grid.get_num_verts();
-
-    // Find xr -> x mapping, identical mapping since we don't have non-design
-    // verts any more
-    Nr = N;
-    expand_mapping.reserve(Nr);  // xr -> x
-    for (int i = 0; i < N; i++) {
-      expand_mapping.push_back(i);
-    }
   }
 
-  int get_nvars() { return Nr; }
+  int get_nvars() { return this->grid.get_num_verts(); }
 
   T get_domain_area() { return domain_area; }
 
   std::set<int> get_loaded_cells() { return loaded_cells; }
   std::set<int> get_loaded_verts() { return loaded_verts; }
+  std::set<int> get_non_design_verts() { return {}; }
   std::set<int> get_protected_verts() { return protected_verts; }
 
   std::vector<int> get_bc_nodes() {
     return this->erode_mesh.get_upper_boundary_nodes();
   }
 
-  std::vector<T> expand(std::vector<T> xr) {
-    std::vector<T> x(N, -1.0);  // lsf = -1.0 is material
-    for (int i = 0; i < Nr; i++) {
-      x[expand_mapping[i]] = xr[i];
-    }
-    return x;
-  }
+  // Dummy methods, since we don't have non-design nodes for this mesh
+  std::vector<T> expand(std::vector<T> xr, T _) { return xr; }
+  std::vector<T> reduce(std::vector<T> x) { return x; }
 
-  std::vector<T> reduce(std::vector<T> x) {
-    std::vector<T> xr(Nr);
-    for (int i = 0; i < Nr; i++) {
-      xr[i] = x[expand_mapping[i]];
-    }
-    return xr;
-  }
+  int expand_index(int ir) { return ir; }
+  int reduce_index(int i) { return i; }
 
   Grid& get_grid() { return grid; }
-
   Mesh& get_erode_mesh() { return erode_mesh; }
   Mesh& get_dilate_mesh() { return dilate_mesh; }
 
@@ -379,9 +402,6 @@ class LbracketGridMesh final
   Mesh erode_mesh, dilate_mesh;
   double loaded_frac, domain_area;
   std::set<int> loaded_cells, loaded_verts, protected_verts;
-  std::set<int> inactive_cells, inactive_verts;
-  int N, Nr;
-  std::vector<int> reduce_mapping, expand_mapping;
 };
 
 template <typename T, int Np_1d, int Np_1d_filter, bool use_ersatz_,
@@ -464,9 +484,9 @@ class TopoAnalysis {
         pen_analysis(hfilter.get_mesh(), hfilter.get_quadrature(),
                      hfilter.get_basis(), pen),
         stress(E, nu),
-        stress_analysis(dilate_mesh, dilate_quadrature, dilate_basis, stress),
+        stress_analysis(erode_mesh, erode_quadrature, erode_basis, stress),
         stress_ks(stress_ksrho, E, nu, yield_stress),
-        stress_ks_analysis(dilate_mesh, dilate_quadrature, dilate_basis,
+        stress_ks_analysis(erode_mesh, erode_quadrature, erode_basis,
                            stress_ks),
         phi_erode(erode_mesh.get_lsf_dof()),
         phi_dilate(dilate_mesh.get_lsf_dof()),
@@ -885,7 +905,7 @@ class TopoAnalysis {
 
     design_mapping_apply_gradient(gstress.data(), gstress.data());
     if (use_robust_projection) {
-      projector_dilate.applyGradient(Fx.data(), gstress.data(), gstress.data());
+      projector_erode.applyGradient(Fx.data(), gstress.data(), gstress.data());
     }
     if (use_helmholtz_filter) {
       hfilter.applyGradient(gstress.data(), gstress.data());
@@ -1238,10 +1258,14 @@ class TopoProb : public ParOptProblem {
       }
     }
 
+    auto& prob_mesh = topo.get_prob_mesh();
+
     // update mesh and bc dof, but don't perform the linear solve
+    std::vector<T> x0r = prob_mesh.reduce(x0);
+    x0 = prob_mesh.expand(x0r,
+                          1.0);  // set non-design values to 1.0
     topo.update_mesh(x0);
 
-    std::vector<T> x0r = topo.get_prob_mesh().reduce(x0);
     for (int i = 0; i < nvars; i++) {
       xr[i] = x0r[i];
       lb[i] = 0.0;
@@ -1250,9 +1274,12 @@ class TopoProb : public ParOptProblem {
 
     const auto& protected_verts = topo.get_prob_mesh().get_protected_verts();
     for (int i : protected_verts) {
-      ub[i] =
-          0.5;  // we prescribe x to be sufficient low for protected
-                // verts such that material will be placed at those locations
+      int ir = prob_mesh.reduce_index(i);
+      if (ir >= 0) {
+        ub[i] =
+            0.5;  // we prescribe x to be sufficient low for protected
+                  // verts such that material will be placed at those locations
+      }
     }
   }
 
@@ -1260,7 +1287,8 @@ class TopoProb : public ParOptProblem {
     T* xptr;
     xvec->getArray(&xptr);
     std::vector<T> xr(xptr, xptr + nvars);
-    std::vector<T> x = topo.get_prob_mesh().expand(xr);
+    std::vector<T> x =
+        topo.get_prob_mesh().expand(xr, 1.0);  // set non-design values to 1.0
 
     // Update stress constraint
     stress_ratio_ub =
@@ -1403,7 +1431,8 @@ class TopoProb : public ParOptProblem {
     T* xptr;
     xvec->getArray(&xptr);
     std::vector<T> xr(xptr, xptr + nvars);
-    std::vector<T> x = topo.get_prob_mesh().expand(xr);
+    std::vector<T> x =
+        topo.get_prob_mesh().expand(xr, 1.0);  // set non-design values to 1.0
 
     T *g, *c1, *c2;
     gvec->getArray(&g);
