@@ -459,9 +459,10 @@ class TopoAnalysis {
  public:
   TopoAnalysis(ProbMesh& prob_mesh, bool use_helmholtz_filter,
                int num_conv_filter_apply, T r0, T E, T nu, T penalty,
-               T stress_ksrho, T yield_stress, bool use_robust_projection,
-               double proj_beta, double proj_delta_eta, std::string prefix,
-               double compliance_scalar)
+               double stress_ksrho_init, T yield_stress,
+               bool use_robust_projection, double proj_beta,
+               double proj_delta_eta, std::string prefix,
+               double compliance_scalar, double area_frac)
       : prob_mesh(prob_mesh),
         grid(prob_mesh.get_grid()),
         erode_mesh(prob_mesh.get_erode_mesh()),
@@ -485,7 +486,7 @@ class TopoAnalysis {
                      hfilter.get_basis(), pen),
         stress(E, nu),
         stress_analysis(erode_mesh, erode_quadrature, erode_basis, stress),
-        stress_ks(stress_ksrho, E, nu, yield_stress),
+        stress_ks(stress_ksrho_init, E, nu, yield_stress),
         stress_ks_analysis(erode_mesh, erode_quadrature, erode_basis,
                            stress_ks),
         phi_erode(erode_mesh.get_lsf_dof()),
@@ -493,7 +494,8 @@ class TopoAnalysis {
         phi_blueprint(phi_dilate.size(), 0.0),
         prefix(prefix),
         cache({{"x", {}}, {"sol", {}}, {"chol", nullptr}}),
-        compliance_scalar(compliance_scalar) {
+        compliance_scalar(compliance_scalar),
+        area_frac(area_frac) {
     // Get loaded cells
     loaded_cells = prob_mesh.get_loaded_cells();
   }
@@ -712,7 +714,9 @@ class TopoAnalysis {
     stress_ks.set_max_stress_ratio(max_stress_ratio);
     T ks_energy = stress_ks_analysis.energy(nullptr, sol.data());
     T ks_stress_ratio =
-        log(ks_energy) / stress_ks.get_ksrho() + max_stress_ratio;
+        log(ks_energy / (prob_mesh.get_domain_area() * area_frac)) /
+            stress_ks.get_ksrho() +
+        max_stress_ratio;
 
     // Save information
     cache["x"] = x;
@@ -1092,6 +1096,8 @@ class TopoAnalysis {
   std::vector<T>& get_rhs() { return elastic.get_rhs(); }
   ProbMesh& get_prob_mesh() { return prob_mesh; }
 
+  void set_stress_ksrho(double ksrho) { stress_ks.set_ksrho(ksrho); }
+
  private:
   ProbMesh& prob_mesh;
   Grid& grid;
@@ -1132,6 +1138,7 @@ class TopoAnalysis {
                         std::shared_ptr<SparseUtils::SparseCholesky<T>>>>
       cache;
   double compliance_scalar;
+  double area_frac;
 };
 
 template <typename T, class TopoAnalysis>
@@ -1144,6 +1151,12 @@ class TopoProb : public ParOptProblem {
         parser(parser),
         domain_area(topo.get_prob_mesh().get_domain_area()),
         area_frac(parser.get_double_option("area_frac")),
+        stress_ksrho_init(parser.get_double_option("stress_ksrho_init")),
+        stress_ksrho_final(parser.get_double_option("stress_ksrho_final")),
+        stress_ksrho_increase_every(
+            parser.get_int_option("stress_ksrho_increase_every")),
+        stress_ksrho_increase_rate(
+            parser.get_double_option("stress_ksrho_increase_rate")),
         stress_ratio_ub_init(
             parser.get_double_option("stress_ratio_upper_bound_init")),
         stress_ratio_ub_final(
@@ -1171,28 +1184,29 @@ class TopoProb : public ParOptProblem {
   }
 
   void print_progress(T obj, T comp, T reg, T pterm, T vol_frac, T max_stress,
-                      T max_stress_ratio, T ks_stress_ratio,
+                      T max_stress_ratio, double ksrho, T ks_stress_ratio,
                       T ks_stress_ratio_ub, T HFx_change,
                       int header_every = 10) {
     std::ofstream progress_file(fspath(prefix) / fspath("optimization.log"),
                                 std::ios::app);
     if (counter % header_every == 0) {
       char line[2048];
-      std::snprintf(line, 2048,
-                    "\n%4s%15s%15s%15s%15s%11s%15s%15s%15s%13s%14s%13s%15s\n",
-                    "iter", "obj", "comp", "x regular", "grad pen", "vol(\%)",
-                    "max(vm)", "max(vm/yield)", "ks(vm/yield)", "ks relerr(\%)",
-                    "ks ub", "diffx_infty", "uptime(H:M:S)");
+      std::snprintf(
+          line, 2048,
+          "\n%4s%15s%15s%15s%15s%11s%15s%15s%13s%15s%13s%14s%13s%15s\n", "iter",
+          "obj", "comp", "x regular", "grad pen", "vol(\%)", "max(vm)",
+          "max(vm/yield)", "ksrho", "ks(vm/yield)", "ks relerr(\%)", "ks ub",
+          "diffx_infty", "uptime(H:M:S)");
       std::cout << line;
       progress_file << line;
     }
     char line[2048];
     std::snprintf(
         line, 2048,
-        "%4d%15.5e%15.5e%15.5e%15.5e%11.5f%15.5e%15.5e%15.5e%13.5f%14."
+        "%4d%15.5e%15.5e%15.5e%15.5e%11.5f%15.5e%15.5e%13.5f%15.5e%13.5f%14."
         "4e%13.5f%15s\n",
         counter, obj, comp, reg, pterm, 100.0 * vol_frac, max_stress,
-        max_stress_ratio, ks_stress_ratio,
+        max_stress_ratio, ksrho, ks_stress_ratio,
         (ks_stress_ratio - max_stress_ratio) / max_stress_ratio * 100.0,
         ks_stress_ratio_ub, HFx_change, watch.format_time(watch.lap()).c_str());
     std::cout << line;
@@ -1289,6 +1303,18 @@ class TopoProb : public ParOptProblem {
     std::vector<T> xr(xptr, xptr + nvars);
     std::vector<T> x =
         topo.get_prob_mesh().expand(xr, 1.0);  // set non-design values to 1.0
+
+    // Update KS parameter
+    double ksrho =
+        stress_ksrho_init +
+        stress_ksrho_increase_rate * int(counter / stress_ksrho_increase_every);
+    if (ksrho > stress_ksrho_final) {
+      ksrho = stress_ksrho_final;
+    }
+    if (is_gradient_check) {
+      ksrho = 6.789;
+    }
+    topo.set_stress_ksrho(ksrho);
 
     // Update stress constraint
     stress_ratio_ub =
@@ -1419,7 +1445,7 @@ class TopoProb : public ParOptProblem {
 
     // print optimization progress
     print_progress(*fobj, comp, reg, pterm, area / domain_area, max_stress,
-                   max_stress_ratio, ks_stress_ratio, stress_ratio_ub,
+                   max_stress_ratio, ksrho, ks_stress_ratio, stress_ratio_ub,
                    HFx_change);
 
     counter++;
@@ -1501,6 +1527,10 @@ class TopoProb : public ParOptProblem {
   const ConfigParser& parser;
   double domain_area = 0.0;
   double area_frac = 0.0;
+  double stress_ksrho_init = 0.0;
+  double stress_ksrho_final = 0.0;
+  int stress_ksrho_increase_every = 0;
+  double stress_ksrho_increase_rate = 0.0;
   double stress_ratio_ub_init = 0.0;
   double stress_ratio_ub_final = 0.0;
   double stress_ratio_ub_decay_rate = 0.0;
@@ -1618,9 +1648,10 @@ void execute(int argc, char* argv[]) {
   double robust_proj_delta_eta =
       parser.get_double_option("robust_proj_delta_eta");
   T penalty = parser.get_double_option("grad_penalty_coeff");
-  T stress_ksrho = parser.get_double_option("stress_ksrho");
+  T stress_ksrho_init = parser.get_double_option("stress_ksrho_init");
   T yield_stress = parser.get_double_option("yield_stress");
   double compliance_scalar = parser.get_double_option("compliance_scalar");
+  double area_frac = parser.get_double_option("area_frac");
 
   TopoAnalysis topo{*prob_mesh,
                     use_helmholtz_filter,
@@ -1629,13 +1660,14 @@ void execute(int argc, char* argv[]) {
                     E,
                     nu,
                     penalty,
-                    stress_ksrho,
+                    stress_ksrho_init,
                     yield_stress,
                     use_robust_projection,
                     robust_proj_beta,
                     robust_proj_delta_eta,
                     prefix,
-                    compliance_scalar};
+                    compliance_scalar,
+                    area_frac};
 
   TopoProb<T, TopoAnalysis>* prob =
       new TopoProb<T, TopoAnalysis>(topo, prefix, parser);

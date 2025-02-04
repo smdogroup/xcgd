@@ -81,6 +81,8 @@ class LinearElasticity2DVonMisesStressAggregation final
     max_stress_ratio = max_stress_ratio_;
   }
   T get_yield_stress() const { return yield_stress; }
+
+  void set_ksrho(double ksrho_) { ksrho = ksrho_; }
   double get_ksrho() { return ksrho; }
 
   T energy(T weight, T _, A2D::Vec<T, spatial_dim>& __,
@@ -159,7 +161,7 @@ class LinearElasticity2DVonMisesStressAggregation final
   }
 
  private:
-  const double ksrho;  // KS aggregation parameter
+  double ksrho;        // KS aggregation parameter
   const T mu, lambda;  // Lame parameters
   const T yield_stress;
   T max_stress_ratio;  // maximum Von Mises stress / yield stress
