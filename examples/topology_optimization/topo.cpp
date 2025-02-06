@@ -5,6 +5,7 @@
 #include <fstream>
 #include <iostream>
 #include <set>
+#include <stdexcept>
 #include <string>
 #include <variant>
 
@@ -461,8 +462,7 @@ class TopoAnalysis {
                int num_conv_filter_apply, T r0, T E, T nu, T penalty,
                double stress_ksrho_init, T yield_stress,
                bool use_robust_projection, double proj_beta,
-               double proj_delta_eta, std::string prefix,
-               double compliance_scalar, double area_frac)
+               double proj_delta_eta, std::string prefix, double area_frac)
       : prob_mesh(prob_mesh),
         grid(prob_mesh.get_grid()),
         erode_mesh(prob_mesh.get_erode_mesh()),
@@ -494,7 +494,6 @@ class TopoAnalysis {
         phi_blueprint(phi_dilate.size(), 0.0),
         prefix(prefix),
         cache({{"x", {}}, {"sol", {}}, {"chol", nullptr}}),
-        compliance_scalar(compliance_scalar),
         area_frac(area_frac) {
     // Get loaded cells
     loaded_cells = prob_mesh.get_loaded_cells();
@@ -517,6 +516,53 @@ class TopoAnalysis {
       dvs[i] = dvs[i] / (1.0 + offset) / 2.0 +
                0.5;  // scale dvs uniformly so it's in [0, 1]
     }
+    return dvs;
+  }
+
+  // Create nodal design variables for a domain with periodic holes,
+  // specifically designed for the L-bracket case
+  std::vector<T> create_initial_topology_lbracket(int nholes_1d = 6,
+                                                  double r = 0.15) {
+    const T* lxy = grid.get_lxy();
+    int nverts = grid.get_num_verts();
+    std::vector<T> dvs(nverts, 0.0);
+
+    double dx = lxy[0] / (nholes_1d - 1);
+    double dy = lxy[1] / (nholes_1d - 1);
+
+    for (int i = 0; i < nverts; i++) {
+      T xloc[Mesh::spatial_dim];
+      grid.get_vert_xloc(i, xloc);
+      T x = xloc[0];
+      T y = xloc[1];
+
+      std::vector<T> dvs_vals;
+      for (int ix = 0; ix < nholes_1d; ix++) {
+        for (int iy = 0; iy < nholes_1d; iy++) {
+          if ((ix + iy) % 2) {
+            continue;
+          }
+
+          T x0 = ix * dx;
+          T y0 = iy * dy;
+
+          dvs_vals.push_back(r -
+                             sqrt((x - x0) * (x - x0) + (y - y0) * (y - y0)));
+        }
+      }
+      dvs[i] = hard_max(dvs_vals);
+    }
+
+    // This is a (conservative) maximum possible magnitude of the
+    // signed-distance function
+    T l_max = sqrt(lxy[0] * lxy[0] / nholes_1d / nholes_1d +
+                   lxy[1] * lxy[1] / nholes_1d / nholes_1d);
+
+    // scale dv values so they're in [0, 1]
+    for (int i = 0; i < nverts; i++) {
+      dvs[i] = (dvs[i] + l_max) / 2.0 / l_max;
+    }
+
     return dvs;
   }
 
@@ -700,8 +746,7 @@ class TopoAnalysis {
     std::vector<T> sol = update_mesh_and_solve(x, HFx, &chol);
 
     T comp = std::inner_product(sol.begin(), sol.end(),
-                                elastic.get_rhs().begin(), T(0.0)) *
-             compliance_scalar;
+                                elastic.get_rhs().begin(), T(0.0));
 
     std::vector<T> vol_dummy(vol_analysis.get_mesh().get_num_nodes(), 0.0);
     T area = vol_analysis.energy(nullptr, vol_dummy.data());
@@ -856,10 +901,6 @@ class TopoAnalysis {
         cfilter.applyGradient(gcomp.data(), gcomp.data());
       }
     }
-
-    std::transform(
-        gcomp.begin(), gcomp.end(), gcomp.begin(),
-        [this](const T& val) { return val * this->compliance_scalar; });
 
     garea.resize(x.size());
     std::fill(garea.begin(), garea.end(), 0.0);
@@ -1137,7 +1178,6 @@ class TopoAnalysis {
            std::variant<T, std::vector<T>,
                         std::shared_ptr<SparseUtils::SparseCholesky<T>>>>
       cache;
-  double compliance_scalar;
   double area_frac;
 };
 
@@ -1164,15 +1204,33 @@ class TopoProb : public ParOptProblem {
         stress_ratio_ub_decay_rate(
             parser.get_double_option("stress_ratio_upper_bound_decay_rate")),
         has_stress_constraint(parser.get_bool_option("has_stress_constraint")),
+        has_compliance_constraint(
+            parser.get_bool_option("has_compliance_constraint")),
+        compliance_constraint_upper_bound(
+            parser.get_double_option("compliance_constraint_upper_bound")),
         has_stress_objective(parser.get_bool_option("has_stress_objective")),
+        compliance_objective_scalar(
+            parser.get_double_option("compliance_objective_scalar")),
         stress_objective_scalar(
             parser.get_double_option("stress_objective_scalar")),
         stress_objective_theta(
             parser.get_double_option("stress_objective_theta")),
+        is_volume_objective(parser.get_bool_option("is_volume_objective")),
         nvars(topo.get_prob_mesh().get_nvars()),
-        ncon(has_stress_constraint ? 2 : 1),
+        ncon(0),
         nineq(ncon),
         HFx_old(nvars, 0.0) {
+    // Set number of constraints
+
+    if (not is_volume_objective) {  // volume constraint
+      ncon++;
+    }
+    if (has_stress_constraint) {
+      ncon++;
+    }
+    if (has_compliance_constraint) {
+      ncon++;
+    }
     setProblemSizes(nvars, ncon, 0);
     setNumInequalities(nineq, 0);
 
@@ -1194,8 +1252,8 @@ class TopoProb : public ParOptProblem {
       std::snprintf(
           line, 2048,
           "\n%4s%15s%15s%15s%15s%11s%15s%15s%13s%15s%13s%14s%13s%15s\n", "iter",
-          "obj", "comp", "x regular", "grad pen", "vol(\%)", "max(vm)",
-          "max(vm/yield)", "ksrho", "ks(vm/yield)", "ks relerr(\%)", "ks ub",
+          "obj", "comp", "x_regular", "grad_pen", "vol(\%)", "max(vm)",
+          "max(vm/yield)", "ksrho", "ks(vm/yield)", "ks_relerr(\%)", "ks_ub",
           "diffx_infty", "uptime(H:M:S)");
       std::cout << line;
       progress_file << line;
@@ -1264,11 +1322,17 @@ class TopoProb : public ParOptProblem {
             parser.get_int_option("init_topology_nholes_y"),
             parser.get_double_option("init_topology_r"),
             parser.get_bool_option("init_topology_cell_center"));
-      } else {  // init_topology_method == "sinusoidal"
+      } else if (init_topology_method == "sinusoidal") {
         x0 = topo.create_initial_topology_sine(
             parser.get_int_option("init_topology_sine_period_x"),
             parser.get_int_option("init_topology_sine_period_y"),
             parser.get_double_option("init_topology_sine_offset"));
+      } else if (init_topology_method == "lbracket") {
+        x0 = topo.create_initial_topology_lbracket(
+            6, parser.get_double_option("init_topology_sine_lbracket_r"));
+      } else {
+        throw std::runtime_error("init_topology_method = " +
+                                 init_topology_method + " is not supported");
       }
     }
 
@@ -1355,15 +1419,29 @@ class TopoProb : public ParOptProblem {
 
     if (has_stress_objective) {
       *fobj =
-          (1.0 - stress_objective_theta) * comp +
+          (1.0 - stress_objective_theta) * compliance_objective_scalar * comp +
           stress_objective_theta * stress_objective_scalar * ks_stress_ratio +
           pterm + reg;
+    } else if (is_volume_objective) {
+      *fobj = area / domain_area + pterm + reg;
     } else {
-      *fobj = comp + pterm + reg;
+      *fobj = compliance_objective_scalar * comp + pterm + reg;
     }
-    cons[0] = 1.0 - area / (domain_area * area_frac);  // >= 0
+
+    int con_index = 0;
+    if (not is_volume_objective) {
+      cons[con_index] = 1.0 - area / (domain_area * area_frac);  // >= 0
+      con_index++;
+    }
+
     if (has_stress_constraint) {
-      cons[1] = 1.0 - ks_stress_ratio / stress_ratio_ub;  // >= 0
+      cons[con_index] = 1.0 - ks_stress_ratio / stress_ratio_ub;  // >= 0
+      con_index++;
+    }
+
+    if (has_compliance_constraint) {
+      cons[con_index] = 1.0 - comp / compliance_constraint_upper_bound;
+      con_index++;
     }
 
     if (counter % parser.get_int_option("write_vtk_every") == 0) {
@@ -1460,18 +1538,6 @@ class TopoProb : public ParOptProblem {
     std::vector<T> x =
         topo.get_prob_mesh().expand(xr, 1.0);  // set non-design values to 1.0
 
-    T *g, *c1, *c2;
-    gvec->getArray(&g);
-    gvec->zeroEntries();
-
-    Ac[0]->getArray(&c1);
-    Ac[0]->zeroEntries();
-
-    if (has_stress_constraint) {
-      Ac[1]->getArray(&c2);
-      Ac[1]->zeroEntries();
-    }
-
     std::vector<T> gcomp, garea, gpen, gstress;
     topo.eval_obj_con_gradient(x, gcomp, garea, gpen, gstress);
 
@@ -1490,26 +1556,57 @@ class TopoProb : public ParOptProblem {
       greg[i] = reg_coeff * (1.0 - 2.0 * xr[i]);
     }
 
+    // Populate objective gradients
+    T* g;
+    gvec->getArray(&g);
+    gvec->zeroEntries();
+
     if (has_stress_objective) {
-      T a = 1.0 - stress_objective_theta;
+      T a = (1.0 - stress_objective_theta) * compliance_objective_scalar;
       T b = stress_objective_theta * stress_objective_scalar;
       for (int i = 0; i < nvars; i++) {
         g[i] = a * gcompr[i] + b * gstressr[i] + gpenr[i] + greg[i];
       }
+    } else if (is_volume_objective) {
+      for (int i = 0; i < nvars; i++) {
+        g[i] = garear[i] / domain_area + gpenr[i] + greg[i];
+      }
     } else {
       for (int i = 0; i < nvars; i++) {
-        g[i] = gcompr[i] + gpenr[i] + greg[i];
+        g[i] = compliance_objective_scalar * gcompr[i] + gpenr[i] + greg[i];
       }
     }
 
-    for (int i = 0; i < nvars; i++) {
-      c1[i] = -garear[i] / (domain_area * area_frac);
+    // Populate constraint gradients
+    T* gc;
+
+    int con_index = 0;
+
+    if (not is_volume_objective) {
+      Ac[con_index]->getArray(&gc);
+      Ac[con_index]->zeroEntries();
+      for (int i = 0; i < nvars; i++) {
+        gc[i] = -garear[i] / (domain_area * area_frac);
+      }
+      con_index++;
     }
 
     if (has_stress_constraint) {
+      Ac[con_index]->getArray(&gc);
+      Ac[con_index]->zeroEntries();
       for (int i = 0; i < nvars; i++) {
-        c2[i] = -gstressr[i] / stress_ratio_ub;
+        gc[i] = -gstressr[i] / stress_ratio_ub;
       }
+      con_index++;
+    }
+
+    if (has_compliance_constraint) {
+      Ac[con_index]->getArray(&gc);
+      Ac[con_index]->zeroEntries();
+      for (int i = 0; i < nvars; i++) {
+        gc[i] = -gcompr[i] / compliance_constraint_upper_bound;
+      }
+      con_index++;
     }
 
     return 0;
@@ -1536,9 +1633,13 @@ class TopoProb : public ParOptProblem {
   double stress_ratio_ub_decay_rate = 0.0;
   double stress_ratio_ub = 0.0;
   bool has_stress_constraint = false;
+  bool has_compliance_constraint = false;
+  double compliance_constraint_upper_bound = 0.0;
   bool has_stress_objective = false;
+  double compliance_objective_scalar = 0.0;
   double stress_objective_scalar = 0.0;
   double stress_objective_theta = 0.0;
+  bool is_volume_objective = false;
   int nvars = -1;
   int ncon = -1;
   int nineq = -1;
@@ -1650,7 +1751,6 @@ void execute(int argc, char* argv[]) {
   T penalty = parser.get_double_option("grad_penalty_coeff");
   T stress_ksrho_init = parser.get_double_option("stress_ksrho_init");
   T yield_stress = parser.get_double_option("yield_stress");
-  double compliance_scalar = parser.get_double_option("compliance_scalar");
   double area_frac = parser.get_double_option("area_frac");
 
   TopoAnalysis topo{*prob_mesh,
@@ -1666,7 +1766,6 @@ void execute(int argc, char* argv[]) {
                     robust_proj_beta,
                     robust_proj_delta_eta,
                     prefix,
-                    compliance_scalar,
                     area_frac};
 
   TopoProb<T, TopoAnalysis>* prob =
