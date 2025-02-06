@@ -4,6 +4,8 @@ configure_file(${CMAKE_SOURCE_DIR}/examples/topology_optimization/topo.cfg
     topo.cfg COPYONLY)
 configure_file(${CMAKE_SOURCE_DIR}/examples/topology_optimization/grad_check_step_size_study.py
     grad_check_step_size_study.py COPYONLY)
+configure_file(${CMAKE_SOURCE_DIR}/examples/topology_optimization/plot_optimization_history.py
+    plot_optimization_history.py COPYONLY)
 
 add_executable(topo topo.cpp)
 add_executable(test_lbracket_mesh test_lbracket_mesh.cpp)
