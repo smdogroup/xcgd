@@ -17,7 +17,7 @@ add_executable(test_filter test_filter.cpp)
 # target_link_options(topo PRIVATE -fsanitize=address)
 
 target_include_directories(topo PRIVATE ${XCGD_PAROPT_DIR}/src
-    ${MPI_INCLUDE_PATH} ${PROJECT_SOURCE_DIR}/include)
+  ${MPI_INCLUDE_PATH} ${PROJECT_SOURCE_DIR}/include ${XCGD_SNOPT_DIR}/include)
 target_include_directories(test_lbracket_mesh PRIVATE ${XCGD_PAROPT_DIR}/src
     ${MPI_INCLUDE_PATH} ${PROJECT_SOURCE_DIR}/include ${PROJECT_SOURCE_DIR}/tests)
 target_include_directories(test_topo PRIVATE ${XCGD_PAROPT_DIR}/src
@@ -33,13 +33,13 @@ target_include_directories(test_topo SYSTEM PRIVATE ${XCGD_ALGOIM_DIR}/algoim)
 target_include_directories(paropt_example SYSTEM PRIVATE ${XCGD_ALGOIM_DIR}/algoim)
 target_include_directories(test_filter SYSTEM PRIVATE ${XCGD_ALGOIM_DIR}/algoim)
 
-target_link_directories(topo PRIVATE ${XCGD_PAROPT_DIR}/lib)
+target_link_directories(topo PRIVATE ${XCGD_PAROPT_DIR}/lib ${XCGD_SNOPT_DIR}/lib)
 target_link_directories(test_lbracket_mesh PRIVATE ${XCGD_PAROPT_DIR}/lib)
 target_link_directories(test_topo PRIVATE ${XCGD_PAROPT_DIR}/lib)
 target_link_directories(paropt_example PRIVATE ${XCGD_PAROPT_DIR}/lib)
 target_link_directories(test_filter PRIVATE ${XCGD_PAROPT_DIR}/lib)
 
-target_link_libraries(topo PRIVATE A2D::A2D SparseUtils::SparseUtils paropt MPI::MPI_CXX)
+target_link_libraries(topo PRIVATE A2D::A2D SparseUtils::SparseUtils paropt snopt7_cpp MPI::MPI_CXX)
 target_link_libraries(test_lbracket_mesh PRIVATE A2D::A2D SparseUtils::SparseUtils paropt MPI::MPI_CXX gtest_main)
 target_link_libraries(test_topo PRIVATE A2D::A2D SparseUtils::SparseUtils paropt MPI::MPI_CXX gtest_main)
 target_link_libraries(paropt_example PRIVATE A2D::A2D SparseUtils::SparseUtils paropt MPI::MPI_CXX gtest_main)

@@ -17,6 +17,7 @@ set(XCGD_SPARSE_UTILS_DIR $ENV{HOME}/installs/sparse-utils)
 set(XCGD_A2D_DIR $ENV{HOME}/installs/a2d)
 set(XCGD_ALGOIM_DIR $ENV{HOME}/git/algoim)
 set(XCGD_PAROPT_DIR $ENV{HOME}/git/paropt)
+set(XCGD_SNOPT_DIR $ENV{HOME}/installs/snopt_cpp)
 
 option(XCGD_BUILD_TESTS "Build unit tests or not" ON)
 option(XCGD_BUILD_EXAMPLES "Build examples or not" ON)
