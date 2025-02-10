@@ -1786,12 +1786,19 @@ void execute(int argc, char* argv[]) {
 
   int max_it = smoke_test ? 10 : parser.get_int_option("max_it");
 
-  options->setOption("algorithm", "mma");
-  options->setOption("mma_max_iterations", max_it);
-  options->setOption("mma_init_asymptote_offset",
-                     parser.get_double_option("mma_init_asymptote_offset"));
-  options->setOption("mma_move_limit",
-                     parser.get_double_option("mma_move_limit"));
+  options->setOption("algorithm",
+                     parser.get_str_option("paropt_algorithm").c_str());
+
+  // Interior-point solver options
+  options->setOption("output_file",
+                     (fspath(prefix) / fspath("paropt.out")).c_str());
+  options->setOption("starting_point_strategy",
+                     parser.get_str_option("starting_point_strategy").c_str());
+  options->setOption("barrier_strategy",
+                     parser.get_str_option("barrier_strategy").c_str());
+  options->setOption("abs_res_tol", parser.get_double_option("abs_res_tol"));
+  options->setOption("use_line_search",
+                     parser.get_bool_option("use_line_search"));
   options->setOption("max_major_iters",
                      parser.get_int_option("max_major_iters"));
   options->setOption("penalty_gamma",
@@ -1799,17 +1806,31 @@ void execute(int argc, char* argv[]) {
   options->setOption("qn_subspace_size",
                      parser.get_int_option("qn_subspace_size"));
   options->setOption("qn_type", parser.get_str_option("qn_type").c_str());
-  options->setOption("abs_res_tol", parser.get_double_option("abs_res_tol"));
-  options->setOption("starting_point_strategy",
-                     parser.get_str_option("starting_point_strategy").c_str());
-  options->setOption("barrier_strategy",
-                     parser.get_str_option("barrier_strategy").c_str());
-  options->setOption("use_line_search",
-                     parser.get_bool_option("use_line_search"));
-  options->setOption("output_file",
-                     (fspath(prefix) / fspath("paropt.out")).c_str());
+  options->setOption("qn_diag_type",
+                     parser.get_str_option("qn_diag_type").c_str());
+
+  // Trust-region options
+  options->setOption("tr_max_iterations", max_it);
+  options->setOption("tr_init_size", parser.get_double_option("tr_init_size"));
+  options->setOption("tr_min_size", parser.get_double_option("tr_min_size"));
+  options->setOption("tr_max_size", parser.get_double_option("tr_max_size"));
+  options->setOption("tr_eta", parser.get_double_option("tr_eta"));
+  options->setOption("tr_infeas_tol",
+                     parser.get_double_option("tr_infeas_tol"));
+  options->setOption("tr_l1_tol", parser.get_double_option("tr_l1_tol"));
+  options->setOption("tr_linfty_tol",
+                     parser.get_double_option("tr_linfty_tol"));
+  options->setOption("tr_adaptive_gamma_update",
+                     parser.get_bool_option("tr_adaptive_gamma_update"));
   options->setOption("tr_output_file",
                      (fspath(prefix) / fspath("paropt.tr")).c_str());
+
+  // MMA options
+  options->setOption("mma_max_iterations", max_it);
+  options->setOption("mma_init_asymptote_offset",
+                     parser.get_double_option("mma_init_asymptote_offset"));
+  options->setOption("mma_move_limit",
+                     parser.get_double_option("mma_move_limit"));
   options->setOption("mma_output_file",
                      (fspath(prefix) / fspath("paropt.mma")).c_str());
 
