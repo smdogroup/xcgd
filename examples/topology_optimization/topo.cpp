@@ -1676,6 +1676,268 @@ class TopoProbParOpt : public ParOptProblem {
   TopoProb& prob;
 };
 
+template <typename T, class TopoProb>
+class TopoProbSNOPT : public snoptProblemC {
+ public:
+  using TopoProbSNOPT_s = TopoProbSNOPT<T, TopoProb>;
+  inline static TopoProbSNOPT_s* instance = nullptr;
+  TopoProbSNOPT(TopoProb& prob) : snoptProblemC("SNOPT_problem"), prob(prob) {}
+
+  static TopoProbSNOPT_s* get_instance() { return instance; }
+
+  void eval_fun_grad(int* mode, double x[], double* fObj, double fCon[],
+                     double gCon[]) {
+    //==================================================================
+    // Computes the nonlinear objective and constraint terms for the toy
+    // problem featured in the SnoptA users guide.
+    // m = 3, n = 2.
+    //
+    //   Minimize     x(2)
+    //
+    //   subject to   x(1)**2      + 4 x(2)**2  <= 4,
+    //               (x(1) - 2)**2 +   x(2)**2  <= 5,
+    //                x(1) >= 0.
+    //
+    //==================================================================
+    if (*mode == 0 || *mode == 2) {
+      *fObj = 0;
+      fCon[0] = x[0] * x[0] + 4 * x[1] * x[1];
+      fCon[1] = (x[0] - 2) * (x[0] - 2) + x[1] * x[1];
+    }
+
+    if (*mode == 1 || *mode == 2) {
+      // gObj not set; no nonlinear variables in objective
+      gCon[0] = 2 * x[0];
+      gCon[1] = 2 * (x[0] - 2);
+      gCon[2] = 8 * x[1];
+      gCon[3] = 2 * x[1];
+    }
+  }
+
+  /**
+   * @brief
+   *
+   * @param mode
+   * @param nnObj number of nonlinear dvs for the nonlinear objective
+   * @param nnCon number of nonlinear constraints
+   * @param nnJac number of nonlinear dvs for the nonlinear constraints
+   * @param nnL
+   * @param negCon
+   * @param x
+   * @param fObj
+   * @param gObj
+   * @param fCon
+   * @param gCon
+   * @param Status
+   * @param cu
+   * @param lencu
+   * @param iu
+   * @param leniu
+   * @param ru
+   * @param lenru
+   */
+  static void usrfun(int* mode, int* nnObj, int* nnCon, int* nnJac, int* nnL,
+                     int* negCon, double x[], double* fObj, double gObj[],
+                     double fCon[], double gCon[], int* Status, char* cu,
+                     int* lencu, int iu[], int* leniu, double ru[],
+                     int* lenru) {
+    get_instance()->eval_fun_grad(mode, x, fObj, fCon, gCon);
+  }
+
+ private:
+  TopoProb& prob;
+};
+
+template <typename T, class TopoProb>
+void optimize_paropt(bool smoke_test, ConfigParser& parser, TopoProb& prob) {
+  std::string prefix = parser.get_str_option("prefix");
+
+  TopoProbParOpt<T, TopoProb>* paropt_prob =
+      new TopoProbParOpt<T, TopoProb>(prob);
+  paropt_prob->incref();
+
+  double dh = parser.get_double_option("grad_check_fd_h");
+  paropt_prob->check_gradients(dh);
+
+  if (parser.get_bool_option("check_grad_and_exit")) {
+    return;
+  }
+
+  // Set options
+  ParOptOptions* options = new ParOptOptions;
+  options->incref();
+  ParOptOptimizer::addDefaultOptions(options);
+
+  int max_it = smoke_test ? 10 : parser.get_int_option("max_it");
+
+  options->setOption("algorithm",
+                     parser.get_str_option("paropt_algorithm").c_str());
+
+  // Interior-point solver options
+  options->setOption("output_file",
+                     (fspath(prefix) / fspath("paropt.out")).c_str());
+  options->setOption("starting_point_strategy",
+                     parser.get_str_option("starting_point_strategy").c_str());
+  options->setOption("barrier_strategy",
+                     parser.get_str_option("barrier_strategy").c_str());
+  options->setOption("abs_res_tol", parser.get_double_option("abs_res_tol"));
+  options->setOption("use_line_search",
+                     parser.get_bool_option("use_line_search"));
+  options->setOption("max_major_iters",
+                     parser.get_int_option("max_major_iters"));
+  options->setOption("penalty_gamma",
+                     parser.get_double_option("penalty_gamma"));
+  options->setOption("qn_subspace_size",
+                     parser.get_int_option("qn_subspace_size"));
+  options->setOption("qn_type", parser.get_str_option("qn_type").c_str());
+  options->setOption("qn_diag_type",
+                     parser.get_str_option("qn_diag_type").c_str());
+
+  // Trust-region options
+  options->setOption("tr_max_iterations", max_it);
+  options->setOption("tr_init_size", parser.get_double_option("tr_init_size"));
+  options->setOption("tr_min_size", parser.get_double_option("tr_min_size"));
+  options->setOption("tr_max_size", parser.get_double_option("tr_max_size"));
+  options->setOption("tr_eta", parser.get_double_option("tr_eta"));
+  options->setOption("tr_infeas_tol",
+                     parser.get_double_option("tr_infeas_tol"));
+  options->setOption("tr_l1_tol", parser.get_double_option("tr_l1_tol"));
+  options->setOption("tr_linfty_tol",
+                     parser.get_double_option("tr_linfty_tol"));
+  options->setOption("tr_adaptive_gamma_update",
+                     parser.get_bool_option("tr_adaptive_gamma_update"));
+  options->setOption("tr_output_file",
+                     (fspath(prefix) / fspath("paropt.tr")).c_str());
+
+  // MMA options
+  options->setOption("mma_max_iterations", max_it);
+  options->setOption("mma_init_asymptote_offset",
+                     parser.get_double_option("mma_init_asymptote_offset"));
+  options->setOption("mma_move_limit",
+                     parser.get_double_option("mma_move_limit"));
+  options->setOption("mma_output_file",
+                     (fspath(prefix) / fspath("paropt.mma")).c_str());
+
+  ParOptOptimizer* opt = new ParOptOptimizer(paropt_prob, options);
+  opt->incref();
+
+  opt->optimize();
+
+  paropt_prob->decref();
+  options->decref();
+  opt->decref();
+}
+
+template <typename T, class TopoProb>
+void optimize_snopt(TopoProb& prob) {
+  int n = 2;
+  int m = 3;
+  int ne = 5;
+  int nnCon = 2;
+  int nnObj = 0;
+  int nnJac = 2;
+  int negCon = 4;  // size of gCon
+
+  int nS = 0, nInf;
+  double objective, sInf;
+
+  int* indJ = new int[ne];
+  int* locJ = new int[n + 1];
+  double* valJ = new double[ne];
+
+  double* x = new double[n + m];
+  double* bl = new double[n + m];
+  double* bu = new double[n + m];
+  double* pi = new double[m];
+  double* rc = new double[n + m];
+  int* hs = new int[n + m];
+
+  int iObj = 2;
+  double ObjAdd = 0;
+
+  int Cold = 0, Basis = 1, Warm = 2;
+
+  // Set the upper and lower bounds.
+  bl[0] = 0;
+  bu[0] = 1e20;
+  bl[1] = -1e20;
+  bu[1] = 1e20;
+  bl[2] = -1e20;
+  bu[2] = 4;
+  bl[3] = -1e20;
+  bu[3] = 5;
+  bl[4] = -1e20;
+  bu[4] = 1e20;
+
+  // Initialize states, x and multipliers
+  for (int i = 0; i < n + m; i++) {
+    hs[i] = 0;
+    x[i] = 0;
+    rc[i] = 0;
+  }
+
+  for (int i = 0; i < m; i++) {
+    pi[i] = 0;
+  }
+
+  x[0] = 1.0;
+  x[1] = 1.0;
+
+  // Set up the Jacobian matrix
+  // Column 1
+  locJ[0] = 0;
+
+  indJ[0] = 0;
+  valJ[0] = 0;
+
+  indJ[1] = 1;
+  valJ[1] = 0;
+
+  // Column 2
+  locJ[1] = 2;
+
+  indJ[2] = 0;
+  valJ[2] = 0;
+
+  indJ[3] = 1;
+  valJ[3] = 0;
+
+  indJ[4] = 2;
+  valJ[4] = 1;
+
+  locJ[2] = 5;
+
+  using TopoProbSNOPT_s = TopoProbSNOPT<T, TopoProb>;
+  TopoProbSNOPT_s* snopt_prob = new TopoProbSNOPT_s(prob);
+  TopoProbSNOPT_s::instance = snopt_prob;
+
+  snopt_prob->initialize("", 1);
+
+  snopt_prob->setIntParameter("Verify level", 3);
+  snopt_prob->setIntParameter("Derivative option", 3);
+  snopt_prob->setIntParameter("Print file", 18);
+  snopt_prob->setIntParameter("Summary file", 19);
+
+  /*
+   * m number of all constraints (linear, nonlinear, bounds)
+   * n number of dvs
+   * ne number of non-zero entries in A
+   * */
+  snopt_prob->solve(Cold, m, n, ne, negCon, nnCon, nnObj, nnJac, iObj, ObjAdd,
+                    TopoProbSNOPT_s::usrfun, valJ, indJ, locJ, bl, bu, hs, x,
+                    pi, rc, nS, nInf, sInf, objective);
+  delete[] indJ;
+  delete[] locJ;
+  delete[] valJ;
+
+  delete[] x;
+  delete[] bl;
+  delete[] bu;
+  delete[] pi;
+  delete[] rc;
+  delete[] hs;
+}
+
 template <int Np_1d, bool use_ersatz, bool use_lbracket_grid>
 void execute(int argc, char* argv[]) {
   constexpr int Np_1d_filter = Np_1d > 2 ? 4 : 2;
@@ -1796,216 +2058,16 @@ void execute(int argc, char* argv[]) {
 
   TopoProb prob{topo, prefix, parser};
 
-  TopoProbParOpt<T, TopoProb>* paropt_prob =
-      new TopoProbParOpt<T, TopoProb>(prob);
-  paropt_prob->incref();
-
-  double dh = parser.get_double_option("grad_check_fd_h");
-  paropt_prob->check_gradients(dh);
-
-  if (parser.get_bool_option("check_grad_and_exit")) {
-    return;
+  if (parser.get_str_option("optimizer") == "paropt") {
+    optimize_paropt<T>(smoke_test, parser, prob);
+  } else if (parser.get_str_option("optimizer") == "snopt") {
+    optimize_snopt<T>(prob);
+  } else {
+    throw std::runtime_error("unsupported optimizer " +
+                             parser.get_str_option("optimizer"));
   }
-
-  // Set options
-  ParOptOptions* options = new ParOptOptions;
-  options->incref();
-  ParOptOptimizer::addDefaultOptions(options);
-
-  int max_it = smoke_test ? 10 : parser.get_int_option("max_it");
-
-  options->setOption("algorithm",
-                     parser.get_str_option("paropt_algorithm").c_str());
-
-  // Interior-point solver options
-  options->setOption("output_file",
-                     (fspath(prefix) / fspath("paropt.out")).c_str());
-  options->setOption("starting_point_strategy",
-                     parser.get_str_option("starting_point_strategy").c_str());
-  options->setOption("barrier_strategy",
-                     parser.get_str_option("barrier_strategy").c_str());
-  options->setOption("abs_res_tol", parser.get_double_option("abs_res_tol"));
-  options->setOption("use_line_search",
-                     parser.get_bool_option("use_line_search"));
-  options->setOption("max_major_iters",
-                     parser.get_int_option("max_major_iters"));
-  options->setOption("penalty_gamma",
-                     parser.get_double_option("penalty_gamma"));
-  options->setOption("qn_subspace_size",
-                     parser.get_int_option("qn_subspace_size"));
-  options->setOption("qn_type", parser.get_str_option("qn_type").c_str());
-  options->setOption("qn_diag_type",
-                     parser.get_str_option("qn_diag_type").c_str());
-
-  // Trust-region options
-  options->setOption("tr_max_iterations", max_it);
-  options->setOption("tr_init_size", parser.get_double_option("tr_init_size"));
-  options->setOption("tr_min_size", parser.get_double_option("tr_min_size"));
-  options->setOption("tr_max_size", parser.get_double_option("tr_max_size"));
-  options->setOption("tr_eta", parser.get_double_option("tr_eta"));
-  options->setOption("tr_infeas_tol",
-                     parser.get_double_option("tr_infeas_tol"));
-  options->setOption("tr_l1_tol", parser.get_double_option("tr_l1_tol"));
-  options->setOption("tr_linfty_tol",
-                     parser.get_double_option("tr_linfty_tol"));
-  options->setOption("tr_adaptive_gamma_update",
-                     parser.get_bool_option("tr_adaptive_gamma_update"));
-  options->setOption("tr_output_file",
-                     (fspath(prefix) / fspath("paropt.tr")).c_str());
-
-  // MMA options
-  options->setOption("mma_max_iterations", max_it);
-  options->setOption("mma_init_asymptote_offset",
-                     parser.get_double_option("mma_init_asymptote_offset"));
-  options->setOption("mma_move_limit",
-                     parser.get_double_option("mma_move_limit"));
-  options->setOption("mma_output_file",
-                     (fspath(prefix) / fspath("paropt.mma")).c_str());
-
-  ParOptOptimizer* opt = new ParOptOptimizer(paropt_prob, options);
-  opt->incref();
-
-  opt->optimize();
-
-  paropt_prob->decref();
-  options->decref();
-  opt->decref();
 
   MPI_Finalize();
-}
-
-void toyusrfun(int* mode, int* nnObj, int* nnCon, int* nnJac, int* nnL,
-               int* negCon, double x[], double* fObj, double gObj[],
-               double fCon[], double gCon[], int* Status, char* cu, int* lencu,
-               int iu[], int* leniu, double ru[], int* lenru) {
-  //==================================================================
-  // Computes the nonlinear objective and constraint terms for the toy
-  // problem featured in the SnoptA users guide.
-  // m = 3, n = 2.
-  //
-  //   Minimize     x(2)
-  //
-  //   subject to   x(1)**2      + 4 x(2)**2  <= 4,
-  //               (x(1) - 2)**2 +   x(2)**2  <= 5,
-  //                x(1) >= 0.
-  //
-  //==================================================================
-  if (*mode == 0 || *mode == 2) {
-    *fObj = 0;
-    fCon[0] = x[0] * x[0] + 4 * x[1] * x[1];
-    fCon[1] = (x[0] - 2) * (x[0] - 2) + x[1] * x[1];
-  }
-
-  if (*mode == 1 || *mode == 2) {
-    // gObj not set; no nonlinear variables in objective
-    gCon[0] = 2 * x[0];
-    gCon[1] = 2 * (x[0] - 2);
-    gCon[2] = 8 * x[1];
-    gCon[3] = 2 * x[1];
-  }
-}
-
-void test_snopt() {
-  snoptProblemC ToyProb("ToyC");
-
-  int n = 2;
-  int m = 3;
-  int ne = 5;
-  int nnCon = 2;
-  int nnObj = 0;
-  int nnJac = 2;
-  int negCon = 4;  // size of gCon
-
-  int nS = 0, nInf;
-  double objective, sInf;
-
-  int* indJ = new int[ne];
-  int* locJ = new int[n + 1];
-  double* valJ = new double[ne];
-
-  double* x = new double[n + m];
-  double* bl = new double[n + m];
-  double* bu = new double[n + m];
-  double* pi = new double[m];
-  double* rc = new double[n + m];
-  int* hs = new int[n + m];
-
-  int iObj = 2;
-  double ObjAdd = 0;
-
-  int Cold = 0, Basis = 1, Warm = 2;
-
-  // Set the upper and lower bounds.
-  bl[0] = 0;
-  bu[0] = 1e20;
-  bl[1] = -1e20;
-  bu[1] = 1e20;
-  bl[2] = -1e20;
-  bu[2] = 4;
-  bl[3] = -1e20;
-  bu[3] = 5;
-  bl[4] = -1e20;
-  bu[4] = 1e20;
-
-  // Initialize states, x and multipliers
-  for (int i = 0; i < n + m; i++) {
-    hs[i] = 0;
-    x[i] = 0;
-    rc[i] = 0;
-  }
-
-  for (int i = 0; i < m; i++) {
-    pi[i] = 0;
-  }
-
-  x[0] = 1.0;
-  x[1] = 1.0;
-
-  // Set up the Jacobian matrix
-  // Column 1
-  locJ[0] = 0;
-
-  indJ[0] = 0;
-  valJ[0] = 0;
-
-  indJ[1] = 1;
-  valJ[1] = 0;
-
-  // Column 2
-  locJ[1] = 2;
-
-  indJ[2] = 0;
-  valJ[2] = 0;
-
-  indJ[3] = 1;
-  valJ[3] = 0;
-
-  indJ[4] = 2;
-  valJ[4] = 1;
-
-  locJ[2] = 5;
-
-  ToyProb.initialize("", 1);
-
-  ToyProb.setIntParameter("Verify level", 3);
-  ToyProb.setIntParameter("Derivative option", 3);
-  ToyProb.setIntParameter("Print file", 18);
-  ToyProb.setIntParameter("Summary file", 19);
-
-  ToyProb.solve(Cold, m, n, ne, negCon, nnCon, nnObj, nnJac, iObj, ObjAdd,
-                toyusrfun, valJ, indJ, locJ, bl, bu, hs, x, pi, rc, nS, nInf,
-                sInf, objective);
-
-  delete[] indJ;
-  delete[] locJ;
-  delete[] valJ;
-
-  delete[] x;
-  delete[] bl;
-  delete[] bu;
-  delete[] pi;
-  delete[] rc;
-  delete[] hs;
 }
 
 int main(int argc, char* argv[]) {
