@@ -1183,11 +1183,10 @@ class TopoAnalysis {
 };
 
 template <typename T, class TopoAnalysis>
-class TopoProb : public ParOptProblem {
+class TopoProb {
  public:
   TopoProb(TopoAnalysis& topo, std::string prefix, const ConfigParser& parser)
-      : ParOptProblem(MPI_COMM_SELF),
-        topo(topo),
+      : topo(topo),
         prefix(prefix),
         parser(parser),
         domain_area(topo.get_prob_mesh().get_domain_area()),
@@ -1219,7 +1218,6 @@ class TopoProb : public ParOptProblem {
         is_volume_objective(parser.get_bool_option("is_volume_objective")),
         nvars(topo.get_prob_mesh().get_nvars()),
         ncon(0),
-        nineq(ncon),
         HFx_old(nvars, 0.0) {
     // Set number of constraints
 
@@ -1232,8 +1230,6 @@ class TopoProb : public ParOptProblem {
     if (has_compliance_constraint) {
       ncon++;
     }
-    setProblemSizes(nvars, ncon, 0);
-    setNumInequalities(nineq, 0);
 
     if (!std::filesystem::is_directory(prefix)) {
       std::filesystem::create_directory(prefix);
@@ -1241,6 +1237,9 @@ class TopoProb : public ParOptProblem {
 
     reset_counter();
   }
+
+  int get_nvars() { return nvars; }
+  int get_ncon() { return ncon; }
 
   void print_progress(T obj, T comp, T reg, T pterm, T vol_frac, T max_stress,
                       T max_stress_ratio, double ksrho, T ks_stress_ratio,
@@ -1273,22 +1272,9 @@ class TopoProb : public ParOptProblem {
     progress_file.close();
   }
 
-  void check_gradients(double dh) {
-    is_gradient_check = true;
-    checkGradients(dh);
-    is_gradient_check = false;
-    reset_counter();
-    VandermondeCondLogger::clear();
-  }
-
   void reset_counter() { counter = 0; }
 
-  void getVarsAndBounds(ParOptVec* xvec, ParOptVec* lbvec, ParOptVec* ubvec) {
-    T *xr, *lb, *ub;
-    xvec->getArray(&xr);
-    lbvec->getArray(&lb);
-    ubvec->getArray(&ub);
-
+  void getVarsAndBounds(T* xr, T* lb, T* ub) {
     // Set initial design
     std::vector<T> x0;
     std::string init_topo_json_path =
@@ -1362,9 +1348,7 @@ class TopoProb : public ParOptProblem {
     }
   }
 
-  int evalObjCon(ParOptVec* xvec, T* fobj, T* cons) {
-    T* xptr;
-    xvec->getArray(&xptr);
+  int evalObjCon(T* xptr, T* fobj, T* cons) {
     std::vector<T> xr(xptr, xptr + nvars);
     std::vector<T> x =
         topo.get_prob_mesh().expand(xr, 1.0);  // set non-design values to 1.0
@@ -1532,9 +1516,7 @@ class TopoProb : public ParOptProblem {
     return 0;
   }
 
-  int evalObjConGradient(ParOptVec* xvec, ParOptVec* gvec, ParOptVec** Ac) {
-    T* xptr;
-    xvec->getArray(&xptr);
+  int evalObjConGradient(T* xptr, T* g, std::vector<T*> gc) {
     std::vector<T> xr(xptr, xptr + nvars);
     std::vector<T> x =
         topo.get_prob_mesh().expand(xr, 1.0);  // set non-design values to 1.0
@@ -1558,10 +1540,6 @@ class TopoProb : public ParOptProblem {
     }
 
     // Populate objective gradients
-    T* g;
-    gvec->getArray(&g);
-    gvec->zeroEntries();
-
     if (has_stress_objective) {
       T a = (1.0 - stress_objective_theta) * compliance_objective_scalar;
       T b = stress_objective_theta * stress_objective_scalar;
@@ -1579,33 +1557,26 @@ class TopoProb : public ParOptProblem {
     }
 
     // Populate constraint gradients
-    T* gc;
 
     int con_index = 0;
 
     if (not is_volume_objective) {
-      Ac[con_index]->getArray(&gc);
-      Ac[con_index]->zeroEntries();
       for (int i = 0; i < nvars; i++) {
-        gc[i] = -garear[i] / (domain_area * area_frac);
+        gc[con_index][i] = -garear[i] / (domain_area * area_frac);
       }
       con_index++;
     }
 
     if (has_stress_constraint) {
-      Ac[con_index]->getArray(&gc);
-      Ac[con_index]->zeroEntries();
       for (int i = 0; i < nvars; i++) {
-        gc[i] = -gstressr[i] / stress_ratio_ub;
+        gc[con_index][i] = -gstressr[i] / stress_ratio_ub;
       }
       con_index++;
     }
 
     if (has_compliance_constraint) {
-      Ac[con_index]->getArray(&gc);
-      Ac[con_index]->zeroEntries();
       for (int i = 0; i < nvars; i++) {
-        gc[i] = -gcompr[i] / compliance_constraint_upper_bound;
+        gc[con_index][i] = -gcompr[i] / compliance_constraint_upper_bound;
       }
       con_index++;
     }
@@ -1613,11 +1584,8 @@ class TopoProb : public ParOptProblem {
     return 0;
   }
 
-  // Dummy method
-  ParOptQuasiDefMat* createQuasiDefMat() {
-    int nwblock = 0;
-    return new ParOptQuasiDefBlockMat(this, nwblock);
-  }
+  void gradient_check_on() { is_gradient_check = true; }
+  void gradient_check_off() { is_gradient_check = false; }
 
  private:
   TopoAnalysis& topo;
@@ -1643,13 +1611,69 @@ class TopoProb : public ParOptProblem {
   bool is_volume_objective = false;
   int nvars = -1;
   int ncon = -1;
-  int nineq = -1;
 
   std::vector<T> HFx_old;
 
   int counter = -1;
   StopWatch watch;
   bool is_gradient_check = false;
+};
+
+template <typename T, class TopoProb>
+class TopoProbParOpt : public ParOptProblem {
+ public:
+  TopoProbParOpt(TopoProb& prob) : ParOptProblem(MPI_COMM_SELF), prob(prob) {
+    setProblemSizes(prob.get_nvars(), prob.get_ncon(), 0);
+    setNumInequalities(prob.get_ncon(), 0);
+  }
+
+  void check_gradients(double dh) {
+    prob.gradient_check_on();
+    checkGradients(dh);
+    prob.gradient_check_off();
+    prob.reset_counter();
+    VandermondeCondLogger::clear();
+  }
+
+  void getVarsAndBounds(ParOptVec* xvec, ParOptVec* lbvec, ParOptVec* ubvec) {
+    T *xr, *lb, *ub;
+    xvec->getArray(&xr);
+    lbvec->getArray(&lb);
+    ubvec->getArray(&ub);
+    prob.getVarsAndBounds(xr, lb, ub);
+  }
+
+  int evalObjCon(ParOptVec* xvec, T* fobj, T* cons) {
+    T* xptr;
+    xvec->getArray(&xptr);
+    return prob.evalObjCon(xptr, fobj, cons);
+  }
+
+  int evalObjConGradient(ParOptVec* xvec, ParOptVec* gvec, ParOptVec** Ac) {
+    T* xptr;
+    xvec->getArray(&xptr);
+
+    T* g;
+    gvec->getArray(&g);
+    gvec->zeroEntries();
+
+    std::vector<T*> gc(prob.get_ncon(), nullptr);
+
+    for (int i = 0; i < prob.get_ncon(); i++) {
+      Ac[i]->getArray(&gc[i]);
+      Ac[i]->zeroEntries();
+    }
+    return prob.evalObjConGradient(xptr, g, gc);
+  }
+
+  // Dummy method
+  ParOptQuasiDefMat* createQuasiDefMat() {
+    int nwblock = 0;
+    return new ParOptQuasiDefBlockMat(this, nwblock);
+  }
+
+ private:
+  TopoProb& prob;
 };
 
 template <int Np_1d, bool use_ersatz, bool use_lbracket_grid>
@@ -1661,6 +1685,7 @@ void execute(int argc, char* argv[]) {
   using Grid = typename std::conditional<use_lbracket_grid, LbracketGrid2D<T>,
                                          StructuredGrid2D<T>>::type;
   using TopoAnalysis = TopoAnalysis<T, Np_1d, Np_1d_filter, use_ersatz, Grid>;
+  using TopoProb = TopoProb<T, TopoAnalysis>;
 
   bool smoke_test = false;
   if (argc > 2 and "--smoke" == std::string(argv[2])) {
@@ -1769,12 +1794,14 @@ void execute(int argc, char* argv[]) {
                     prefix,
                     area_frac};
 
-  TopoProb<T, TopoAnalysis>* prob =
-      new TopoProb<T, TopoAnalysis>(topo, prefix, parser);
-  prob->incref();
+  TopoProb prob{topo, prefix, parser};
+
+  TopoProbParOpt<T, TopoProb>* paropt_prob =
+      new TopoProbParOpt<T, TopoProb>(prob);
+  paropt_prob->incref();
 
   double dh = parser.get_double_option("grad_check_fd_h");
-  prob->check_gradients(dh);
+  paropt_prob->check_gradients(dh);
 
   if (parser.get_bool_option("check_grad_and_exit")) {
     return;
@@ -1835,12 +1862,12 @@ void execute(int argc, char* argv[]) {
   options->setOption("mma_output_file",
                      (fspath(prefix) / fspath("paropt.mma")).c_str());
 
-  ParOptOptimizer* opt = new ParOptOptimizer(prob, options);
+  ParOptOptimizer* opt = new ParOptOptimizer(paropt_prob, options);
   opt->incref();
 
   opt->optimize();
 
-  prob->decref();
+  paropt_prob->decref();
   options->decref();
   opt->decref();
 
@@ -1982,9 +2009,6 @@ void test_snopt() {
 }
 
 int main(int argc, char* argv[]) {
-  // TODO: delete
-  test_snopt();
-  exit(0);
   VandermondeCondLogger::enable();
 
   if (argc == 1) {
