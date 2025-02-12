@@ -568,9 +568,14 @@ class TopoAnalysis {
   }
 
   // Create nodal design variables for a domain with periodic holes
-  std::vector<T> create_initial_topology(int nholes_x, int nholes_y, double r,
-                                         bool cell_center = true) {
-    const T* lxy = grid.get_lxy();
+  std::vector<T> create_initial_topology(
+      int nholes_x, int nholes_y, double r, bool cell_center = true,
+      int shrink_level = 0,  // number of verts we shrink
+      bool is_lbracket = false, double lbracket_frac = 0.4,
+      double loaded_frac = 0.05) {
+    const double* lxy = grid.get_lxy();
+    const double* h = grid.get_h();
+    double dh = 0.5 * (h[0] + h[1]);
     int nverts = grid.get_num_verts();
     std::vector<T> dvs(nverts, 0.0);
     for (int i = 0; i < nverts; i++) {
@@ -596,6 +601,32 @@ class TopoAnalysis {
         }
       }
       dvs[i] = hard_max(dvs_vals);
+
+      // Shrink domain on the boundaries
+      int ixy[2];
+      grid.get_vert_coords(i, ixy);
+
+      // if (ixy[0] < shrink_level or ixy[1] < shrink_level) {
+      //   dvs[i] = (shrink_level + 0.5) * dh;
+      // }
+
+      if (is_lbracket) {
+        bool b1 = ixy[0] * h[0] >
+                  lbracket_frac * lxy[0] - (shrink_level - 0.5) * h[0];
+        bool b2 = ixy[1] * h[1] >
+                  lbracket_frac * lxy[1] - (shrink_level - 0.5) * h[1];
+        bool b3 = ixy[0] * h[0] < lxy[0] - (shrink_level - 0.5) * h[0];
+        bool b4 =
+            (ixy[1] + 1.0) * h[1] < (lbracket_frac - loaded_frac) * lxy[1] -
+                                        (shrink_level - 0.5) * h[1];
+
+        if (b1 and b2 and b3) {
+          dvs[i] = (shrink_level + 0.5) * dh;
+        }
+        if (!b3 and b4) {
+          dvs[i] = (shrink_level + 0.5) * dh;
+        }
+      }
     }
 
     // This is a (conservative) maximum possible magnitude of the
@@ -1308,7 +1339,11 @@ class TopoProb {
             parser.get_int_option("init_topology_nholes_x"),
             parser.get_int_option("init_topology_nholes_y"),
             parser.get_double_option("init_topology_r"),
-            parser.get_bool_option("init_topology_cell_center"));
+            parser.get_bool_option("init_topology_cell_center"),
+            parser.get_int_option("init_topology_shrink_level"),
+            parser.get_str_option("instance") == "lbracket",
+            parser.get_double_option("lbracket_frac"),
+            parser.get_double_option("loaded_frac"));
       } else if (init_topology_method == "sinusoidal") {
         x0 = topo.create_initial_topology_sine(
             parser.get_int_option("init_topology_sine_period_x"),
@@ -1316,7 +1351,8 @@ class TopoProb {
             parser.get_double_option("init_topology_sine_offset"));
       } else if (init_topology_method == "lbracket") {
         x0 = topo.create_initial_topology_lbracket(
-            6, parser.get_double_option("init_topology_sine_lbracket_r"));
+            parser.get_int_option("init_topology_lbracket_nholes_1d"),
+            parser.get_double_option("init_topology_lbracket_r"));
       } else {
         throw std::runtime_error("init_topology_method = " +
                                  init_topology_method + " is not supported");
@@ -1685,66 +1721,39 @@ class TopoProbSNOPT : public snoptProblemC {
 
   static TopoProbSNOPT_s* get_instance() { return instance; }
 
-  void eval_fun_grad(int* mode, double x[], double* fObj, double fCon[],
-                     double gCon[]) {
-    //==================================================================
-    // Computes the nonlinear objective and constraint terms for the toy
-    // problem featured in the SnoptA users guide.
-    // m = 3, n = 2.
-    //
-    //   Minimize     x(2)
-    //
-    //   subject to   x(1)**2      + 4 x(2)**2  <= 4,
-    //               (x(1) - 2)**2 +   x(2)**2  <= 5,
-    //                x(1) >= 0.
-    //
-    //==================================================================
-    if (*mode == 0 || *mode == 2) {
-      *fObj = 0;
-      fCon[0] = x[0] * x[0] + 4 * x[1] * x[1];
-      fCon[1] = (x[0] - 2) * (x[0] - 2) + x[1] * x[1];
-    }
-
-    if (*mode == 1 || *mode == 2) {
-      // gObj not set; no nonlinear variables in objective
-      gCon[0] = 2 * x[0];
-      gCon[1] = 2 * (x[0] - 2);
-      gCon[2] = 8 * x[1];
-      gCon[3] = 2 * x[1];
-    }
-  }
-
-  /**
-   * @brief
-   *
-   * @param mode
-   * @param nnObj number of nonlinear dvs for the nonlinear objective
-   * @param nnCon number of nonlinear constraints
-   * @param nnJac number of nonlinear dvs for the nonlinear constraints
-   * @param nnL
-   * @param negCon
-   * @param x
-   * @param fObj
-   * @param gObj
-   * @param fCon
-   * @param gCon
-   * @param Status
-   * @param cu
-   * @param lencu
-   * @param iu
-   * @param leniu
-   * @param ru
-   * @param lenru
-   */
   static void usrfun(int* mode, int* nnObj, int* nnCon, int* nnJac, int* nnL,
                      int* negCon, double x[], double* fObj, double gObj[],
                      double fCon[], double gCon[], int* Status, char* cu,
                      int* lencu, int iu[], int* leniu, double ru[],
                      int* lenru) {
-    get_instance()->eval_fun_grad(mode, x, fObj, fCon, gCon);
+    TopoProbSNOPT_s* instance = get_instance();
+
+    // Evaluate objective and constraint values
+    if (*mode == 0 || *mode == 2) {
+      instance->prob.evalObjCon(x, fObj, fCon);
+    }
+
+    // Evaluate objective gradient and constraint Jacobian
+    if (*mode == 1 || *mode == 2) {
+      int nvars = instance->prob.get_nvars();
+      int ncon = instance->prob.get_ncon();
+
+      std::vector<T*> gc(ncon, nullptr);
+      std::vector<std::vector<T>> gc_data(ncon, std::vector<T>(nvars, 0.0));
+      for (int i = 0; i < ncon; i++) {
+        gc[i] = gc_data[i].data();
+      }
+
+      instance->prob.evalObjConGradient(x, gObj, gc);
+
+      for (int col = 0, index = 0; col < nvars; col++) {
+        for (int row = 0; row < ncon; row++, index++) {
+          gCon[index] = gc_data[row][col];
+        }
+      }
+    }
   }
 
- private:
   TopoProb& prob;
 };
 
@@ -1827,115 +1836,89 @@ void optimize_paropt(bool smoke_test, ConfigParser& parser, TopoProb& prob) {
   options->decref();
   opt->decref();
 }
-
 template <typename T, class TopoProb>
-void optimize_snopt(TopoProb& prob) {
-  int n = 2;
-  int m = 3;
-  int ne = 5;
-  int nnCon = 2;
-  int nnObj = 0;
-  int nnJac = 2;
-  int negCon = 4;  // size of gCon
-
-  int nS = 0, nInf;
-  double objective, sInf;
-
-  int* indJ = new int[ne];
-  int* locJ = new int[n + 1];
-  double* valJ = new double[ne];
-
-  double* x = new double[n + m];
-  double* bl = new double[n + m];
-  double* bu = new double[n + m];
-  double* pi = new double[m];
-  double* rc = new double[n + m];
-  int* hs = new int[n + m];
-
-  int iObj = 2;
-  double ObjAdd = 0;
-
-  int Cold = 0, Basis = 1, Warm = 2;
-
-  // Set the upper and lower bounds.
-  bl[0] = 0;
-  bu[0] = 1e20;
-  bl[1] = -1e20;
-  bu[1] = 1e20;
-  bl[2] = -1e20;
-  bu[2] = 4;
-  bl[3] = -1e20;
-  bu[3] = 5;
-  bl[4] = -1e20;
-  bu[4] = 1e20;
-
-  // Initialize states, x and multipliers
-  for (int i = 0; i < n + m; i++) {
-    hs[i] = 0;
-    x[i] = 0;
-    rc[i] = 0;
-  }
-
-  for (int i = 0; i < m; i++) {
-    pi[i] = 0;
-  }
-
-  x[0] = 1.0;
-  x[1] = 1.0;
-
-  // Set up the Jacobian matrix
-  // Column 1
-  locJ[0] = 0;
-
-  indJ[0] = 0;
-  valJ[0] = 0;
-
-  indJ[1] = 1;
-  valJ[1] = 0;
-
-  // Column 2
-  locJ[1] = 2;
-
-  indJ[2] = 0;
-  valJ[2] = 0;
-
-  indJ[3] = 1;
-  valJ[3] = 0;
-
-  indJ[4] = 2;
-  valJ[4] = 1;
-
-  locJ[2] = 5;
+void optimize_snopt(bool smoke_test, ConfigParser& parser, TopoProb& prob) {
+  constexpr double SNOPT_INF = 1e30;
 
   using TopoProbSNOPT_s = TopoProbSNOPT<T, TopoProb>;
   TopoProbSNOPT_s* snopt_prob = new TopoProbSNOPT_s(prob);
   TopoProbSNOPT_s::instance = snopt_prob;
 
   snopt_prob->initialize("", 1);
-
-  snopt_prob->setIntParameter("Verify level", 3);
-  snopt_prob->setIntParameter("Derivative option", 3);
+  snopt_prob->setIntParameter(
+      "Verify level",
+      0);  // Perform a cheap finite-difference gradient check
+  snopt_prob->setIntParameter(
+      "Derivative level",
+      3);  // All All objective and constraint gradients are known.
   snopt_prob->setIntParameter("Print file", 18);
   snopt_prob->setIntParameter("Summary file", 19);
 
-  /*
-   * m number of all constraints (linear, nonlinear, bounds)
-   * n number of dvs
-   * ne number of non-zero entries in A
-   * */
-  snopt_prob->solve(Cold, m, n, ne, negCon, nnCon, nnObj, nnJac, iObj, ObjAdd,
-                    TopoProbSNOPT_s::usrfun, valJ, indJ, locJ, bl, bu, hs, x,
-                    pi, rc, nS, nInf, sInf, objective);
-  delete[] indJ;
-  delete[] locJ;
-  delete[] valJ;
+  // Options from config
+  int max_it = smoke_test ? 10 : parser.get_int_option("max_it");
+  snopt_prob->setIntParameter("Major iterations limit", max_it);
+  snopt_prob->setIntParameter("Iterations limit",
+                              parser.get_int_option("snopt_minor_iter_limit"));
+  snopt_prob->setRealParameter(
+      "Major feasibility tolerance",
+      parser.get_double_option("snopt_major_feas_tol"));
+  snopt_prob->setRealParameter("Major optimality tolerance",
+                               parser.get_double_option("snopt_major_opt_tol"));
+  snopt_prob->setIntParameter("Major print level",
+                              parser.get_int_option("snopt_major_print_level"));
+  snopt_prob->setIntParameter("Minor print level",
+                              parser.get_int_option("snopt_minor_print_level"));
+  snopt_prob->setRealParameter(
+      "Major step limit",
+      parser.get_double_option("snopt_major_step_size_limit"));
 
-  delete[] x;
-  delete[] bl;
-  delete[] bu;
-  delete[] pi;
-  delete[] rc;
-  delete[] hs;
+  int Cold = 0;  // cold start
+  int n = prob.get_nvars();
+  int m = prob.get_ncon();
+  int ne = m * n;       // number of non-zeros in constraint Jacobian
+  int negCon = m * n;   // size of gCon
+  int nnCon = m;        // number of nonlinear constraints
+  int nnObj = n;        // number of nonlinear dvs for the nonlinear objective
+  int nnJac = n;        // number of nonlinear dvs for the nonlinear constraints
+  int iObj = -1;        // no such row in A containing a linear objective vector
+  double ObjAdd = 0.0;  // a constant that will be added to the objective for
+                        // printing purposes.
+
+  // Dense constraint Jacobian in CSR format
+  std::vector<T> Avals(ne, 0.0);   // constants of the A, all zero as we
+                                   // eval them through usrfun
+  std::vector<int> Arows(ne, -1);  // row index of each non-zero entry of A
+  std::vector<int> Aloc(n + 1);    // pointers to beginning of each column
+  for (int col = 0, i = 0; col < n; col++) {
+    Aloc[col] = col * m;
+    for (int row = 0; row < m; row++, i++) {
+      Arows[i] = row;
+    }
+  }
+  Aloc[n] = ne;
+
+  std::vector<T> bl(n + m, 0.0);        // lower bounds of dvs and constraints
+  std::vector<T> bu(n + m, SNOPT_INF);  // upper bounds of dvs and constraints
+  std::vector<int> hs(n + m, 0);        // initial states, just set them to 0
+  std::vector<T> x0(n + m);  // initial values of dvs, we only need first n
+
+  // Populate initial dvs and bounds of dvs
+  prob.getVarsAndBounds(x0.data(), bl.data(), bu.data());
+
+  std::vector<T> pi(m, 0.0),
+      rc(n + m, 0.0);  // initial guess of multipliers? Just set to 0 because we
+                       // perform cold start
+
+  // On exit
+  int nS = 0;  // not needed for cold start
+  int nInf;
+  double objective, sInf;
+
+  // Optimize
+  snopt_prob->solve(Cold, m, n, ne, negCon, nnCon, nnObj, nnJac, iObj, ObjAdd,
+                    TopoProbSNOPT_s::usrfun, Avals.data(), Arows.data(),
+                    Aloc.data(), bl.data(), bu.data(), hs.data(), x0.data(),
+                    pi.data(), rc.data(), nS, nInf, sInf, objective);
 }
 
 template <int Np_1d, bool use_ersatz, bool use_lbracket_grid>
@@ -2061,7 +2044,7 @@ void execute(int argc, char* argv[]) {
   if (parser.get_str_option("optimizer") == "paropt") {
     optimize_paropt<T>(smoke_test, parser, prob);
   } else if (parser.get_str_option("optimizer") == "snopt") {
-    optimize_snopt<T>(prob);
+    optimize_snopt<T>(smoke_test, parser, prob);
   } else {
     throw std::runtime_error("unsupported optimizer " +
                              parser.get_str_option("optimizer"));
