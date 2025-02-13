@@ -1784,9 +1784,8 @@ class TopoProbSNOPT : public snoptProblemC {
 };
 
 template <typename T, class TopoProb>
-void optimize_paropt(bool smoke_test, ConfigParser& parser, TopoProb& prob) {
-  std::string prefix = parser.get_str_option("prefix");
-
+void optimize_paropt(bool smoke_test, std::string prefix, ConfigParser& parser,
+                     TopoProb& prob) {
   TopoProbParOpt<T, TopoProb>* paropt_prob =
       new TopoProbParOpt<T, TopoProb>(prob);
   paropt_prob->incref();
@@ -1863,7 +1862,8 @@ void optimize_paropt(bool smoke_test, ConfigParser& parser, TopoProb& prob) {
   opt->decref();
 }
 template <typename T, class TopoProb>
-void optimize_snopt(bool smoke_test, ConfigParser& parser, TopoProb& prob) {
+void optimize_snopt(bool smoke_test, std::string prefix, ConfigParser& parser,
+                    TopoProb& prob) {
   constexpr double SNOPT_INF = 1e30;
 
   using TopoProbSNOPT_s = TopoProbSNOPT<T, TopoProb>;
@@ -2040,9 +2040,9 @@ void execute(int argc, char* argv[]) {
   TopoProb prob{topo, prefix, parser};
 
   if (parser.get_str_option("optimizer") == "paropt") {
-    optimize_paropt<T>(smoke_test, parser, prob);
+    optimize_paropt<T>(smoke_test, prefix, parser, prob);
   } else if (parser.get_str_option("optimizer") == "snopt") {
-    optimize_snopt<T>(smoke_test, parser, prob);
+    optimize_snopt<T>(smoke_test, prefix, parser, prob);
   } else {
     throw std::runtime_error("unsupported optimizer " +
                              parser.get_str_option("optimizer"));
