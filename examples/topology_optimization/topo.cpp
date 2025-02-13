@@ -1,4 +1,5 @@
 #include <mpi.h>
+#include <sys/types.h>
 
 #include <algorithm>
 #include <filesystem>
@@ -1305,23 +1306,30 @@ class TopoProb {
                       int header_every = 10) {
     std::ofstream progress_file(fspath(prefix) / fspath("optimization.log"),
                                 std::ios::app);
-    if (counter % header_every == 0) {
+    if (minor_counter % header_every == 0) {
       char line[2048];
-      std::snprintf(line, 2048,
-                    "\n%4s%13s%13s%13s%13s%9s%13s%13s%9s%13s%9s%13s%13s%15s\n",
-                    "iter", "obj", "comp", "x_regular", "grad_pen", "vol(\%)",
-                    "max(vm)", "max(vm/y)", "ksrho", "ks(vm/y)", "kserr(\%)",
-                    "ks_ub", "|dx|_infty", "uptime(hms)");
+      std::snprintf(
+          line, 2048,
+          "\n%6s%6s%13s%13s%13s%13s%9s%13s%13s%9s%13s%9s%13s%13s%15s\n",
+          "major", "minor", "obj", "comp", "x_regular", "grad_pen", "vol(\%)",
+          "max(vm)", "max(vm/y)", "ksrho", "ks(vm/y)", "kserr(\%)", "ks_ub",
+          "|dx|_infty", "uptime(hms)");
       std::cout << line;
       progress_file << line;
     }
     char line[2048];
+
+    std::string major_it = "";
+    if (counter != prev_counter) {
+      prev_counter = counter;
+      major_it = std::to_string(counter);
+    }
     std::snprintf(
         line, 2048,
-        "%4d%13.3e%13.3e%13.3e%13.3e%9.3f%13.3e%13.3e%9.3f%13.3e%9.3f"
+        "%6s%6d%13.3e%13.3e%13.3e%13.3e%9.3f%13.3e%13.3e%9.3f%13.3e%9.3f"
         "%13.3e%13.3e%15s\n",
-        counter, obj, comp, reg, pterm, 100.0 * vol_frac, max_stress,
-        max_stress_ratio, ksrho, ks_stress_ratio,
+        major_it.c_str(), minor_counter, obj, comp, reg, pterm,
+        100.0 * vol_frac, max_stress, max_stress_ratio, ksrho, ks_stress_ratio,
         (ks_stress_ratio - max_stress_ratio) / max_stress_ratio * 100.0,
         ks_stress_ratio_ub, HFx_change, watch.format_time(watch.lap()).c_str());
     std::cout << line;
@@ -1329,7 +1337,12 @@ class TopoProb {
     progress_file.close();
   }
 
-  void reset_counter() { counter = 0; }
+  void reset_counter() {
+    counter = 0;
+    minor_counter = 0;
+  }
+  void inc_counter() { counter++; }
+  int get_counter() { return counter; }
 
   void getVarsAndBounds(T* xr, T* lb, T* ub) {
     // Set initial design
@@ -1572,9 +1585,7 @@ class TopoProb {
     print_progress(*fobj, comp, reg, pterm, area / domain_area, max_stress,
                    max_stress_ratio, ksrho, ks_stress_ratio, stress_ratio_ub,
                    HFx_change);
-
-    counter++;
-
+    minor_counter++;
     return 0;
   }
 
@@ -1676,7 +1687,10 @@ class TopoProb {
 
   std::vector<T> HFx_old;
 
-  int counter = -1;
+  int prev_counter = -1;
+  int counter = -1;  // major iteration counter
+  int minor_counter =
+      -1;  // minor iteration counter, increased at each function evaluation
   StopWatch watch;
   bool is_gradient_check = false;
 };
@@ -1708,7 +1722,9 @@ class TopoProbParOpt : public ParOptProblem {
   int evalObjCon(ParOptVec* xvec, T* fobj, T* cons) {
     T* xptr;
     xvec->getArray(&xptr);
-    return prob.evalObjCon(xptr, fobj, cons);
+    int ret = prob.evalObjCon(xptr, fobj, cons);
+    prob.inc_counter();
+    return ret;
   }
 
   int evalObjConGradient(ParOptVec* xvec, ParOptVec* gvec, ParOptVec** Ac) {
@@ -1745,15 +1761,29 @@ class TopoProbSNOPT : public snoptProblemC {
   inline static TopoProbSNOPT_s* instance = nullptr;
   TopoProbSNOPT(TopoProb& prob) : snoptProblemC("SNOPT_problem"), prob(prob) {}
 
-  static TopoProbSNOPT_s* get_instance() { return instance; }
+  // This function is called at each major iteration
+  static void snstop(int* iAbort, int KTcond[], int* MjrPrt, int* minimz,
+                     int* m, int* maxS, int* n, int* nb, int* nnCon0,
+                     int* nnCon, int* nnObj0, int* nnObj, int* nS, int* itn,
+                     int* nMajor, int* nMinor, int* nSwap, double* condHz,
+                     int* iObj, double* sclObj, double* ObjAdd, double* fObj,
+                     double* fMrt, double* PenNrm, double* step, double* prInf,
+                     double* duInf, double* vimax, double* virel, int hs[],
+                     int* ne, int* nlocJ, int locJ[], int indJ[], double Jcol[],
+                     int* negCon, double Ascale[], double bl[], double bu[],
+                     double Fx[], double fCon[], double gCon[], double gObj[],
+                     double yCon[], double pi[], double rc[], double rg[],
+                     double x[], char cu[], int* lencu, int iu[], int* leniu,
+                     double ru[], int* lenru, char cw[], int* lencw, int iw[],
+                     int* leniw, double rw[], int* lenrw) {
+    instance->prob.inc_counter();
+  }
 
   static void usrfun(int* mode, int* nnObj, int* nnCon, int* nnJac, int* nnL,
                      int* negCon, double x[], double* fObj, double gObj[],
                      double fCon[], double gCon[], int* Status, char* cu,
                      int* lencu, int iu[], int* leniu, double ru[],
                      int* lenru) {
-    TopoProbSNOPT_s* instance = get_instance();
-
     // Evaluate objective and constraint values
     if (*mode == 0 || *mode == 2) {
       instance->prob.evalObjCon(x, fObj, fCon);
@@ -1941,6 +1971,7 @@ void optimize_snopt(bool smoke_test, std::string prefix, ConfigParser& parser,
   double objective, sInf;
 
   // Optimize
+  snopt_prob->setSTOP(TopoProbSNOPT_s::snstop);
   snopt_prob->solve(Cold, m, n, ne, negCon, nnCon, nnObj, nnJac, iObj, ObjAdd,
                     TopoProbSNOPT_s::usrfun, Avals.data(), Arows.data(),
                     Aloc.data(), bl.data(), bu.data(), hs.data(), x0.data(),
