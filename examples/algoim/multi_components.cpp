@@ -69,13 +69,13 @@ void quadratures_multipoly() {
   std::vector<algoim::uvector<int, spatial_dim>> quad_partitions;
   std::vector<T> quad_wts;
   ipquad.integrate(algoim::AutoMixed, Np_1d,
-                   [&](const algoim::uvector<T, spatial_dim>& x, T w,
-                       const algoim::uvector<int, spatial_dim>& block_index) {
+                   [&](const algoim::uvector<T, spatial_dim>& x, T w) {
+                     // const algoim::uvector<int, spatial_dim>& block_index) {
                      printf("pt: %.5f %.5f wt: %.5f\n", x(0), x(1), w);
                      if (algoim::bernstein::evalBernsteinPoly(phi, x) > 0) {
                        quad_nodes.push_back(x);
                        quad_wts.push_back(w);
-                       quad_partitions.push_back(block_index);
+                       // quad_partitions.push_back(block_index);
                      }
                    });
 

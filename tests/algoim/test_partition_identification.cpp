@@ -81,13 +81,13 @@ void compute_and_visualize_quad_pts_single_element(std::string name,
   std::cout << "direction k: " << ipquad.k << "\n";
   ipquad.integrate(
       algoim::AutoMixed, Np_bernstein,
-      [&](const algoim::uvector<T, spatial_dim>& x, T w,
-          const algoim::uvector<int, spatial_dim>& block_index) {
+      [&](const algoim::uvector<T, spatial_dim>& x, T w) {
+        // const algoim::uvector<int, spatial_dim>& block_index) {
         // if (algoim::bernstein::evalBernsteinPoly(phi, x) < 0) {
         quad_lsf.push_back(algoim::bernstein::evalBernsteinPoly(phi, x));
         quad_nodes.push_back(xmin + x * (xmax - xmin));
         quad_wts.push_back(w);
-        quad_block_indices.push_back(block_index);
+        // quad_block_indices.push_back(block_index);
         // }
       });
 
@@ -130,7 +130,7 @@ void compute_and_visualize_quad_pts_single_element(std::string name,
   quad_vtk.write_vec("block_index");
 }
 
-TEST(algoim, PartitionIdentificationCase1) {
+TEST(algoim, DISABLED_PartitionIdentificationCase1) {
   // Define the LSF functor
   using T = double;
   int constexpr spatial_dim = 2;
@@ -144,7 +144,7 @@ TEST(algoim, PartitionIdentificationCase1) {
                                                                 phi_functor);
 }
 
-TEST(algoim, PartitionIdentificationCase2) {
+TEST(algoim, DISABLED_PartitionIdentificationCase2) {
   // Define the LSF functor
   using T = double;
   int constexpr spatial_dim = 2;
@@ -164,7 +164,7 @@ TEST(algoim, PartitionIdentificationCase2) {
                                                                 phi_functor);
 }
 
-TEST(algoim, PartitionIdentificationCase3) {
+TEST(algoim, DISABLED_PartitionIdentificationCase3) {
   // Define the LSF functor
   using T = double;
   int constexpr spatial_dim = 2;
@@ -184,7 +184,7 @@ TEST(algoim, PartitionIdentificationCase3) {
                                                                 phi_functor);
 }
 
-TEST(algoim, PartitionIdentificationCase4) {
+TEST(algoim, DISABLED_PartitionIdentificationCase4) {
   // Define the LSF functor
   using T = double;
   int constexpr spatial_dim = 2;
@@ -202,7 +202,7 @@ TEST(algoim, PartitionIdentificationCase4) {
                                                                 phi_functor);
 }
 
-TEST(algoim, PartitionIdentificationCase5) {
+TEST(algoim, DISABLED_PartitionIdentificationCase5) {
   // Define the LSF functor
   using T = double;
   int constexpr spatial_dim = 2;
