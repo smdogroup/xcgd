@@ -10,7 +10,8 @@
 template <typename T, typename Mesh>
 void write_vtk(const Mesh& mesh, const char* vtkname,
                const std::vector<T>& sol) {
-  assert(sol.size() == mesh.get_num_nodes() * Mesh::spatial_dim);
+  xcgd_assert(sol.size() == mesh.get_num_nodes() * Mesh::spatial_dim,
+              "sol.size() != num_nodes * spatial_dim");
 
   ToVTK<T, Mesh> vtk(mesh, vtkname);
   vtk.write_mesh();

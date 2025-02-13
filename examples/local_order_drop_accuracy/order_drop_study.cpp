@@ -53,8 +53,8 @@ class GridMeshDropOrder : public GridMesh<T, Np_1d> {
   using typename MeshBase::Grid;
   GridMeshDropOrder(const Grid& grid, int Np_bc)
       : GridMesh<T, Np_1d>(grid), Np_bc(Np_bc) {
-    assert(Np_bc <= Np_1d);
-    assert(Np_bc >= 2);
+    xcgd_assert(Np_bc <= Np_1d, "Np_bc > Np_1d");
+    xcgd_assert(Np_bc >= 2, "Np_bc < 2");
   }
 
   int get_elem_dof_nodes(int elem, int* nodes) const {

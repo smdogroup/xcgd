@@ -13,9 +13,9 @@
 template <typename T>
 void verify_solve(SparseUtils::CSCMat<T>& csc_mat, const std::vector<T>& rhs,
                   const std::vector<T>& sol_expected, double tol = 1e-15) {
-  assert(csc_mat.nrows == csc_mat.ncols);
-  assert(csc_mat.ncols == rhs.size());
-  assert(csc_mat.ncols == sol_expected.size());
+  xcgd_assert(csc_mat.nrows == csc_mat.ncols, "nrows != ncols");
+  xcgd_assert(csc_mat.ncols == rhs.size(), "ncols != rhs.size()");
+  xcgd_assert(csc_mat.ncols == sol_expected.size(), "ncols != sol.size()");
 
   SparseUtils::CholOrderingType order = SparseUtils::CholOrderingType::ND;
   SparseUtils::SparseCholesky<T> chol(&csc_mat);

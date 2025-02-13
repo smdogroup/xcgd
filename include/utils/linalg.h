@@ -67,7 +67,8 @@ void direct_inverse(int n, T A[], double *rcond = nullptr, char norm = '1') {
 
   // Optionally compute the reciprocal of the condition number
   if (rcond) {
-    assert(Anorm > 0.0);
+    xcgd_assert(Anorm > 0.0,
+                "negative Anorm encountered: " + std::to_string(Anorm));
     SparseUtils::LAPACKgecon(norm, n, A, n, Anorm, rcond, &info);
     if (info != 0) throw LapackFailed("gecon", info);
   }
