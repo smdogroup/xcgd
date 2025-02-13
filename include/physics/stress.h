@@ -68,12 +68,14 @@ class LinearElasticity2DVonMisesStressAggregation final
 
   LinearElasticity2DVonMisesStressAggregation(double ksrho, T E, T nu,
                                               T yield_stress,
-                                              T max_stress_ratio = 1.0)
+                                              T max_stress_ratio = 1.0,
+                                              bool use_discrete_ks = false)
       : ksrho(ksrho),
         mu(0.5 * E / (1.0 + nu)),
         lambda(E * nu / ((1.0 + nu) * (1.0 - nu))),
         yield_stress(yield_stress),
-        max_stress_ratio(max_stress_ratio) {}
+        max_stress_ratio(max_stress_ratio),
+        use_discrete_ks(use_discrete_ks) {}
 
   // Does not effect result, but set a proper value can help preventing
   // floating-point overflow
@@ -98,8 +100,9 @@ class LinearElasticity2DVonMisesStressAggregation final
     A2D::MatTrace(S, trS);
     A2D::MatDet(S, detS);
     von_mises = sqrt(trS * trS - 3.0 * detS);
-    return weight * detJ *
-           exp(ksrho * (von_mises / yield_stress - max_stress_ratio));
+
+    T coef = use_discrete_ks ? 1.0 : weight * detJ;
+    return coef * exp(ksrho * (von_mises / yield_stress - max_stress_ratio));
   }
 
   void residual(T weight, T _, A2D::Vec<T, spatial_dim>& __,
@@ -111,6 +114,7 @@ class LinearElasticity2DVonMisesStressAggregation final
                 A2D::Mat<T, dof_per_node, spatial_dim>& coef_grad) const {
     T detJ;
     A2D::MatDet(J, detJ);
+    T coef = use_discrete_ks ? 1.0 : weight * detJ;
 
     A2D::ADObj<T> trS, detS, output;
     A2D::ADObj<A2D::Mat<T, dof_per_node, spatial_dim>&> grad_obj(grad,
@@ -121,10 +125,10 @@ class LinearElasticity2DVonMisesStressAggregation final
         A2D::MatGreenStrain<A2D::GreenStrainType::LINEAR>(grad_obj, E_obj),
         A2D::SymIsotropic(mu, lambda, E_obj, S_obj), A2D::MatTrace(S_obj, trS),
         A2D::MatDet(S_obj, detS),
-        A2D::Eval(weight * detJ *
-                      exp(ksrho * (sqrt(trS * trS - 3.0 * detS) / yield_stress -
-                                   max_stress_ratio)),
-                  output));
+        A2D::Eval(
+            coef * exp(ksrho * (sqrt(trS * trS - 3.0 * detS) / yield_stress -
+                                max_stress_ratio)),
+            output));
 
     output.bvalue() = 1.0;
     stack.reverse();
@@ -141,6 +145,7 @@ class LinearElasticity2DVonMisesStressAggregation final
       A2D::Mat<T, dof_per_node, spatial_dim>& coef_grad) const {
     T detJ;
     A2D::MatDet(J, detJ);
+    T coef = use_discrete_ks ? 1.0 : weight * detJ;
 
     A2D::A2DObj<T> trS, detS, output;
     A2D::Mat<T, dof_per_node, spatial_dim> bgrad;
@@ -152,10 +157,10 @@ class LinearElasticity2DVonMisesStressAggregation final
         A2D::MatGreenStrain<A2D::GreenStrainType::LINEAR>(grad_obj, E_obj),
         A2D::SymIsotropic(mu, lambda, E_obj, S_obj), A2D::MatTrace(S_obj, trS),
         A2D::MatDet(S_obj, detS),
-        A2D::Eval(weight * detJ *
-                      exp(ksrho * (sqrt(trS * trS - 3.0 * detS) / yield_stress -
-                                   max_stress_ratio)),
-                  output));
+        A2D::Eval(
+            coef * exp(ksrho * (sqrt(trS * trS - 3.0 * detS) / yield_stress -
+                                max_stress_ratio)),
+            output));
     output.bvalue() = 1.0;
     stack.hproduct();
   }
@@ -165,4 +170,5 @@ class LinearElasticity2DVonMisesStressAggregation final
   const T mu, lambda;  // Lame parameters
   const T yield_stress;
   T max_stress_ratio;  // maximum Von Mises stress / yield stress
+  bool use_discrete_ks;
 };

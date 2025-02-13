@@ -819,6 +819,9 @@ void add_jac_adj_product(
  * @param uhess_ref (∇2_ξ)uq
  * @param coef_uq ∂e/∂uq
  * @param coef_ugrad_ref ∂e/∂(∇_ξ)uq
+ * @param unity_quad_wts if true, then the energy is evaluated with quadrature
+ * weights being 1, one of such use cases is to compute discrete KS aggration
+ * via existing energy evaluation mechanism
  * @param elem_dfphi output, element vector of ∂e/∂φ
  */
 template <typename T, class GDBasis, int dim>
@@ -855,7 +858,9 @@ void add_energy_partial_deriv(
   T wdetJ = weight * detJ;
   for (int n = 0; n < max_nnodes_per_element; n++) {
     // dedphi_{1,n}
-    elem_dfdphi[n] += detJ * energy * wts_grad[n];
+    if (wts_grad) {
+      elem_dfdphi[n] += detJ * energy * wts_grad[n];
+    }
 
     // dedphi_{2,n} is assumed zero (dJdphi = 0)
 
@@ -895,7 +900,9 @@ void add_energy_partial_deriv(
   T wdetJ = weight * detJ;
   for (int n = 0; n < max_nnodes_per_element; n++) {
     // dedphi_{1,n}
-    elem_dfdphi[n] += detJ * energy * wts_grad[n];
+    if (wts_grad) {
+      elem_dfdphi[n] += detJ * energy * wts_grad[n];
+    }
 
     // dedphi_{2,n} is assumed zero (dJdphi = 0)
 

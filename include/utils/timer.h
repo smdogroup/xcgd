@@ -22,7 +22,8 @@ class StopWatch {
     int m = t / 60.0;
     t -= m * 60.0;
     char msg[256];
-    std::snprintf(msg, 256, "%02d:%02d:%04.1f", h, m, t);
+    // std::snprintf(msg, 256, "%02d:%02d:%04.1f", h, m, t);
+    std::snprintf(msg, 256, "%02d:%02d:%02d", h, m, int(t));
     return msg;
   }
 

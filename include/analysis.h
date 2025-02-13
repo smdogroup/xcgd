@@ -450,7 +450,6 @@ class GalerkinAnalysis final {
       int num_quad_pts = quadrature.get_quadrature_pts(i, pts, wts, ns);
 
       std::vector<T> N, Nxi;
-      // TODO: delete
 
       try {
         basis.eval_basis_grad(i, pts, N, Nxi);
@@ -689,10 +688,17 @@ class GalerkinAnalysis final {
     }
   }
 
-  /*
-   * Evaluate df/dphi where f is an integration of the energy
-   * */
-  void LSF_energy_derivatives(const T dof[], T dfdphi[]) const {
+  /**
+   * @brief Evaluate ∂f/∂phi where f is an integration of the energy
+   *
+   * @param dof state variables
+   * @param dfdphi partial derivatives ∂f/∂phi
+   * @param unity_quad_wts if true, then the energy is evaluated with quadrature
+   * weights being 1, one of such use cases is to compute discrete KS aggration
+   * via existing energy evaluation mechanism
+   */
+  void LSF_energy_derivatives(const T dof[], T dfdphi[],
+                              bool unity_quad_wts = false) const {
     static_assert(Basis::is_gd_basis, "This method only works with GD Basis");
     static_assert(Mesh::is_cut_mesh,
                   "This method requires a level-set-cut mesh");
@@ -766,10 +772,16 @@ class GalerkinAnalysis final {
         int offset_wts = j * max_nnodes_per_element;
         int offset_pts = j * max_nnodes_per_element * spatial_dim;
 
-        add_energy_partial_deriv<T, Basis>(
-            wts[j], detJ, energy, &wts_grad[offset_wts], &pts_grad[offset_pts],
-            ugrad_ref, uhess_ref, coef_uq, coef_ugrad_ref,
-            element_dfdphi.data());
+        if (unity_quad_wts) {
+          add_energy_partial_deriv<T, Basis>(
+              1.0, 1.0, energy, nullptr, &pts_grad[offset_pts], ugrad_ref,
+              uhess_ref, coef_uq, coef_ugrad_ref, element_dfdphi.data());
+        } else {
+          add_energy_partial_deriv<T, Basis>(
+              wts[j], detJ, energy, &wts_grad[offset_wts],
+              &pts_grad[offset_pts], ugrad_ref, uhess_ref, coef_uq,
+              coef_ugrad_ref, element_dfdphi.data());
+        }
       }
 
       const auto& lsf_mesh = mesh.get_lsf_mesh();

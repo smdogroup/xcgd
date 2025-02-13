@@ -459,12 +459,11 @@ class TopoAnalysis {
   int constexpr static spatial_dim = Basis::spatial_dim;
 
  public:
-  TopoAnalysis(ProbMesh& prob_mesh, bool use_helmholtz_filter,
-               int num_conv_filter_apply, T r0, T E, T nu, T penalty,
-               double stress_ksrho_init, T yield_stress,
-               bool use_robust_projection, double proj_beta,
-               double proj_delta_eta, std::string prefix, double area_frac)
+  TopoAnalysis(ProbMesh& prob_mesh, std::string prefix,
+               const ConfigParser& parser)
       : prob_mesh(prob_mesh),
+        prefix(prefix),
+        parser(parser),
         grid(prob_mesh.get_grid()),
         erode_mesh(prob_mesh.get_erode_mesh()),
         dilate_mesh(prob_mesh.get_dilate_mesh()),
@@ -472,30 +471,35 @@ class TopoAnalysis {
         dilate_quadrature(dilate_mesh),
         erode_basis(erode_mesh),
         dilate_basis(dilate_mesh),
-        use_helmholtz_filter(use_helmholtz_filter),
-        num_conv_filter_apply(num_conv_filter_apply),
-        use_robust_projection(use_robust_projection),
-        projector_blueprint(proj_beta, 0.5, grid.get_num_verts()),
-        projector_dilate(proj_beta, 0.5 + proj_delta_eta, grid.get_num_verts()),
-        projector_erode(proj_beta, 0.5 - proj_delta_eta, grid.get_num_verts()),
-        hfilter(r0, grid),
-        cfilter(r0, grid),
-        elastic(E, nu, erode_mesh, erode_quadrature, erode_basis, int_func),
+        projector_blueprint(parser.get_double_option("robust_proj_beta"), 0.5,
+                            grid.get_num_verts()),
+        projector_dilate(
+            parser.get_double_option("robust_proj_beta"),
+            0.5 + parser.get_double_option("robust_proj_delta_eta"),
+            grid.get_num_verts()),
+        projector_erode(parser.get_double_option("robust_proj_beta"),
+                        0.5 - parser.get_double_option("robust_proj_delta_eta"),
+                        grid.get_num_verts()),
+        hfilter(parser.get_double_option("filter_r0"), grid),
+        cfilter(parser.get_double_option("filter_r0"), grid),
+        elastic(parser.get_double_option("E"), parser.get_double_option("nu"),
+                erode_mesh, erode_quadrature, erode_basis, int_func),
         vol_analysis(dilate_mesh, dilate_quadrature, dilate_basis, vol),
-        pen(penalty),
+        pen(parser.get_double_option("grad_penalty_coeff")),
         pen_analysis(hfilter.get_mesh(), hfilter.get_quadrature(),
                      hfilter.get_basis(), pen),
-        stress(E, nu),
+        stress(parser.get_double_option("E"), parser.get_double_option("nu")),
         stress_analysis(erode_mesh, erode_quadrature, erode_basis, stress),
-        stress_ks(stress_ksrho_init, E, nu, yield_stress),
+        stress_ks(parser.get_double_option("stress_ksrho_init"),
+                  parser.get_double_option("E"), parser.get_double_option("nu"),
+                  parser.get_double_option("yield_stress"), 1.0,
+                  parser.get_bool_option("stress_use_discrete_ks")),
         stress_ks_analysis(erode_mesh, erode_quadrature, erode_basis,
                            stress_ks),
         phi_erode(erode_mesh.get_lsf_dof()),
         phi_dilate(dilate_mesh.get_lsf_dof()),
         phi_blueprint(phi_dilate.size(), 0.0),
-        prefix(prefix),
-        cache({{"x", {}}, {"sol", {}}, {"chol", nullptr}}),
-        area_frac(area_frac) {
+        cache({{"x", {}}, {"sol", {}}, {"chol", nullptr}}) {
     // Get loaded cells
     loaded_cells = prob_mesh.get_loaded_cells();
   }
@@ -667,6 +671,12 @@ class TopoAnalysis {
       throw std::runtime_error("sizes don't match");
     }
 
+    // Get options
+    bool use_helmholtz_filter = parser.get_bool_option("use_helmholtz_filter");
+    int num_conv_filter_apply = parser.get_int_option("num_conv_filter_apply");
+    bool use_robust_projection =
+        parser.get_bool_option("use_robust_projection");
+
     // Apply filter on design variables
     if (use_helmholtz_filter) {
       hfilter.apply(x.data(), phi_blueprint.data());
@@ -773,6 +783,11 @@ class TopoAnalysis {
   }
 
   auto eval_obj_con(const std::vector<T>& x) {
+    // Get options
+    double area_frac = parser.get_double_option("area_frac");
+    bool stress_use_discrete_ks =
+        parser.get_bool_option("stress_use_discrete_ks");
+
     std::shared_ptr<SparseUtils::SparseCholesky<T>> chol;
     std::vector<T> HFx;
     std::vector<T> sol = update_mesh_and_solve(x, HFx, &chol);
@@ -790,17 +805,25 @@ class TopoAnalysis {
     T max_stress_ratio = max_stress / stress_ks.get_yield_stress();
     stress_ks.set_max_stress_ratio(max_stress_ratio);
     T ks_energy = stress_ks_analysis.energy(nullptr, sol.data());
-    T ks_stress_ratio =
-        log(ks_energy / (prob_mesh.get_domain_area() * area_frac)) /
-            stress_ks.get_ksrho() +
-        max_stress_ratio;
+
+    // Evaluate continuous or discrete ks aggregation
+    T ks_stress_ratio = 0.0;
+    if (stress_use_discrete_ks) {
+      ks_stress_ratio =
+          max_stress_ratio + log(ks_energy) / stress_ks.get_ksrho();
+    } else {
+      ks_stress_ratio =
+          max_stress_ratio +
+          log(ks_energy / (prob_mesh.get_domain_area() * area_frac)) /
+              stress_ks.get_ksrho();
+    }
 
     // Save information
     cache["x"] = x;
     cache["sol"] = sol;
     cache["chol"] = chol;
-    cache["ks_energy"] = ks_energy;
     cache["area"] = area;
+    cache["ks_energy"] = ks_energy;
 
     return std::make_tuple(HFx, comp, area, pterm, max_stress, max_stress_ratio,
                            ks_stress_ratio, sol, xloc_q, stress_q);
@@ -864,6 +887,14 @@ class TopoAnalysis {
   void eval_obj_con_gradient(const std::vector<T>& x, std::vector<T>& gcomp,
                              std::vector<T>& garea, std::vector<T>& gpen,
                              std::vector<T>& gstress) {
+    // Get options
+    bool use_helmholtz_filter = parser.get_bool_option("use_helmholtz_filter");
+    int num_conv_filter_apply = parser.get_int_option("num_conv_filter_apply");
+    bool use_robust_projection =
+        parser.get_bool_option("use_robust_projection");
+    bool stress_use_discrete_ks =
+        parser.get_bool_option("stress_use_discrete_ks");
+
     T ks_energy = 0.0, area = 0.0;
     std::vector<T> sol;
     std::shared_ptr<SparseUtils::SparseCholesky<T>> chol;
@@ -970,7 +1001,8 @@ class TopoAnalysis {
     std::fill(gstress.begin(), gstress.end(), 0.0);
 
     // Explicit partials
-    stress_ks_analysis.LSF_energy_derivatives(sol.data(), gstress.data());
+    stress_ks_analysis.LSF_energy_derivatives(sol.data(), gstress.data(),
+                                              stress_use_discrete_ks);
 
     // Implicit derivatives via the adjoint variables
     elastic.get_analysis().LSF_jacobian_adjoint_product(
@@ -992,12 +1024,10 @@ class TopoAnalysis {
       }
     }
 
-    // Now gstress is really just denergy/dx, next, compute dks/dx:
-    // dks/dx = (1.0 / energy * denergy/dx - 1.0 / area * darea/dx) / rho
+    // For now we have denergy/dx, next, compute dks/dx:
+    double denom = ks_energy * stress_ks.get_ksrho();
     for (int i = 0; i < gstress.size(); i++) {
-      // gstress[i] =
-      //     (gstress[i] / ks_energy - garea[i] / area) / stress_ks.get_ksrho();
-      gstress[i] = (gstress[i] / ks_energy) / stress_ks.get_ksrho();
+      gstress[i] /= denom;
     }
   }
 
@@ -1173,15 +1203,15 @@ class TopoAnalysis {
 
  private:
   ProbMesh& prob_mesh;
+  std::string prefix;
+  const ConfigParser& parser;
+
   Grid& grid;
   Mesh& erode_mesh;
   Mesh& dilate_mesh;
   Quadrature erode_quadrature, dilate_quadrature;
   Basis erode_basis, dilate_basis;
 
-  bool use_helmholtz_filter;
-  int num_conv_filter_apply;
-  bool use_robust_projection;
   RobustProjection<T> projector_blueprint, projector_dilate, projector_erode;
   HFilter hfilter;
   CFilter cfilter;
@@ -1200,8 +1230,6 @@ class TopoAnalysis {
   std::vector<T>& phi_dilate;
   std::vector<T> phi_blueprint;
 
-  std::string prefix;
-
   std::vector<int> bc_dof;
 
   std::set<int> loaded_cells;
@@ -1210,7 +1238,6 @@ class TopoAnalysis {
            std::variant<T, std::vector<T>,
                         std::shared_ptr<SparseUtils::SparseCholesky<T>>>>
       cache;
-  double area_frac;
 };
 
 template <typename T, class TopoAnalysis>
@@ -1280,20 +1307,19 @@ class TopoProb {
                                 std::ios::app);
     if (counter % header_every == 0) {
       char line[2048];
-      std::snprintf(
-          line, 2048,
-          "\n%4s%15s%15s%15s%15s%11s%15s%15s%13s%15s%13s%14s%13s%15s\n", "iter",
-          "obj", "comp", "x_regular", "grad_pen", "vol(\%)", "max(vm)",
-          "max(vm/yield)", "ksrho", "ks(vm/yield)", "ks_relerr(\%)", "ks_ub",
-          "diffx_infty", "uptime(H:M:S)");
+      std::snprintf(line, 2048,
+                    "\n%4s%13s%13s%13s%13s%9s%13s%13s%9s%13s%9s%13s%13s%15s\n",
+                    "iter", "obj", "comp", "x_regular", "grad_pen", "vol(\%)",
+                    "max(vm)", "max(vm/y)", "ksrho", "ks(vm/y)", "kserr(\%)",
+                    "ks_ub", "|dx|_infty", "uptime(hms)");
       std::cout << line;
       progress_file << line;
     }
     char line[2048];
     std::snprintf(
         line, 2048,
-        "%4d%15.5e%15.5e%15.5e%15.5e%11.5f%15.5e%15.5e%13.5f%15.5e%13.5f%14."
-        "4e%13.5f%15s\n",
+        "%4d%13.3e%13.3e%13.3e%13.3e%9.3f%13.3e%13.3e%9.3f%13.3e%9.3f"
+        "%13.3e%13.3e%15s\n",
         counter, obj, comp, reg, pterm, 100.0 * vol_frac, max_stress,
         max_stress_ratio, ksrho, ks_stress_ratio,
         (ks_stress_ratio - max_stress_ratio) / max_stress_ratio * 100.0,
@@ -2010,35 +2036,7 @@ void execute(int argc, char* argv[]) {
     }
   }
 
-  bool use_helmholtz_filter = parser.get_bool_option("use_helmholtz_filter");
-  int num_conv_filter_apply = parser.get_int_option("num_conv_filter_apply");
-  T r0 = parser.get_double_option("filter_r0");
-  T E = parser.get_double_option("E");
-  T nu = parser.get_double_option("nu");
-  bool use_robust_projection = parser.get_bool_option("use_robust_projection");
-  double robust_proj_beta = parser.get_double_option("robust_proj_beta");
-  double robust_proj_delta_eta =
-      parser.get_double_option("robust_proj_delta_eta");
-  T penalty = parser.get_double_option("grad_penalty_coeff");
-  T stress_ksrho_init = parser.get_double_option("stress_ksrho_init");
-  T yield_stress = parser.get_double_option("yield_stress");
-  double area_frac = parser.get_double_option("area_frac");
-
-  TopoAnalysis topo{*prob_mesh,
-                    use_helmholtz_filter,
-                    num_conv_filter_apply,
-                    r0,
-                    E,
-                    nu,
-                    penalty,
-                    stress_ksrho_init,
-                    yield_stress,
-                    use_robust_projection,
-                    robust_proj_beta,
-                    robust_proj_delta_eta,
-                    prefix,
-                    area_frac};
-
+  TopoAnalysis topo{*prob_mesh, prefix, parser};
   TopoProb prob{topo, prefix, parser};
 
   if (parser.get_str_option("optimizer") == "paropt") {
