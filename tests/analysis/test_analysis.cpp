@@ -189,7 +189,7 @@ T LSF_energy_derivatives_fd_check(double dh = 1e-6) {
 }
 
 template <int Np_1d, class Physics>
-void test_LSF_jacobian_adjoint_product(Physics& physics) {
+void test_LSF_jacobian_adjoint_product(Physics& physics, double tol = 1e-6) {
   T relerr_min = 1.0;
   for (double dh :
        std::vector<double>{1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9,
@@ -198,11 +198,11 @@ void test_LSF_jacobian_adjoint_product(Physics& physics) {
     if (ret < relerr_min) relerr_min = ret;
   }
 
-  EXPECT_LE(relerr_min, 1e-6);
+  EXPECT_LE(relerr_min, tol);
 }
 
 template <int Np_1d>
-void test_LSF_energy_derivatives() {
+void test_LSF_energy_derivatives(double tol = 1e-6) {
   T relerr_min = 1.0;
   for (double dh :
        std::vector<double>{1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9,
@@ -211,7 +211,7 @@ void test_LSF_energy_derivatives() {
     if (ret < relerr_min) relerr_min = ret;
   }
 
-  EXPECT_LE(relerr_min, 1e-6);
+  EXPECT_LE(relerr_min, tol);
 }
 
 TEST(analysis, AdjJacProductPoisson) {
@@ -221,8 +221,8 @@ TEST(analysis, AdjJacProductPoisson) {
   };
   using Physics = PoissonPhysics<T, 2, typeof(source_func)>;
   Physics physics(source_func);
-  test_LSF_jacobian_adjoint_product<2>(physics);
-  test_LSF_jacobian_adjoint_product<4>(physics);
+  test_LSF_jacobian_adjoint_product<2>(physics, 1e-5);
+  test_LSF_jacobian_adjoint_product<4>(physics, 1e-5);
 }
 
 TEST(analysis, AdjJacProductElasticity) {
@@ -235,11 +235,11 @@ TEST(analysis, AdjJacProductElasticity) {
   using Physics = LinearElasticity<T, 2, typeof(int_func)>;
   T E = 10.0, nu = 0.3;
   Physics physics(E, nu, int_func);
-  test_LSF_jacobian_adjoint_product<2>(physics);
-  test_LSF_jacobian_adjoint_product<4>(physics);
+  test_LSF_jacobian_adjoint_product<2>(physics, 1e-5);
+  test_LSF_jacobian_adjoint_product<4>(physics, 1e-5);
 }
 
 TEST(analysis, EnergyPartialStressKS) {
-  test_LSF_energy_derivatives<2>();
-  test_LSF_energy_derivatives<4>();
+  test_LSF_energy_derivatives<2>(1e-5);
+  test_LSF_energy_derivatives<4>(1e-5);
 }

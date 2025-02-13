@@ -304,9 +304,9 @@ TEST(physics, PoissonQuad) {
   test_poisson(create_quad_basis(), 0.0, 1e-30, 1e-12);
 }
 TEST(physics, PoissonTet) {
-  test_poisson(create_tet_basis(), 1.0);
-  test_poisson(create_tet_basis(), 2.3);
-  test_poisson(create_tet_basis(), 0.0);
+  test_poisson(create_tet_basis(), 1.0, 1e-30, 1e-12);
+  test_poisson(create_tet_basis(), 2.3, 1e-30, 1e-12);
+  test_poisson(create_tet_basis(), 0.0, 1e-30, 1e-12);
 }
 TEST(physics, PoissonGD) {
   test_poisson(create_gd_basis(), 1.0, 1e-8, 1e-6);
