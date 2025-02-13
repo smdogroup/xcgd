@@ -896,7 +896,7 @@ class TopoAnalysis {
     bool stress_use_discrete_ks =
         parser.get_bool_option("stress_use_discrete_ks");
 
-    T ks_energy = 0.0, area = 0.0;
+    T ks_energy = 0.0;
     std::vector<T> sol;
     std::shared_ptr<SparseUtils::SparseCholesky<T>> chol;
     if (x == std::get<std::vector<T>>(cache["x"])) {
@@ -904,13 +904,11 @@ class TopoAnalysis {
       chol = std::get<std::shared_ptr<SparseUtils::SparseCholesky<T>>>(
           cache["chol"]);
       ks_energy = std::get<T>(cache["ks_energy"]);
-      area = std::get<T>(cache["area"]);
     } else {
       std::vector<T> HFx;
       sol = update_mesh_and_solve(x, HFx, &chol);
       ks_energy = stress_ks_analysis.energy(nullptr, sol.data());
       std::vector<T> vol_dummy(vol_analysis.get_mesh().get_num_nodes(), 0.0);
-      area = vol_analysis.energy(nullptr, vol_dummy.data());
     }
 
     // Compliance function is self-adjoint with a sign flip
