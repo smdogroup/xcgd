@@ -1,3 +1,5 @@
+#include <limits>
+#include <numeric>
 #include <vector>
 
 #include "elements/gd_mesh.h"
@@ -188,7 +190,34 @@ void test_gdmesh_get_node_patch_elems(const GDMesh& mesh) {
   }
 }
 
-TEST(gd_mesh, GridMesh_get_node_patch_elems_Np2) {
+template <typename T, class GDMesh>
+void test_gdmesh_get_node_patch_elems_node_ranges(const GDMesh& mesh) {
+  for (int n = 0; n < mesh.get_num_nodes(); n++) {
+    T xloc_min_actual[GDMesh::spatial_dim] = {std::numeric_limits<T>::max(),
+                                              std::numeric_limits<T>::max()};
+    T xloc_max_actual[GDMesh::spatial_dim] = {std::numeric_limits<T>::min(),
+                                              std::numeric_limits<T>::min()};
+    // Loop over all patch nodes
+    auto patch_elems = mesh.get_node_patch_elems(n);
+    for (int e : patch_elems) {
+      T t1[2], t2[2];
+      mesh.get_elem_corner_node_ranges(e, t1, t2);
+      for (int d = 0; d < GDMesh::spatial_dim; d++) {
+        xloc_min_actual[d] = std::min(xloc_min_actual[d], t1[d]);
+        xloc_max_actual[d] = std::max(xloc_max_actual[d], t2[d]);
+      }
+    }
+    T xloc_min[GDMesh::spatial_dim];
+    T xloc_max[GDMesh::spatial_dim];
+    mesh.get_node_patch_elems_node_ranges(n, xloc_min, xloc_max);
+    for (int d = 0; d < GDMesh::spatial_dim; d++) {
+      EXPECT_NEAR(xloc_min[d], xloc_min_actual[d], 1e-12);
+      EXPECT_NEAR(xloc_max[d], xloc_max_actual[d], 1e-12);
+    }
+  }
+}
+
+TEST(gd_mesh, GridMesh_elem_patch_Np2) {
   int constexpr Np_1d = 2;
   using T = double;
   using Grid = StructuredGrid2D<T>;
@@ -200,9 +229,10 @@ TEST(gd_mesh, GridMesh_get_node_patch_elems_Np2) {
   Mesh mesh(grid);
 
   test_gdmesh_get_node_patch_elems(mesh);
+  test_gdmesh_get_node_patch_elems_node_ranges<T>(mesh);
 }
 
-TEST(gd_mesh, GridMesh_get_node_patch_elems_Np4) {
+TEST(gd_mesh, GridMesh_elem_patch_Np4) {
   int constexpr Np_1d = 4;
   using T = double;
   using Grid = StructuredGrid2D<T>;
@@ -214,9 +244,10 @@ TEST(gd_mesh, GridMesh_get_node_patch_elems_Np4) {
   Mesh mesh(grid);
 
   test_gdmesh_get_node_patch_elems(mesh);
+  test_gdmesh_get_node_patch_elems_node_ranges<T>(mesh);
 }
 
-TEST(gd_mesh, CutMesh_get_node_patch_elems_Np2) {
+TEST(gd_mesh, CutMesh_elem_patch_Np2) {
   int constexpr Np_1d = 2;
   using T = double;
   using Grid = StructuredGrid2D<T>;
@@ -233,6 +264,7 @@ TEST(gd_mesh, CutMesh_get_node_patch_elems_Np2) {
   mesh.update_mesh();
 
   test_gdmesh_get_node_patch_elems(mesh);
+  test_gdmesh_get_node_patch_elems_node_ranges<T>(mesh);
 
   for (auto& v : mesh.get_lsf_dof()) {
     v *= -1.0;
@@ -240,4 +272,33 @@ TEST(gd_mesh, CutMesh_get_node_patch_elems_Np2) {
   mesh.update_mesh();
 
   test_gdmesh_get_node_patch_elems(mesh);
+  test_gdmesh_get_node_patch_elems_node_ranges<T>(mesh);
+}
+
+TEST(gd_mesh, CutMesh_elem_patch_Np4) {
+  int constexpr Np_1d = 4;
+  using T = double;
+  using Grid = StructuredGrid2D<T>;
+  using Mesh = CutMesh<T, Np_1d>;
+
+  json j = read_json("lsf_dof.json");
+
+  int nxy[2] = {j["nxy"], j["nxy"]};
+  T lxy[2] = {1.0, 1.0};
+  Grid grid(nxy, lxy);
+  Mesh mesh(grid);
+
+  mesh.get_lsf_dof() = std::vector<double>(j["lsf_dof"]);
+  mesh.update_mesh();
+
+  test_gdmesh_get_node_patch_elems(mesh);
+  test_gdmesh_get_node_patch_elems_node_ranges<T>(mesh);
+
+  for (auto& v : mesh.get_lsf_dof()) {
+    v *= -1.0;
+  }
+  mesh.update_mesh();
+
+  test_gdmesh_get_node_patch_elems(mesh);
+  test_gdmesh_get_node_patch_elems_node_ranges<T>(mesh);
 }

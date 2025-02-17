@@ -257,7 +257,7 @@ T compute_surface_length(std::string name, const Func& lsf_func) {
     std::vector<T> ptx(pts.size(), 0.0);
 
     T xy_min[spatial_dim], xy_max[spatial_dim];
-    mesh.get_elem_vert_ranges(i, xy_min, xy_max);
+    mesh.get_elem_corner_node_ranges(i, xy_min, xy_max);
 
     for (int q = 0; q < num_quad_pts; q++) {
       ptx[q * spatial_dim] = pts[q * spatial_dim] * lxy[0] / nxy[0] + xy_min[0];

@@ -59,8 +59,8 @@ class GDMeshBase : public MeshBase<T, 2, Np_1d_ * Np_1d_, 4> {
 
   inline const Grid& get_grid() const { return grid; }
 
-  virtual void get_elem_vert_ranges(int elem, T* xloc_min,
-                                    T* xloc_max) const = 0;
+  virtual void get_elem_corner_node_ranges(int elem, T* xloc_min,
+                                           T* xloc_max) const = 0;
 
   /**
    * @brief Get the bounding box of dof nodes
@@ -78,6 +78,49 @@ class GDMeshBase : public MeshBase<T, 2, Np_1d_ * Np_1d_, 4> {
       for (int d = 0; d < spatial_dim; d++) {
         coords[i + d * nnodes] = xloc[d];
       }
+    }
+
+    for (int d = 0; d < spatial_dim; d++) {
+      xloc_min[d] =
+          *std::min_element(&coords[d * nnodes], &coords[d * nnodes] + nnodes,
+                            [](T& a, T& b) { return freal(a) < freal(b); });
+
+      xloc_max[d] =
+          *std::max_element(&coords[d * nnodes], &coords[d * nnodes] + nnodes,
+                            [](T& a, T& b) { return freal(a) < freal(b); });
+    }
+  }
+
+  /**
+   * @brief Get the bounding box of all nodes that belong to the patch elements
+   * for a given patch assembly node
+   */
+  void get_node_patch_elems_node_ranges(int node, T* xloc_min,
+                                        T* xloc_max) const {
+    std::set<int> patch_elems = this->get_node_patch_elems(node);
+    std::set<int> patch_nodes;
+
+    for (int e : patch_elems) {
+      int nodes[corner_nodes_per_element];
+      this->get_elem_corner_nodes(e, nodes);
+      for (int i = 0; i < corner_nodes_per_element; i++) {
+        patch_nodes.insert(nodes[i]);
+      }
+    }
+
+    int nnodes = patch_nodes.size();
+
+    // [x0, ..., xN, y0, ..., yN, ...]
+    std::vector<T> coords(spatial_dim * nnodes);
+
+    int index = 0;
+    for (int n : patch_nodes) {
+      T xloc[spatial_dim];
+      this->get_node_xloc(n, xloc);
+      for (int d = 0; d < spatial_dim; d++) {
+        coords[index + d * nnodes] = xloc[d];
+      }
+      index++;
     }
 
     for (int d = 0; d < spatial_dim; d++) {

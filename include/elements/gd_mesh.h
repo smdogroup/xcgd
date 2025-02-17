@@ -319,7 +319,8 @@ class GridMesh : public GDMeshBase<T, Np_1d, Grid_> {
     this->grid.get_cell_verts(elem, nodes);
   }
 
-  inline void get_elem_vert_ranges(int elem, T* xloc_min, T* xloc_max) const {
+  inline void get_elem_corner_node_ranges(int elem, T* xloc_min,
+                                          T* xloc_max) const {
     this->grid.get_cell_vert_ranges(elem, xloc_min, xloc_max);
   }
 
@@ -497,7 +498,8 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
     }
   }
 
-  inline void get_elem_vert_ranges(int elem, T* xloc_min, T* xloc_max) const {
+  inline void get_elem_corner_node_ranges(int elem, T* xloc_min,
+                                          T* xloc_max) const {
     this->grid.get_cell_vert_ranges(elem_cells.at(elem), xloc_min, xloc_max);
   }
 
@@ -1041,7 +1043,7 @@ void get_computational_coordinates_limits(const Mesh& mesh, int elem, T* xi_min,
   T xy_min[spatial_dim], xy_max[spatial_dim];
   T uv_min[spatial_dim], uv_max[spatial_dim];
   mesh.get_elem_node_ranges(elem, xy_min, xy_max);
-  mesh.get_elem_vert_ranges(elem, uv_min, uv_max);
+  mesh.get_elem_corner_node_ranges(elem, uv_min, uv_max);
 
   T hx = (uv_max[0] - uv_min[0]) / (xy_max[0] - xy_min[0]);
   T hy = (uv_max[1] - uv_min[1]) / (xy_max[1] - xy_min[1]);
