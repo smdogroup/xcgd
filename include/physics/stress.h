@@ -21,9 +21,8 @@ class LinearElasticity2DVonMisesStress final : public PhysicsBase<T, 2, 0, 2> {
            A2D::Mat<T, spatial_dim, spatial_dim>& J,
            A2D::Vec<T, dof_per_node>& ____,
            A2D::Mat<T, dof_per_node, spatial_dim>& grad) const {
-    T detJ, trS, detS, von_mises;
+    T trS, detS, von_mises;
     A2D::SymMat<T, spatial_dim> E, S;
-    A2D::MatDet(J, detJ);
     A2D::MatGreenStrain<A2D::GreenStrainType::LINEAR>(grad, E);
     A2D::SymIsotropic(mu, lambda, E, S);
     A2D::MatTrace(S, trS);
@@ -42,7 +41,73 @@ class LinearElasticity2DVonMisesStress final : public PhysicsBase<T, 2, 0, 2> {
 
  private:
   T mu, lambda;  // Lame parameters
-  T vs_max;      // maximum Von Mises stress
+};
+
+enum class StrainStressType { sx, sy, sxy, ex, ey, exy };
+
+template <typename T>
+class LinearElasticity2DStrainStress final : public PhysicsBase<T, 2, 0, 2> {
+ private:
+  using PhysicsBase_s = PhysicsBase<T, 2, 0, 2>;
+
+ public:
+  using PhysicsBase_s::data_per_node;
+  using PhysicsBase_s::dof_per_node;
+  using PhysicsBase_s::spatial_dim;
+
+  LinearElasticity2DStrainStress(
+      T E, T nu, StrainStressType strain_stress_type = StrainStressType::sx)
+      : mu(0.5 * E / (1.0 + nu)),
+        lambda(E * nu / ((1.0 + nu) * (1.0 - nu))),
+        strain_stress_type(strain_stress_type) {}
+
+  void set_type(StrainStressType strain_stress_type_) {
+    strain_stress_type = strain_stress_type_;
+  }
+
+  T energy(T weight, T _, A2D::Vec<T, spatial_dim>& __,
+           A2D::Vec<T, spatial_dim>& ___,
+           A2D::Mat<T, spatial_dim, spatial_dim>& J,
+           A2D::Vec<T, dof_per_node>& ____,
+           A2D::Mat<T, dof_per_node, spatial_dim>& grad) const {
+    T trS, detS, von_mises;
+    A2D::SymMat<T, spatial_dim> E, S;
+    A2D::MatGreenStrain<A2D::GreenStrainType::LINEAR>(grad, E);
+    A2D::SymIsotropic(mu, lambda, E, S);
+
+    switch (strain_stress_type) {
+      case StrainStressType::sx: {
+        return S(0, 0);
+      }
+      case StrainStressType::sy: {
+        return S(1, 1);
+      }
+      case StrainStressType::sxy: {
+        return S(0, 1);
+      }
+      case StrainStressType::ex: {
+        return E(0, 0);
+      }
+      case StrainStressType::ey: {
+        return E(1, 1);
+      }
+      case StrainStressType::exy: {
+        return E(0, 1);
+      }
+    }
+  }
+
+  void residual(T weight, T _, A2D::Vec<T, spatial_dim>& xloc,
+                A2D::Vec<T, spatial_dim>& __,
+                A2D::Mat<T, spatial_dim, spatial_dim>& J,
+                A2D::Vec<T, dof_per_node>& u,
+                A2D::Mat<T, dof_per_node, spatial_dim>& grad,
+                A2D::Vec<T, dof_per_node>& coef_u,
+                A2D::Mat<T, dof_per_node, spatial_dim>& coef_grad) const {}
+
+ private:
+  T mu, lambda;  // Lame parameters
+  StrainStressType strain_stress_type;
 };
 
 /*
