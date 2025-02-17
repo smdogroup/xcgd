@@ -1,6 +1,7 @@
 #ifndef XCGD_ELEMENT_COMMONS_H
 #define XCGD_ELEMENT_COMMONS_H
 
+#include <set>
 #include <vector>
 
 #include "a2dcore.h"
@@ -25,6 +26,10 @@ class MeshBase {
   virtual void get_node_xloc(int node, T* xloc) const = 0;
   virtual int get_elem_dof_nodes(int elem, int* nodes) const = 0;
   virtual void get_elem_corner_nodes(int elem, int* nodes) const = 0;
+
+  // Given a dof node, find all element patches for the node, useful for stress
+  // patch recover
+  virtual std::set<int> get_node_patch_elems(int node) const = 0;
 };
 
 template <typename T>

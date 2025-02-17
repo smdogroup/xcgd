@@ -1,11 +1,11 @@
 #include <vector>
 
-#include "elements/gd_vandermonde.h"
-#include "quadrature_general.hpp"
+#include "elements/gd_mesh.h"
 #include "test_commons.h"
+#include "utils/json.h"
 #include "utils/vtk.h"
 
-TEST(mesh, GDMeshStructured) {
+TEST(gd_mesh, GDMeshStructured) {
   constexpr int Np_1d = 4;
   using T = double;
   using Grid = StructuredGrid2D<T>;
@@ -164,5 +164,80 @@ void generate_lsf_mesh(bool flip = false) {
   }
 }
 
-TEST(mesh, LSFPositiveNp4) { generate_lsf_mesh<4>(true); }
-TEST(mesh, LSFNegativeNp4) { generate_lsf_mesh<4>(false); }
+TEST(gd_mesh, LSFPositiveNp4) { generate_lsf_mesh<4>(true); }
+TEST(gd_mesh, LSFNegativeNp4) { generate_lsf_mesh<4>(false); }
+
+template <class GDMesh>
+void test_gdmesh_get_node_patch_elems(const GDMesh& mesh) {
+  std::map<int, std::set<int>> node_elems_actual;
+
+  // Populate node_elems
+  for (int e = 0; e < mesh.get_num_elements(); e++) {
+    constexpr int nnodes = GDMesh::corner_nodes_per_element;
+    int nodes[nnodes];
+    mesh.get_elem_corner_nodes(e, nodes);
+    for (int i = 0; i < nnodes; i++) {
+      int n = nodes[i];
+      node_elems_actual[n].insert(e);
+    }
+  }
+
+  for (int n = 0; n < mesh.get_num_nodes(); n++) {
+    std::set<int> patch_elems = mesh.get_node_patch_elems(n);
+    EXPECT_EQ(patch_elems, node_elems_actual.at(n));
+  }
+}
+
+TEST(gd_mesh, GridMesh_get_node_patch_elems_Np2) {
+  int constexpr Np_1d = 2;
+  using T = double;
+  using Grid = StructuredGrid2D<T>;
+  using Mesh = GridMesh<T, Np_1d>;
+
+  int nxy[2] = {10, 6};
+  T lxy[2] = {1.0, 1.0};
+  Grid grid(nxy, lxy);
+  Mesh mesh(grid);
+
+  test_gdmesh_get_node_patch_elems(mesh);
+}
+
+TEST(gd_mesh, GridMesh_get_node_patch_elems_Np4) {
+  int constexpr Np_1d = 4;
+  using T = double;
+  using Grid = StructuredGrid2D<T>;
+  using Mesh = GridMesh<T, Np_1d>;
+
+  int nxy[2] = {10, 6};
+  T lxy[2] = {1.0, 1.0};
+  Grid grid(nxy, lxy);
+  Mesh mesh(grid);
+
+  test_gdmesh_get_node_patch_elems(mesh);
+}
+
+TEST(gd_mesh, CutMesh_get_node_patch_elems_Np2) {
+  int constexpr Np_1d = 2;
+  using T = double;
+  using Grid = StructuredGrid2D<T>;
+  using Mesh = CutMesh<T, Np_1d>;
+
+  json j = read_json("lsf_dof.json");
+
+  int nxy[2] = {j["nxy"], j["nxy"]};
+  T lxy[2] = {1.0, 1.0};
+  Grid grid(nxy, lxy);
+  Mesh mesh(grid);
+
+  mesh.get_lsf_dof() = std::vector<double>(j["lsf_dof"]);
+  mesh.update_mesh();
+
+  test_gdmesh_get_node_patch_elems(mesh);
+
+  for (auto& v : mesh.get_lsf_dof()) {
+    v *= -1.0;
+  }
+  mesh.update_mesh();
+
+  test_gdmesh_get_node_patch_elems(mesh);
+}

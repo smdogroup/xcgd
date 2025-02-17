@@ -277,6 +277,33 @@ class GridMesh : public GDMeshBase<T, Np_1d, Grid_> {
     return max_nnodes_per_element;
   }
 
+  std::set<int> get_node_patch_elems(int node) const {
+    std::set<int> ret;
+    int ixy[spatial_dim] = {-1, -1};
+    this->grid.get_vert_coords(node, ixy);
+
+    int ex = -1, ey = -1;
+    const int* nxy = this->grid.get_nxy();
+
+    // lower-left patch, if any
+    ex = std::max(0, ixy[0] - 1), ey = std::max(0, ixy[1] - 1);
+    ret.insert(this->grid.get_coords_cell(ex, ey));
+
+    // lower-right patch, if any
+    ex = std::min(nxy[0] - 1, ixy[0]), ey = std::max(0, ixy[1] - 1);
+    ret.insert(this->grid.get_coords_cell(ex, ey));
+
+    // upper-left patch, if any
+    ex = std::max(0, ixy[0] - 1), ey = std::min(nxy[1] - 1, ixy[1]);
+    ret.insert(this->grid.get_coords_cell(ex, ey));
+
+    // upper-right patch, if any
+    ex = std::min(nxy[0] - 1, ixy[0]), ey = std::min(nxy[1] - 1, ixy[1]);
+    ret.insert(this->grid.get_coords_cell(ex, ey));
+
+    return ret;
+  }
+
   std::vector<std::vector<bool>> get_elem_pstencil(int elem) const {
     std::vector<std::vector<bool>> pstencil(Np_1d);
     for (int I = 0; I < Np_1d; I++) {
@@ -441,6 +468,10 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
     return nnodes;
   }
 
+  std::set<int> get_node_patch_elems(int node) const {
+    return node_patch_elems.at(node);
+  }
+
   const Map<int, std::vector<int>>& get_elem_nodes() const {
     return elem_nodes;
   }
@@ -579,6 +610,7 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
     cell_elems.clear();
     cell_dirs.clear();
     regular_stencil_elems.clear();
+    node_patch_elems.clear();
 
     // LSF values are always associated with the ground grid verts, unlike the
     // dof values which might only be associated with part of the ground grid
@@ -681,6 +713,16 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
         if (is_regular_stencil) {
           regular_stencil_elems.insert(i);
         }
+      }
+    }
+
+    // Populate node -> element patches
+    for (int e = 0; e < num_elements; e++) {
+      int nodes[corner_nodes_per_element];
+      get_elem_corner_nodes(e, nodes);
+      for (int i = 0; i < corner_nodes_per_element; i++) {
+        int n = nodes[i];
+        node_patch_elems[n].insert(e);
       }
     }
 
@@ -967,6 +1009,9 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
   // Whether the element has the regular stencil
   // elements far from the boundaries usually have regular stencils
   std::set<int> regular_stencil_elems;
+
+  // node -> element patches
+  std::map<int, std::set<int>> node_patch_elems;
 };
 
 /**

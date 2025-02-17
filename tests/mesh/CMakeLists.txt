@@ -1,3 +1,5 @@
+configure_file(${CMAKE_SOURCE_DIR}/tests/mesh/lsf_dof.json lsf_dof.json COPYONLY)
+
 add_executable(test_gd_mesh test_gd_mesh.cpp)
 
 target_include_directories(test_gd_mesh PRIVATE
