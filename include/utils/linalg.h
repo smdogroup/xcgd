@@ -40,6 +40,29 @@ void direct_solve(int n, T A[], T b[]) {
   if (info != 0) throw LapackFailed("getrs", info);
 }
 
+template <typename T>
+class DirectSolve {
+ public:
+  DirectSolve(int n, const T A[]) : n(n), Avals(A, A + n * n), ipiv(n) {
+    int info = -1;
+    SparseUtils::LAPACKgetrf(n, n, Avals.data(), n, ipiv.data(), &info);
+    if (info != 0) throw LapackFailed("getrf", info);
+  }
+
+  void apply(T b[]) {
+    int info = -1;
+    int nrhs = 1;
+    SparseUtils::LAPACKgetrs('N', n, nrhs, Avals.data(), n, ipiv.data(), b, n,
+                             &info);
+    if (info != 0) throw LapackFailed("getrs", info);
+  }
+
+ private:
+  int n;
+  std::vector<T> Avals;
+  std::vector<int> ipiv;
+};
+
 /**
  * @brief compute inv(A)
  *

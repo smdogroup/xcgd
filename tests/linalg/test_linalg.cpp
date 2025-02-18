@@ -61,15 +61,48 @@ TEST(linalg, direct_solve_real) {
       0.38973682118594,  0.026879405874587, 0.809411720646246,
       0.151601808178256};
 
-  std::vector<double> b_real = {0.29826095992127, 0.570877905231764,
-                                0.320630282806731, 0.853680567385518,
-                                0.207552869779013};
-  std::vector<double> sol_real = {-1.311832518095597, 0.437432863316586,
-                                  -0.413853131069862, 0.973190293034837,
-                                  2.350996112312741};
+  std::vector<double> b1_real = {0.29826095992127, 0.570877905231764,
+                                 0.320630282806731, 0.853680567385518,
+                                 0.207552869779013};
+  std::vector<double> sol1_real = {-1.311832518095597, 0.437432863316586,
+                                   -0.413853131069862, 0.973190293034837,
+                                   2.350996112312741};
 
-  direct_solve(N, A_real.data(), b_real.data());
-  EXPECT_VEC_NEAR(N, b_real, sol_real, 1e-14);
+  direct_solve(N, A_real.data(), b1_real.data());
+  EXPECT_VEC_NEAR(N, b1_real, sol1_real, 1e-14);
+}
+
+TEST(linalg, direct_solve_class_real) {
+  constexpr static int N = 5;
+  std::vector<double> A_real = {
+      0.706731212977905, 0.68769964262544,  0.0403897726979,
+      0.938114614228867, 0.634843691845117, 0.701326357373972,
+      0.949496362380056, 0.381210102344509, 0.620529103555476,
+      0.328581092257033, 0.916427131220972, 0.363038635033342,
+      0.888136365460139, 0.62235765962521,  0.726312010447533,
+      0.024358753608401, 0.299693362200554, 0.525309093242787,
+      0.172146044070358, 0.863963137178775, 0.541962310550557,
+      0.38973682118594,  0.026879405874587, 0.809411720646246,
+      0.151601808178256};
+
+  std::vector<double> b1_real = {0.29826095992127, 0.570877905231764,
+                                 0.320630282806731, 0.853680567385518,
+                                 0.207552869779013};
+  std::vector<double> b2_real = {0.1984264342268846, 0.0906610153986548,
+                                 0.2536021029593606, 0.1889418067041156,
+                                 0.8599787888475174};
+  std::vector<double> sol1_real = {-1.311832518095597, 0.437432863316586,
+                                   -0.413853131069862, 0.973190293034837,
+                                   2.350996112312741};
+  std::vector<double> sol2_real = {1.0991554895864208, -0.5245427118695641,
+                                   0.322421773589861, 0.2822143638902147,
+                                   -0.9462943639479315};
+
+  DirectSolve<double> sol(N, A_real.data());
+  sol.apply(b1_real.data());
+  sol.apply(b2_real.data());
+  EXPECT_VEC_NEAR(N, b1_real, sol1_real, 1e-14);
+  EXPECT_VEC_NEAR(N, b2_real, sol2_real, 1e-14);
 }
 
 TEST(linalg, direct_solve_complex) {
@@ -117,6 +150,70 @@ TEST(linalg, direct_solve_complex) {
 
   direct_solve(N, A_complex.data(), b_complex.data());
   EXPECT_CPLX_VEC_NEAR(N, b_complex, sol_complex, 1e-14);
+}
+
+TEST(linalg, direct_solve_class_complex) {
+  constexpr static int N = 5;
+  std::vector<std::complex<double>> A_complex = {
+      std::complex<double>(0.706731212977905, 0.690134001174138),
+      std::complex<double>(0.68769964262544, 0.614833834640402),
+      std::complex<double>(0.0403897726979, 0.278064760541195),
+      std::complex<double>(0.938114614228867, 0.072623851304389),
+      std::complex<double>(0.634843691845117, 0.829601743028124),
+      std::complex<double>(0.701326357373972, 0.781018361093866),
+      std::complex<double>(0.949496362380056, 0.881461419804449),
+      std::complex<double>(0.381210102344509, 0.200440735664526),
+      std::complex<double>(0.620529103555476, 0.643074704193751),
+      std::complex<double>(0.328581092257033, 0.533314158720767),
+      std::complex<double>(0.916427131220972, 0.127118633103744),
+      std::complex<double>(0.363038635033342, 0.278103620296407),
+      std::complex<double>(0.888136365460139, 0.810775828771376),
+      std::complex<double>(0.62235765962521, 0.91949654877904),
+      std::complex<double>(0.726312010447533, 0.513645934801897),
+      std::complex<double>(0.024358753608401, 0.558072905278365),
+      std::complex<double>(0.299693362200554, 0.817575225245981),
+      std::complex<double>(0.525309093242787, 0.809770391179751),
+      std::complex<double>(0.172146044070358, 0.865949828572789),
+      std::complex<double>(0.863963137178775, 0.356303555657246),
+      std::complex<double>(0.541962310550557, 0.686761112022584),
+      std::complex<double>(0.38973682118594, 0.642394983144106),
+      std::complex<double>(0.026879405874587, 0.531848752206437),
+      std::complex<double>(0.809411720646246, 0.950824774290089),
+      std::complex<double>(0.151601808178256, 0.09059168417115)};
+
+  std::vector<std::complex<double>> b1_complex = {
+      std::complex<double>(0.29826095992127, 0.277736740500722),
+      std::complex<double>(0.570877905231764, 0.4696623123539),
+      std::complex<double>(0.320630282806731, 0.334180456573516),
+      std::complex<double>(0.853680567385518, 0.069111121927175),
+      std::complex<double>(0.207552869779013, 0.012618729713515)};
+
+  std::vector<std::complex<double>> sol1_complex = {
+      std::complex<double>(-0.002535482488589, 0.092668996649821),
+      std::complex<double>(0.053750638058231, 0.070022280526886),
+      std::complex<double>(-0.374734915990217, -0.012091173972356),
+      std::complex<double>(0.512987451833535, -0.00792218093855),
+      std::complex<double>(0.406159086362825, -0.707435603448901)};
+
+  std::vector<std::complex<double>> b2_complex = {
+      std::complex<double>(-0.002535482488589, 0.092668996649821),
+      std::complex<double>(0.053750638058231, 0.070022280526886),
+      std::complex<double>(-0.374734915990217, -0.012091173972356),
+      std::complex<double>(0.512987451833535, -0.00792218093855),
+      std::complex<double>(0.406159086362825, -0.707435603448901)};
+
+  std::vector<std::complex<double>> sol2_complex = {
+      std::complex<double>(0.2668873383561677, -0.467540665962378),
+      std::complex<double>(-0.6341627922400568, +0.0309480793412399),
+      std::complex<double>(-0.5743613193772088, -0.3165048044958452),
+      std::complex<double>(0.2040956557040404, -0.0022682450116388),
+      std::complex<double>(1.170972780365767, +0.2906782868605073)};
+
+  DirectSolve<std::complex<double>> sol(N, A_complex.data());
+  sol.apply(b1_complex.data());
+  sol.apply(b2_complex.data());
+  EXPECT_CPLX_VEC_NEAR(N, b1_complex, sol1_complex, 1e-14);
+  EXPECT_CPLX_VEC_NEAR(N, b2_complex, sol2_complex, 1e-14);
 }
 
 TEST(linalg, direct_inverse_real) {
