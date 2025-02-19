@@ -57,6 +57,23 @@ class DirectSolve {
     if (info != 0) throw LapackFailed("getrs", info);
   }
 
+  double cond(char norm = '1') {
+    double rcond = -1.0;
+    double Anorm = -1.0;
+    if (!(norm == '1' or norm == 'O' or norm == 'I')) {
+      char msg[256];
+      std::snprintf(msg, 256, "not supported norm: %c", norm);
+      throw std::runtime_error(msg);
+    }
+    Anorm = matrix_norm(norm, n, n, Avals.data());
+    xcgd_assert(Anorm > 0.0,
+                "negative Anorm encountered: " + std::to_string(Anorm));
+    int info = -1;
+    SparseUtils::LAPACKgecon(norm, n, Avals.data(), n, Anorm, &rcond, &info);
+    if (info != 0) throw LapackFailed("gecon", info);
+    return rcond;
+  }
+
  private:
   int n;
   std::vector<T> Avals;

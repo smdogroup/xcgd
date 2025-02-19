@@ -921,6 +921,73 @@ class GalerkinAnalysis final {
     return {xloc_q, energy_q};
   }
 
+  // identical to interpolate_energy(), except that the quadrature points and
+  // values are returned in a map instead of vector
+  // ret.first: map: element -> quad points
+  // ret.second: map: element -> quad values
+  //
+  std::pair<std::map<int, std::vector<T>>, std::map<int, std::vector<T>>>
+  interpolate_energy_map(const T dof[]) const {
+    std::map<int, std::vector<T>> xloc_q_map, energy_q_map;
+
+    for (int i = 0; i < mesh.get_num_elements(); i++) {
+      // Get nodes associated to this element
+      int nodes[Mesh::max_nnodes_per_element];
+      int nnodes;
+      if constexpr (from_to_grid_mesh) {
+        nnodes = mesh.get_cell_dof_verts(mesh.get_elem_cell(i), nodes);
+      } else {
+        nnodes = mesh.get_elem_dof_nodes(i, nodes);
+      }
+
+      // Get the element node locations
+      T element_xloc[spatial_dim * max_nnodes_per_element];
+      get_element_xloc<T, Mesh, Basis>(mesh, i, element_xloc);
+
+      // Get the element degrees of freedom
+      T element_dof[max_dof_per_element];
+      get_element_vars<T, dof_per_node, Basis>(nnodes, nodes, dof, element_dof);
+
+      std::vector<T> pts, wts, ns;
+      int num_quad_pts = quadrature.get_quadrature_pts(i, pts, wts, ns);
+
+      std::vector<T> N, Nxi;
+      basis.eval_basis_grad(i, pts, N, Nxi);
+
+      for (int j = 0; j < num_quad_pts; j++) {
+        int offset_n = j * max_nnodes_per_element;
+        int offset_nxi = j * max_nnodes_per_element * spatial_dim;
+
+        A2D::Vec<T, spatial_dim> xloc, nrm_ref;
+        A2D::Mat<T, spatial_dim, spatial_dim> J;
+        interp_val_grad<T, Basis, spatial_dim>(element_xloc, &N[offset_n],
+                                               &Nxi[offset_nxi], &xloc, &J);
+
+        typename Physics::dof_t vals{};
+        typename Physics::grad_t grad{}, grad_ref{};
+        interp_val_grad<T, Basis>(element_dof, &N[offset_n], &Nxi[offset_nxi],
+                                  &vals, &grad_ref);
+
+        // Transform gradient from ref coordinates to physical coordinates
+        transform(J, grad_ref, grad);
+
+        for (int d = 0; d < spatial_dim; d++) {
+          xloc_q_map[i].push_back(xloc(d));
+        }
+
+        if constexpr (Quadrature::quad_type == QuadPtType::SURFACE) {
+          for (int d = 0; d < spatial_dim; d++) {
+            nrm_ref[d] = ns[spatial_dim * j + d];
+          }
+        }
+
+        energy_q_map[i].push_back(
+            physics.energy(1.0, 0.0, xloc, nrm_ref, J, vals, grad));
+      }
+    }
+    return {xloc_q_map, energy_q_map};
+  }
+
   const Mesh& get_mesh() { return mesh; }
   const Quadrature& get_quadrature() { return quadrature; }
   const Basis& get_basis() { return basis; }

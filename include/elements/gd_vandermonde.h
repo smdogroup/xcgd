@@ -19,11 +19,13 @@
 enum class SurfQuad { LEFT, RIGHT, BOTTOM, TOP, NA };
 
 template <typename T, int Np_1d, QuadPtType quad_type = QuadPtType::INNER,
-          SurfQuad surf_quad = SurfQuad::NA, class Mesh = GridMesh<T, Np_1d>>
+          SurfQuad surf_quad = SurfQuad::NA, class Mesh = GridMesh<T, Np_1d>,
+          int nquad_1d = Np_1d>
 class GDGaussQuadrature2D final : public QuadratureBase<T, quad_type> {
  private:
   // algoim limit, see gaussquad.hpp
-  static_assert(Np_1d <= algoim::GaussQuad::p_max);  // algoim limit
+  static_assert(Np_1d <= algoim::GaussQuad::p_max);     // algoim limit
+  static_assert(nquad_1d <= algoim::GaussQuad::p_max);  // algoim limit
   static_assert((quad_type == QuadPtType::SURFACE) xor
                     (surf_quad == SurfQuad::NA),
                 "quad_type and surf_quad are not compatible");
@@ -32,8 +34,8 @@ class GDGaussQuadrature2D final : public QuadratureBase<T, quad_type> {
   GDGaussQuadrature2D(const Mesh& mesh, const std::set<int> elements = {})
       : mesh(mesh), elements(elements) {
     for (int i = 0; i < Np_1d; i++) {
-      pts_1d[i] = algoim::GaussQuad::x(Np_1d, i);  // in (0, 1)
-      wts_1d[i] = algoim::GaussQuad::w(Np_1d, i);
+      pts_1d[i] = algoim::GaussQuad::x(nquad_1d, i);  // in (0, 1)
+      wts_1d[i] = algoim::GaussQuad::w(nquad_1d, i);
     }
   }
 
@@ -56,19 +58,19 @@ class GDGaussQuadrature2D final : public QuadratureBase<T, quad_type> {
     int constexpr spatial_dim = Mesh::spatial_dim;
 
     if constexpr (quad_type == QuadPtType::INNER) {
-      static constexpr int num_quad_pts = Np_1d * Np_1d;
+      constexpr int num_quad_pts = nquad_1d * nquad_1d;
       pts.resize(spatial_dim * num_quad_pts);
       wts.resize(num_quad_pts);
-      for (int q = 0; q < num_quad_pts; q++) {  // q = i * Np_1d + j
-        int i = q / Np_1d;
-        int j = q % Np_1d;
+      for (int q = 0; q < num_quad_pts; q++) {  // q = i * nquad_1d + j
+        int i = q / nquad_1d;
+        int j = q % nquad_1d;
         pts[q * spatial_dim] = pts_1d[i];
         pts[q * spatial_dim + 1] = pts_1d[j];
         wts[q] = wts_1d[i] * wts_1d[j];
       }
       return num_quad_pts;
     } else {  // QuadPtType::SURFACE
-      static constexpr int num_quad_pts = Np_1d;
+      constexpr int num_quad_pts = nquad_1d;
       pts.resize(spatial_dim * num_quad_pts);
       ns.resize(spatial_dim * num_quad_pts);
       wts.resize(num_quad_pts);
@@ -103,7 +105,7 @@ class GDGaussQuadrature2D final : public QuadratureBase<T, quad_type> {
  private:
   const Mesh& mesh;
   std::set<int> elements;
-  std::array<T, Np_1d> pts_1d, wts_1d;
+  std::array<T, nquad_1d> pts_1d, wts_1d;
 };
 
 // Forward declaration
@@ -112,11 +114,13 @@ class GDBasis2D;
 
 template <typename T, int Np_1d, QuadPtType quad_type = QuadPtType::INNER,
           class Grid = StructuredGrid2D<T>,
-          NodeStrategy node_strategy = NodeStrategy::AllowOutsideLSF>
+          NodeStrategy node_strategy = NodeStrategy::AllowOutsideLSF,
+          int nquad_1d = Np_1d>
 class GDLSFQuadrature2D final : public QuadratureBase<T, quad_type> {
  private:
   // algoim limit, see gaussquad.hpp
-  static_assert(Np_1d <= algoim::GaussQuad::p_max);  // algoim limit
+  static_assert(Np_1d <= algoim::GaussQuad::p_max);     // algoim limit
+  static_assert(nquad_1d <= algoim::GaussQuad::p_max);  // algoim limit
   using GridMesh_ = GridMesh<T, Np_1d, Grid>;
   using CutMesh_ = CutMesh<T, Np_1d, Grid, node_strategy>;
   using Basis = GDBasis2D<T, CutMesh_>;
@@ -263,7 +267,7 @@ class GDLSFQuadrature2D final : public QuadratureBase<T, quad_type> {
     algoim::ImplicitPolyQuadrature<spatial_dim, T2> ipquad(phi);
     if constexpr (quad_type == QuadPtType::INNER) {
       ipquad.integrate(
-          algoim::AutoMixed, Np_1d,
+          algoim::AutoMixed, nquad_1d,
           [&](const algoim::uvector<T2, spatial_dim>& x, T2 w) {
             if (algoim::bernstein::evalBernsteinPoly(phi, x) <= 0.0) {
               for (int d = 0; d < spatial_dim; d++) {
@@ -281,7 +285,7 @@ class GDLSFQuadrature2D final : public QuadratureBase<T, quad_type> {
             }
           });
     } else {  // quad_type == QuadPtType::SURFACE
-      ipquad.integrate_surf(algoim::AutoMixed, Np_1d,
+      ipquad.integrate_surf(algoim::AutoMixed, nquad_1d,
                             [&](const algoim::uvector<T2, spatial_dim>& x, T2 w,
                                 const algoim::uvector<T2, spatial_dim>& _) {
                               // Evaluate the gradient on the quadrature point
