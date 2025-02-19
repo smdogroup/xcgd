@@ -15,6 +15,7 @@
 #include "apps/convolution_filter.h"
 #include "apps/helmholtz_filter.h"
 #include "apps/robust_projection.h"
+#include "apps/spr.h"
 #include "apps/static_elastic.h"
 #include "elements/element_utils.h"
 #include "elements/gd_vandermonde.h"
@@ -449,6 +450,12 @@ class TopoAnalysis {
   using StressAnalysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Stress>;
   using StressKSAnalysis =
       GalerkinAnalysis<T, Mesh, Quadrature, Basis, StressKS, use_ersatz>;
+  using StrainStress = LinearElasticity2DStrainStress<T>;
+  using StrainStressAnalysis =
+      GalerkinAnalysis<T, Mesh, Quadrature, Basis, StrainStress, use_ersatz>;
+  using BulkInt = BulkIntegration<T, Grid::spatial_dim>;
+  using BulkIntAnalysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, BulkInt>;
+  using SPRStress = SPRStress2D<T, Np_1d, Grid, Mesh, Basis, use_ersatz>;
 
   using LoadPhysics =
       ElasticityExternalLoad<T, Basis::spatial_dim, typeof(load_func)>;
@@ -497,6 +504,22 @@ class TopoAnalysis {
                   parser.get_bool_option("stress_use_discrete_ks")),
         stress_ks_analysis(erode_mesh, erode_quadrature, erode_basis,
                            stress_ks),
+        strain_stress_sx(parser.get_double_option("E"),
+                         parser.get_double_option("nu"), StrainStressType::sx),
+        strain_stress_sy(parser.get_double_option("E"),
+                         parser.get_double_option("nu"), StrainStressType::sy),
+        strain_stress_sxy(parser.get_double_option("E"),
+                          parser.get_double_option("nu"),
+                          StrainStressType::sxy),
+        strain_stress_sx_analysis(erode_mesh, erode_quadrature, erode_basis,
+                                  strain_stress_sx),
+        strain_stress_sy_analysis(erode_mesh, erode_quadrature, erode_basis,
+                                  strain_stress_sy),
+        strain_stress_sxy_analysis(erode_mesh, erode_quadrature, erode_basis,
+                                   strain_stress_sxy),
+        bulk_int_analysis(erode_mesh, erode_quadrature, erode_basis, bulk_int),
+        spr_stress(erode_mesh, erode_basis, parser.get_double_option("E"),
+                   parser.get_double_option("nu")),
         phi_erode(erode_mesh.get_lsf_dof()),
         phi_dilate(dilate_mesh.get_lsf_dof()),
         phi_blueprint(phi_dilate.size(), 0.0),
@@ -788,6 +811,7 @@ class TopoAnalysis {
     double area_frac = parser.get_double_option("area_frac");
     bool stress_use_discrete_ks =
         parser.get_bool_option("stress_use_discrete_ks");
+    bool stress_use_spr = parser.get_bool_option("stress_use_spr");
 
     std::shared_ptr<SparseUtils::SparseCholesky<T>> chol;
     std::vector<T> HFx;
@@ -805,7 +829,34 @@ class TopoAnalysis {
     T max_stress = *std::max_element(stress_q.begin(), stress_q.end());
     T max_stress_ratio = max_stress / stress_ks.get_yield_stress();
     stress_ks.set_max_stress_ratio(max_stress_ratio);
-    T ks_energy = stress_ks_analysis.energy(nullptr, sol.data());
+
+    T ks_energy = 0.0;
+    if (stress_use_spr) {
+      xcgd_assert(false, "option stress_use_spr is WIP and not ready");
+      xcgd_assert(stress_use_discrete_ks, "spr must work with discrete ks");
+      auto [sx_nodal, sy_nodal, sxy_nodal] = spr_stress.apply(sol.data());
+
+      // Eval quad stress components
+      std::vector<T> sx_q =
+          vol_analysis.template interpolate<1>(sx_nodal.data()).second;
+      std::vector<T> sy_q =
+          vol_analysis.template interpolate<1>(sy_nodal.data()).second;
+      std::vector<T> sxy_q =
+          vol_analysis.template interpolate<1>(sxy_nodal.data()).second;
+
+      // Eval the discrete ks of recovered Von-mises stress
+      xcgd_assert(sx_q.size() == sy_q.size(), "inconsistent dimensions");
+      xcgd_assert(sx_q.size() == sxy_q.size(), "inconsistent dimensions");
+
+      int nq = sx_q.size();
+      for (int q = 0; q < nq; q++) {
+        T vm = sqrt(sx_q[q] * sx_q[q] - sx_q[q] * sy_q[q] + sy_q[q] * sy_q[q] +
+                    3.0 * sxy_q[q] * sxy_q[q]);
+        ks_energy += vm;
+      }
+    } else {
+      ks_energy = stress_ks_analysis.energy(nullptr, sol.data());
+    }
 
     // Evaluate continuous or discrete ks aggregation
     T ks_stress_ratio = 0.0;
@@ -1223,6 +1274,12 @@ class TopoAnalysis {
   StressAnalysis stress_analysis;
   StressKS stress_ks;
   StressKSAnalysis stress_ks_analysis;
+  StrainStress strain_stress_sx, strain_stress_sy, strain_stress_sxy;
+  StrainStressAnalysis strain_stress_sx_analysis, strain_stress_sy_analysis,
+      strain_stress_sxy_analysis;
+  BulkInt bulk_int;
+  BulkIntAnalysis bulk_int_analysis;
+  SPRStress spr_stress;
 
   // level-set values for blueprint, dilate and erode design
   std::vector<T>& phi_erode;
