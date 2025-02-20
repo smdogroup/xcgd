@@ -179,6 +179,26 @@ void test_poisson_cut_dirichlet(
 }
 
 template <class Quadrature, class Basis>
+void test_poisson_cut_dirichlet_eig_k(
+    std::tuple<typename Basis::Mesh *, Quadrature *, Basis *> tuple,
+    double h = 1e-5, double tol = 1e-12) {
+  using Physics =
+      PoissonCutDirichletNitscheParameterEigK<T, Basis::spatial_dim>;
+  Physics physics;
+  test_physics_fd(tuple, physics, h, tol);
+}
+
+template <class Quadrature, class Basis>
+void test_poisson_cut_dirichlet_eig_m(
+    std::tuple<typename Basis::Mesh *, Quadrature *, Basis *> tuple,
+    double h = 1e-5, double tol = 1e-12) {
+  using Physics =
+      PoissonCutDirichletNitscheParameterEigM<T, Basis::spatial_dim>;
+  Physics physics;
+  test_physics_fd(tuple, physics, h, tol);
+}
+
+template <class Quadrature, class Basis>
 void test_elasticity_external_load(
     std::tuple<typename Basis::Mesh *, Quadrature *, Basis *> tuple,
     double h = 1e-5, double tol = 1e-10) {
@@ -231,6 +251,14 @@ void test_linear_elasticity_cut_dirichlet(
 
 TEST(physics, PoissonCutDirichlet) {
   test_poisson_cut_dirichlet(create_gd_lsf_surf_basis(), 1e-5, 1e-10);
+}
+
+TEST(physics, PoissonCutDirichletEigK) {
+  test_poisson_cut_dirichlet_eig_k(create_gd_lsf_surf_basis(), 1e-5, 1e-10);
+}
+
+TEST(physics, PoissonCutDirichletEigM) {
+  test_poisson_cut_dirichlet_eig_m(create_gd_lsf_surf_basis(), 1e-5, 1e-10);
 }
 
 TEST(physics, LinearElasticityCutDirichlet) {
