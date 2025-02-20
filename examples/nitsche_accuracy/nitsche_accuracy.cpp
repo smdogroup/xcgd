@@ -265,19 +265,10 @@ void execute_accuracy_study(std::string prefix, ProbInstance instance,
   using T = double;
   using Grid = StructuredGrid2D<T>;
 
-  // constexpr NodeStrategy node_strategy_bulk =
-  //     NodeStrategy::StrictlyInsideLSF;  // this does not work
-  constexpr NodeStrategy node_strategy_bulk = NodeStrategy::AllowOutsideLSF;
-  constexpr NodeStrategy node_strategy_bcs = NodeStrategy::AllowOutsideLSF;
-
-  using QuadratureBulk =
-      GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER, Grid, node_strategy_bulk>;
-  using QuadratureBCs =
-      GDLSFQuadrature2D<T, Np_1d, QuadPtType::SURFACE, Grid, node_strategy_bcs>;
-  using MeshBulk =
-      CutMesh<T, Np_1d, StructuredGrid2D<T>, NodeStrategy::StrictlyInsideLSF>;
-  using MeshBCs =
-      CutMesh<T, Np_1d, StructuredGrid2D<T>, NodeStrategy::AllowOutsideLSF>;
+  using QuadratureBulk = GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER, Grid>;
+  using QuadratureBCs = GDLSFQuadrature2D<T, Np_1d, QuadPtType::SURFACE, Grid>;
+  using MeshBulk = CutMesh<T, Np_1d, StructuredGrid2D<T>>;
+  using MeshBCs = CutMesh<T, Np_1d, StructuredGrid2D<T>>;
 
   using BasisBulk = GDBasis2D<T, MeshBulk>;
   using BasisBCs = GDBasis2D<T, MeshBCs>;

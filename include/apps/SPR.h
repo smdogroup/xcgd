@@ -26,9 +26,8 @@ class SPRStress2D {
   static constexpr int nsamples_per_elem_1d = Np_1d - 1;
   static constexpr int spatial_dim = Basis::spatial_dim;
   // TODO: don't hardcode quadrature class as GDLSFQuadrature2D
-  using SPRSampler =
-      GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER, Grid,
-                        NodeStrategy::AllowOutsideLSF, nsamples_per_elem_1d>;
+  using SPRSampler = GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER, Grid,
+                                       nsamples_per_elem_1d>;
   using StrainStress = LinearElasticity2DStrainStress<T>;
   using SPRAnalysis =
       GalerkinAnalysis<T, Mesh, SPRSampler, Basis, StrainStress, use_ersatz>;

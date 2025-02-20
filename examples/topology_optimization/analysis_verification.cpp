@@ -172,9 +172,8 @@ void execute(ArgParser& p) {
     StopWatch watch;
     constexpr int nsamples_per_elem_1d = Np_1d - 1;
     constexpr int Amat_dim = Np_1d * Np_1d;  // for 2d problem
-    using SPRSampler =
-        GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER, Grid,
-                          NodeStrategy::AllowOutsideLSF, nsamples_per_elem_1d>;
+    using SPRSampler = GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER, Grid,
+                                         nsamples_per_elem_1d>;
     SPRSampler spr_sampler(mesh);
 
     using SPRAnalysis =
