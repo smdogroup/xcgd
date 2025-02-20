@@ -914,8 +914,10 @@ class GalerkinAnalysis final {
           }
         }
 
+        T detJ;
+        A2D::MatDet(J, detJ);
         energy_q.push_back(
-            physics.energy(1.0, 0.0, xloc, nrm_ref, J, vals, grad));
+            physics.energy(1.0 / detJ, 0.0, xloc, nrm_ref, J, vals, grad));
       }
     }
     return {xloc_q, energy_q};
@@ -981,8 +983,10 @@ class GalerkinAnalysis final {
           }
         }
 
+        T detJ;
+        A2D::MatDet(J, detJ);
         energy_q_map[i].push_back(
-            physics.energy(1.0, 0.0, xloc, nrm_ref, J, vals, grad));
+            physics.energy(1.0 / detJ, 0.0, xloc, nrm_ref, J, vals, grad));
       }
     }
     return {xloc_q_map, energy_q_map};

@@ -356,10 +356,10 @@ enum class NodeStrategy { AllowOutsideLSF, StrictlyInsideLSF };
  * @brief The Galerkin difference mesh defined on a structured
  * grid with cuts defined by a level set function
  */
-template <typename T, int Np_1d, class Grid_ = StructuredGrid2D<T>,
-          NodeStrategy node_strategy = NodeStrategy::AllowOutsideLSF>
+template <typename T, int Np_1d, class Grid_ = StructuredGrid2D<T>>
 class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
  private:
+  constexpr static NodeStrategy node_strategy = NodeStrategy::AllowOutsideLSF;
   using MeshBase = GDMeshBase<T, Np_1d, Grid_>;
   using LSFMesh = GridMesh<T, Np_1d, Grid_>;
 

@@ -113,23 +113,27 @@ template <typename T, class Mesh>
 class GDBasis2D;
 
 template <typename T, int Np_1d, QuadPtType quad_type = QuadPtType::INNER,
-          class Grid = StructuredGrid2D<T>,
-          NodeStrategy node_strategy = NodeStrategy::AllowOutsideLSF,
-          int nquad_1d = Np_1d>
+          class Grid = StructuredGrid2D<T>, int nquad_1d = Np_1d>
 class GDLSFQuadrature2D final : public QuadratureBase<T, quad_type> {
+ public:
+  using BulkQuad =
+      GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER, Grid, nquad_1d>;
+  using BCQuad =
+      GDLSFQuadrature2D<T, Np_1d, QuadPtType::SURFACE, Grid, nquad_1d>;
+
  private:
   // algoim limit, see gaussquad.hpp
   static_assert(Np_1d <= algoim::GaussQuad::p_max);     // algoim limit
   static_assert(nquad_1d <= algoim::GaussQuad::p_max);  // algoim limit
   using GridMesh_ = GridMesh<T, Np_1d, Grid>;
-  using CutMesh_ = CutMesh<T, Np_1d, Grid, node_strategy>;
+  using CutMesh_ = CutMesh<T, Np_1d, Grid>;
   using Basis = GDBasis2D<T, CutMesh_>;
 
   constexpr static int spatial_dim = Basis::spatial_dim;
   constexpr static int max_nnodes_per_element = Basis::max_nnodes_per_element;
 
  public:
-  GDLSFQuadrature2D(const CutMesh_& mesh)
+  GDLSFQuadrature2D(CutMesh_& mesh)
       : mesh(mesh), lsf_mesh(mesh.get_lsf_mesh()) {}
 
   /**
@@ -324,7 +328,7 @@ class GDLSFQuadrature2D final : public QuadratureBase<T, quad_type> {
 
   // Mesh for physical dof. Dof nodes is a subset of grid verts due to
   // LSF-cut.
-  const CutMesh_& mesh;
+  CutMesh_& mesh;
 
   // Mesh for the LSF dof. All grid verts are dof nodes.
   const GridMesh_& lsf_mesh;
