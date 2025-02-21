@@ -92,7 +92,7 @@ def annotate_slope(
     return
 
 
-def run_experiments(run_name, instance):
+def run_experiments(run_name, instance, save_vtk: bool):
     logpath = f"{run_name}.log"
     open(logpath, "w").close()  # erase existing file
 
@@ -113,7 +113,7 @@ def run_experiments(run_name, instance):
                 f"--Np_1d={Np_1d}",
                 f"--nxy={nxy}",
                 f"--prefix={prefix}",
-                "--save-vtk=0",
+                f"--save-vtk={int(save_vtk)}",
             ]
 
             t1 = time()
@@ -180,12 +180,13 @@ if __name__ == "__main__":
     p.add_argument("--csv", type=str)
     p.add_argument("--voffset", default=-0.2, type=float)
     p.add_argument("--voffset_text", default=-0.4, type=float)
+    p.add_argument("--save-vtk", action="store_true")
     args = p.parse_args()
 
     run_name = f"energy_precision_{args.instance}"
 
     if args.csv is None:
-        df = run_experiments(run_name, args.instance)
+        df = run_experiments(run_name, args.instance, args.save_vtk)
     else:
         df = pd.read_csv(args.csv)
     print(df)
