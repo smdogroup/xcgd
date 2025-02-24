@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "elements/gd_mesh.h"
+#include "elements/lbracket_mesh.h"
 #include "test_commons.h"
 #include "utils/json.h"
 #include "utils/vtk.h"
@@ -218,87 +219,87 @@ void test_gdmesh_get_node_patch_elems_node_ranges(const GDMesh& mesh) {
 }
 
 TEST(gd_mesh, GridMesh_elem_patch_Np2) {
-  int constexpr Np_1d = 2;
   using T = double;
+  int constexpr Np_1d = 2;
   using Grid = StructuredGrid2D<T>;
-  using Mesh = GridMesh<T, Np_1d>;
-
+  using Mesh = GridMesh<T, Np_1d, Grid>;
   int nxy[2] = {10, 6};
   T lxy[2] = {1.0, 1.0};
   Grid grid(nxy, lxy);
   Mesh mesh(grid);
-
   test_gdmesh_get_node_patch_elems(mesh);
   test_gdmesh_get_node_patch_elems_node_ranges<T>(mesh);
 }
 
 TEST(gd_mesh, GridMesh_elem_patch_Np4) {
-  int constexpr Np_1d = 4;
   using T = double;
+  int constexpr Np_1d = 4;
   using Grid = StructuredGrid2D<T>;
-  using Mesh = GridMesh<T, Np_1d>;
-
+  using Mesh = GridMesh<T, Np_1d, Grid>;
   int nxy[2] = {10, 6};
   T lxy[2] = {1.0, 1.0};
   Grid grid(nxy, lxy);
   Mesh mesh(grid);
+  test_gdmesh_get_node_patch_elems(mesh);
+  test_gdmesh_get_node_patch_elems_node_ranges<T>(mesh);
+}
+
+TEST(gd_mesh, LbracketGridMesh_elem_patch_Np2) {
+  using T = double;
+  int constexpr Np_1d = 2;
+  using Grid = LbracketGrid2D<T>;
+  using Mesh = GridMesh<T, Np_1d, Grid>;
+  int nx1 = 10, nx2 = 4, ny1 = 4, ny2 = 6;
+  T lx1 = 1.0, ly1 = 0.4;
+  Grid grid(nx1, nx2, ny1, ny2, lx1, ly1);
+  Mesh mesh(grid);
+  test_gdmesh_get_node_patch_elems(mesh);
+  test_gdmesh_get_node_patch_elems_node_ranges<T>(mesh);
+}
+
+TEST(gd_mesh, LbracketGridMesh_elem_patch_Np4) {
+  using T = double;
+  int constexpr Np_1d = 4;
+  using Grid = LbracketGrid2D<T>;
+  using Mesh = GridMesh<T, Np_1d, Grid>;
+  int nx1 = 10, nx2 = 4, ny1 = 4, ny2 = 6;
+  T lx1 = 1.0, ly1 = 0.4;
+  Grid grid(nx1, nx2, ny1, ny2, lx1, ly1);
+  Mesh mesh(grid);
+  test_gdmesh_get_node_patch_elems(mesh);
+  test_gdmesh_get_node_patch_elems_node_ranges<T>(mesh);
+}
+
+template <typename T, class Grid, int Np_1d>
+void test_elem_patch_cut_mesh() {
+  using Mesh = CutMesh<T, Np_1d>;
+
+  json j = read_json("lsf_dof.json");
+
+  int nxy[2] = {j["nxy"], j["nxy"]};
+  T lxy[2] = {1.0, 1.0};
+  Grid grid(nxy, lxy);
+  Mesh mesh(grid);
+
+  mesh.get_lsf_dof() = std::vector<double>(j["lsf_dof"]);
+  mesh.update_mesh();
+
+  test_gdmesh_get_node_patch_elems(mesh);
+  test_gdmesh_get_node_patch_elems_node_ranges<T>(mesh);
+
+  for (auto& v : mesh.get_lsf_dof()) {
+    v *= -1.0;
+  }
+  mesh.update_mesh();
 
   test_gdmesh_get_node_patch_elems(mesh);
   test_gdmesh_get_node_patch_elems_node_ranges<T>(mesh);
 }
 
 TEST(gd_mesh, CutMesh_elem_patch_Np2) {
-  int constexpr Np_1d = 2;
-  using T = double;
-  using Grid = StructuredGrid2D<T>;
-  using Mesh = CutMesh<T, Np_1d>;
-
-  json j = read_json("lsf_dof.json");
-
-  int nxy[2] = {j["nxy"], j["nxy"]};
-  T lxy[2] = {1.0, 1.0};
-  Grid grid(nxy, lxy);
-  Mesh mesh(grid);
-
-  mesh.get_lsf_dof() = std::vector<double>(j["lsf_dof"]);
-  mesh.update_mesh();
-
-  test_gdmesh_get_node_patch_elems(mesh);
-  test_gdmesh_get_node_patch_elems_node_ranges<T>(mesh);
-
-  for (auto& v : mesh.get_lsf_dof()) {
-    v *= -1.0;
-  }
-  mesh.update_mesh();
-
-  test_gdmesh_get_node_patch_elems(mesh);
-  test_gdmesh_get_node_patch_elems_node_ranges<T>(mesh);
+  test_elem_patch_cut_mesh<double, StructuredGrid2D<double>, 2>();
 }
 
 TEST(gd_mesh, CutMesh_elem_patch_Np4) {
-  int constexpr Np_1d = 4;
-  using T = double;
-  using Grid = StructuredGrid2D<T>;
-  using Mesh = CutMesh<T, Np_1d>;
-
-  json j = read_json("lsf_dof.json");
-
-  int nxy[2] = {j["nxy"], j["nxy"]};
-  T lxy[2] = {1.0, 1.0};
-  Grid grid(nxy, lxy);
-  Mesh mesh(grid);
-
-  mesh.get_lsf_dof() = std::vector<double>(j["lsf_dof"]);
-  mesh.update_mesh();
-
-  test_gdmesh_get_node_patch_elems(mesh);
-  test_gdmesh_get_node_patch_elems_node_ranges<T>(mesh);
-
-  for (auto& v : mesh.get_lsf_dof()) {
-    v *= -1.0;
-  }
-  mesh.update_mesh();
-
-  test_gdmesh_get_node_patch_elems(mesh);
-  test_gdmesh_get_node_patch_elems_node_ranges<T>(mesh);
+  test_elem_patch_cut_mesh<double, StructuredGrid2D<double>, 4>();
 }

@@ -641,4 +641,37 @@ class PoissonCutDirichletNitscheParameterEigM final
   }
 };
 
+// Energy norm ||e|| = (∫(u - uh)^2 + (du - duh)^T(du - duh) )^0.5
+template <typename T, int spatial_dim, class u_fun_t, class stress_fun_t>
+class PoissonEnergyNorm final : public PhysicsBase<T, spatial_dim, 0, 1> {
+ public:
+  PoissonEnergyNorm(const u_fun_t& u_fun, const stress_fun_t& stress_fun,
+                    double c1 = 1.0, double c2 = 1.0)
+      : u_fun(u_fun), stress_fun(stress_fun), c1(c1), c2(c2) {}
+
+  T energy(T weight, T _, A2D::Vec<T, spatial_dim>& xloc,
+           A2D::Vec<T, spatial_dim>& ___,
+           A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
+           A2D::Vec<T, spatial_dim>& grad) const {
+    T detJ;
+    A2D::MatDet(J, detJ);
+
+    T u_diff = u_fun(xloc) - val;
+
+    A2D::Vec<T, spatial_dim> du_diff;
+    for (int d = 0; d < spatial_dim; d++) {
+      du_diff(d) = stress_fun(xloc)(d) - grad(d);
+    }
+    T du_diff_dot = 0.0;
+    A2D::VecDot(du_diff, du_diff, du_diff_dot);
+
+    return weight * detJ * (c1 * u_diff * u_diff + c2 * du_diff_dot);
+  }
+
+ private:
+  const u_fun_t& u_fun;
+  const stress_fun_t& stress_fun;
+  double c1, c2;
+};
+
 #endif  // XCGD_POISSON_H

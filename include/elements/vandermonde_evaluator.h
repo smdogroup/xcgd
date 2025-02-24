@@ -300,7 +300,7 @@ class VandermondeEvaluator {
     perm.resize(nnodes);
     iperm.resize(nnodes);
     std::iota(perm.begin(), perm.end(),
-              0);  // set values0 , 1, 2, ...
+              0);  // set values to 0, 1, 2, ...
     std::sort(perm.begin(), perm.end(), [this, &nodes](int p1, int p2) {
       return this->mesh.get_node_vert(nodes[p1]) <
              this->mesh.get_node_vert(nodes[p2]);

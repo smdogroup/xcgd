@@ -1,9 +1,7 @@
-#include "ad/a2dvecnorm.h"
 #include "apps/poisson_app.h"
 #include "apps/static_elastic.h"
 #include "elements/gd_mesh.h"
 #include "elements/gd_vandermonde.h"
-#include "physics/volume.h"
 #include "utils/argparser.h"
 #include "utils/json.h"
 #include "utils/vtk.h"
@@ -11,45 +9,17 @@
 #define PI 3.14159265358979323846
 #define k (1.4 * PI)
 
-// Energy norm ||e|| = (∫(u - uh)^2 + (du - duh)^T(du - duh) )^0.5
-template <typename T, int spatial_dim, class u_fun_t, class stress_fun_t>
-class PoissonEnergyNorm final : public PhysicsBase<T, spatial_dim, 0, 1> {
- public:
-  PoissonEnergyNorm(const u_fun_t& u_fun, const stress_fun_t& stress_fun,
-                    double c1 = 1.0, double c2 = 1.0)
-      : u_fun(u_fun), stress_fun(stress_fun), c1(c1), c2(c2) {}
-
-  T energy(T weight, T _, A2D::Vec<T, spatial_dim>& xloc,
-           A2D::Vec<T, spatial_dim>& ___,
-           A2D::Mat<T, spatial_dim, spatial_dim>& J, T& val,
-           A2D::Vec<T, spatial_dim>& grad) const {
-    T detJ;
-    A2D::MatDet(J, detJ);
-
-    T u_diff = u_fun(xloc) - val;
-
-    A2D::Vec<T, spatial_dim> du_diff;
-    for (int d = 0; d < spatial_dim; d++) {
-      du_diff(d) = stress_fun(xloc)(d) - grad(d);
-    }
-    T du_diff_dot = 0.0;
-    A2D::VecDot(du_diff, du_diff, du_diff_dot);
-
-    return weight * detJ * (c1 * u_diff * u_diff + c2 * du_diff_dot);
-  }
-
- private:
-  const u_fun_t& u_fun;
-  const stress_fun_t& stress_fun;
-  double c1, c2;
-};
-
 template <int Np_1d>
 void execute(std::string prefix, int nxy, std::string instance, bool save_vtk) {
   using T = double;
   using Grid = StructuredGrid2D<T>;
-  using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
-  using Mesh = CutMesh<T, Np_1d>;
+
+  // using Mesh = CutMesh<T, Np_1d>;
+  // using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
+
+  using Mesh = FiniteCellMesh<T, Np_1d>;
+  using Quadrature =
+      GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER, Grid, Np_1d, Mesh>;
   using Basis = GDBasis2D<T, Mesh>;
   constexpr int spatial_dim = Basis::spatial_dim;
 

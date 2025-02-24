@@ -81,6 +81,10 @@ class StructuredGrid2D final {
     return (ix >= 0 and ix <= nxy[0] and iy >= 0 and iy <= nxy[1]);
   }
 
+  inline bool is_valid_cell(int ex, int ey) const {
+    return (ex >= 0 and ex < nxy[0] and ey >= 0 and ey < nxy[1]);
+  }
+
   // coordinates -> vert
   inline int get_coords_vert(int ix, int iy) const {
     return ix + (nxy[0] + 1) * iy;
@@ -283,23 +287,30 @@ class GridMesh : public GDMeshBase<T, Np_1d, Grid_> {
     this->grid.get_vert_coords(node, ixy);
 
     int ex = -1, ey = -1;
-    const int* nxy = this->grid.get_nxy();
 
     // lower-left patch, if any
-    ex = std::max(0, ixy[0] - 1), ey = std::max(0, ixy[1] - 1);
-    ret.insert(this->grid.get_coords_cell(ex, ey));
+    ex = ixy[0] - 1, ey = ixy[1] - 1;
+    if (this->grid.is_valid_cell(ex, ey)) {
+      ret.insert(this->grid.get_coords_cell(ex, ey));
+    }
 
     // lower-right patch, if any
-    ex = std::min(nxy[0] - 1, ixy[0]), ey = std::max(0, ixy[1] - 1);
-    ret.insert(this->grid.get_coords_cell(ex, ey));
+    ex = ixy[0], ey = ixy[1] - 1;
+    if (this->grid.is_valid_cell(ex, ey)) {
+      ret.insert(this->grid.get_coords_cell(ex, ey));
+    }
 
     // upper-left patch, if any
-    ex = std::max(0, ixy[0] - 1), ey = std::min(nxy[1] - 1, ixy[1]);
-    ret.insert(this->grid.get_coords_cell(ex, ey));
+    ex = ixy[0] - 1, ey = ixy[1];
+    if (this->grid.is_valid_cell(ex, ey)) {
+      ret.insert(this->grid.get_coords_cell(ex, ey));
+    }
 
     // upper-right patch, if any
-    ex = std::min(nxy[0] - 1, ixy[0]), ey = std::min(nxy[1] - 1, ixy[1]);
-    ret.insert(this->grid.get_coords_cell(ex, ey));
+    ex = ixy[0], ey = ixy[1];
+    if (this->grid.is_valid_cell(ex, ey)) {
+      ret.insert(this->grid.get_coords_cell(ex, ey));
+    }
 
     return ret;
   }
@@ -351,6 +362,15 @@ class GridMesh : public GDMeshBase<T, Np_1d, Grid_> {
 // - StrictlyInsideLSF: typically for cut elements, don't allow vertices outside
 // the boundary defined by the level-set function to be used as dof nodes
 enum class NodeStrategy { AllowOutsideLSF, StrictlyInsideLSF };
+
+// // - Original: original stencil strategy, for high order elements near the
+// cut
+// // boundary, we tend to modify the stencil nodes by pushing them inward
+// // - FiniceCell: finite-cell-like stencil strategy, where we do not modify
+// the
+// // stencil for elements, potentially resulting more dof nodes for a same LSF
+// // boundary
+// enum class StencilStrategy { Original, FiniteCell };
 
 /**
  * @brief The Galerkin difference mesh defined on a structured
@@ -531,10 +551,14 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
 
   inline const std::map<int, int>& get_cell_elems() const { return cell_elems; }
 
-  // Update the mesh as well as the element->node mapping
+  // Update the mesh as well as the element -> node mapping
   inline void update_mesh() {
-    // update_mesh_spiral();
-    update_mesh_push();
+    // First, we update on which vertex we have a dof node
+    update_mesh_dof_nodes();
+
+    // Then, we update the element -> node mapping
+    // update_mesh_elem_node_mapping_spiral();
+    update_mesh_elem_node_mapping_push();
   }
 
   inline const Map<int, int>& get_vert_nodes() const { return vert_nodes; }
@@ -603,9 +627,20 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
     }
   }
 
-  // Update the mesh when the lsf_dof is updated
-  void update_mesh_init() {
-    elem_nodes.clear();
+  // Update the dof nodes when the level-set function is updated, specifically,
+  // the following variables and mappings are updated:
+  //
+  // Variables:
+  //   - num nodes
+  //
+  // Mappings:
+  //   - node -> vertex, vertex -> node
+  //   - element -> cell, cell -> element
+  //   - push direction of each cell
+  //   - if element has regular stencil
+  //   - node -> path elements
+  //   - if element is cut element
+  void update_mesh_dof_nodes() {
     node_verts.clear();
     vert_nodes.clear();
     elem_cells.clear();
@@ -734,8 +769,8 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
 #endif
   }
 
-  void update_mesh_spiral() {
-    update_mesh_init();
+  void update_mesh_elem_node_mapping_spiral() {
+    elem_nodes.clear();
 
     for (int elem = 0; elem < num_elements; elem++) {
       // Initialize elem -> nodes
@@ -802,8 +837,8 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
     }
   }
 
-  void update_mesh_push() {
-    update_mesh_init();
+  void update_mesh_elem_node_mapping_push() {
+    elem_nodes.clear();
 
     for (int elem = 0; elem < num_elements; elem++) {
       // Initialize elem -> nodes
@@ -1009,11 +1044,318 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
   std::set<int> cut_elems;
 
   // Whether the element has the regular stencil
-  // elements far from the boundaries usually have regular stencils
+  // elements far from the cut or grid boundaries usually have regular stencils
   std::set<int> regular_stencil_elems;
 
   // node -> element patches
   std::map<int, std::set<int>> node_patch_elems;
+};
+
+/*
+ * This class implements a finite cell mesh based on Galerkin difference
+ * approach. The finite cell mesh comprises an underground grid and a level-set
+ * function that defines an analysis domain implicitly. Unlike the CutMesh,
+ * finite cell mesh has degree of freedom outside the analysis domain.
+ *
+ * Ref:
+ *   - Schillinger, D., Ruess, M. The Finite Cell Method: A Review in the
+ * Context of Higher-Order Structural Analysis of CAD and Image-Based Geometric
+ * Models. Arch Computat Methods Eng 22, 391–455 (2015).
+ * https://doi.org/10.1007/s11831-014-9115-y
+ * */
+template <typename T, int Np_1d, class Grid_ = StructuredGrid2D<T>>
+class FiniteCellMesh final : public GDMeshBase<T, Np_1d, Grid_> {
+ private:
+  using MeshBase = GDMeshBase<T, Np_1d, Grid_>;
+  using LSFMesh = GridMesh<T, Np_1d, Grid_>;
+
+  template <class T1, class T2>
+  using Map =
+      std::unordered_map<T1, T2>;  // TODO(fyc): std::map and
+                                   // std::unordered_map, which is better?
+
+ public:
+  using MeshBase::corner_nodes_per_element;
+  using MeshBase::max_nnodes_per_element;
+  using MeshBase::spatial_dim;
+  using typename MeshBase::Grid;
+  static constexpr bool is_cut_mesh = true;
+
+  /**
+   * @brief Construct GD Mesh given grid and LSF function
+   *
+   * @tparam Func functor type
+   * @param grid GD grid
+   * @param lsf initial level set function that determines the analysis domain,
+   * lsf(T* xyz) where xyz contains x,y,(z) coordinates.
+   *
+   * Note: Within the analysis domain, lsf <= 0
+   */
+  template <class Func>
+  FiniteCellMesh(const Grid& grid, const Func& lsf)
+      : MeshBase(grid), lsf_mesh(grid), lsf_dof(lsf_mesh.get_num_nodes()) {
+    for (int i = 0; i < lsf_dof.size(); i++) {
+      T xloc[spatial_dim];
+      lsf_mesh.get_node_xloc(i, xloc);
+      lsf_dof[i] = lsf(xloc);
+    }
+    update_mesh();
+  }
+
+  FiniteCellMesh(const Grid& grid)
+      : MeshBase(grid),
+        lsf_mesh(grid),
+        lsf_dof(lsf_mesh.get_num_nodes(), -1.0) {
+    update_mesh();
+  }
+
+  int get_num_nodes() const { return num_nodes; }
+  int get_num_elements() const { return num_elements; }
+
+  inline void get_node_xloc(int node, T* xloc) const {
+    this->grid.get_vert_xloc(node_verts.at(node), xloc);
+  }
+
+  /**
+   * @brief For a GD element, get all dof nodes
+   *
+   * @param elem element index
+   * @return nodes dof node indices, length: nnodes
+   */
+  int get_elem_dof_nodes(int elem, int* nodes) const {
+    const auto& nodes_v = elem_nodes.at(elem);
+    int nnodes = nodes_v.size();
+    for (int i = 0; i < nnodes; i++) {
+      nodes[i] = nodes_v[i];
+    }
+    return nnodes;
+  }
+
+  // Compute node_patch_elems on the fly
+  std::set<int> get_node_patch_elems(int node) const {
+    std::set<int> ret;
+    int ixy[spatial_dim] = {-1, -1};
+    int vert = node_verts.at(node);
+    this->grid.get_vert_coords(vert, ixy);
+
+    int ex = -1, ey = -1;
+
+    // lower-left patch, if any
+    ex = ixy[0] - 1, ey = ixy[1] - 1;
+    if (this->grid.is_valid_cell(ex, ey)) {
+      ret.insert(cell_elems.at(this->grid.get_coords_cell(ex, ey)));
+    }
+
+    // lower-right patch, if any
+    ex = ixy[0], ey = ixy[1] - 1;
+    if (this->grid.is_valid_cell(ex, ey)) {
+      ret.insert(cell_elems.at(this->grid.get_coords_cell(ex, ey)));
+    }
+
+    // upper-left patch, if any
+    ex = ixy[0] - 1, ey = ixy[1];
+    if (this->grid.is_valid_cell(ex, ey)) {
+      ret.insert(cell_elems.at(this->grid.get_coords_cell(ex, ey)));
+    }
+
+    // upper-right patch, if any
+    ex = ixy[0], ey = ixy[1];
+    if (this->grid.is_valid_cell(ex, ey)) {
+      ret.insert(cell_elems.at(this->grid.get_coords_cell(ex, ey)));
+    }
+
+    return ret;
+  }
+
+  const Map<int, std::vector<int>>& get_elem_nodes() const {
+    return elem_nodes;
+  }
+  const std::vector<int>& get_nodes(int elem) const {
+    return elem_nodes.at(elem);
+  }
+
+  // Similar to get_elem_dof_nodes, but use grid indices (i.e. cell, vert)
+  // instead so we can facilitate mesh patching
+  int get_cell_dof_verts(int cell, int* verts) const {
+    int nodes[max_nnodes_per_element];
+    int nnodes = get_elem_dof_nodes(cell_elems.at(cell), nodes);
+    for (int i = 0; i < nnodes; i++) {
+      verts[i] = get_node_vert(nodes[i]);
+    }
+    return nnodes;
+  }
+
+  inline void get_elem_corner_nodes(int elem, int* nodes) const {
+    this->grid.get_cell_verts(elem_cells.at(elem), nodes);
+    for (int i = 0; i < corner_nodes_per_element; i++) {
+      nodes[i] = vert_nodes.at(nodes[i]);
+    }
+  }
+
+  inline void get_elem_corner_node_ranges(int elem, T* xloc_min,
+                                          T* xloc_max) const {
+    this->grid.get_cell_vert_ranges(elem_cells.at(elem), xloc_min, xloc_max);
+  }
+
+  std::vector<T> get_lsf_nodes() const {
+    std::vector<T> lsf_nodes(get_num_nodes());
+    for (auto kv : node_verts) {
+      // lsf_nodes[node] = lsf_dof[vert]
+      lsf_nodes[kv.first] = lsf_dof[kv.second];
+    }
+    return lsf_nodes;
+  }
+
+  std::vector<T> get_lsf_nodes(const std::vector<T>& lsf_dof) const {
+    std::vector<T> lsf_nodes(get_num_nodes());
+    for (auto kv : node_verts) {
+      // lsf_nodes[node] = lsf_dof[vert]
+      lsf_nodes[kv.first] = lsf_dof[kv.second];
+    }
+    return lsf_nodes;
+  }
+
+  const LSFMesh& get_lsf_mesh() const { return lsf_mesh; }
+
+  inline const std::vector<T>& get_lsf_dof() const { return lsf_dof; }
+  inline std::vector<T>& get_lsf_dof() { return lsf_dof; }
+
+  inline int get_elem_cell(int elem) const { return elem_cells.at(elem); }
+  inline int get_node_vert(int node) const { return node_verts.at(node); }
+
+  inline const std::map<int, int>& get_cell_elems() const { return cell_elems; }
+
+  // Update the mesh as well as the element -> node mapping
+  inline void update_mesh() {
+    elem_nodes.clear();
+    node_verts.clear();
+    vert_nodes.clear();
+    elem_cells.clear();
+    cell_elems.clear();
+    cut_elems.clear();
+    regular_stencil_elems.clear();
+
+    int ncells = this->grid.get_num_cells();
+
+    // Populate elem_cells and cut_elems
+    for (int cell = 0; cell < ncells; cell++) {
+      // Get Bernstein coefficients
+      VandermondeEvaluator<T, LSFMesh> eval(lsf_mesh, cell);
+      T element_lsf[max_nnodes_per_element];
+      constexpr int lsf_dim = 1;
+      get_element_vars<T, lsf_dim, LSFMesh, max_nnodes_per_element,
+                       spatial_dim>(lsf_mesh, cell, lsf_dof.data(),
+                                    element_lsf);
+      int constexpr data_len = Np_1d * Np_1d;
+      T data[data_len];
+      algoim::xarray<T, spatial_dim> phi(
+          data, algoim::uvector<int, spatial_dim>(Np_1d, Np_1d));
+      get_phi_vals(eval, element_lsf, phi);
+
+      // Sort Bernstein coefficients in ascending order
+      std::sort(data, data + data_len);
+      if (data[0] < 0.0) {  // cell is an element
+        elem_cells.push_back(cell);
+        if (data[data_len - 1] > 0.0) {  // cell is a cut element
+          cut_elems.insert(elem_cells.size() - 1);
+        }
+      }
+    }
+
+    // Get number of elements and populate cell_elems
+    num_elements = elem_cells.size();
+    for (int e = 0; e < num_elements; e++) {
+      cell_elems[elem_cells[e]] = e;
+    }
+
+    // Populate vert_nodes, node_verts, elem_nodes and regular_stencil_elems
+    int node = 0;
+    for (int e = 0; e < num_elements; e++) {
+      // Get ground stencils
+      int verts[max_nnodes_per_element];
+      int cell = elem_cells.at(e);
+      bool is_regular_stencil =
+          this->grid.template get_cell_ground_stencil<Np_1d>(cell, verts);
+      if (is_regular_stencil) {
+        regular_stencil_elems.insert(e);
+      }
+      for (int i = 0; i < max_nnodes_per_element; i++) {
+        int vert = verts[i];
+        if (not vert_nodes.count(vert)) {
+          vert_nodes[vert] = node;
+          node_verts[node] = vert;
+          node++;
+        }
+      }
+    }
+
+    // Populate elem_nodes
+    for (int e = 0; e < num_elements; e++) {
+      // Get ground stencils
+      int verts[max_nnodes_per_element];
+      int cell = elem_cells.at(e);
+      this->grid.template get_cell_ground_stencil<Np_1d>(cell, verts);
+      for (int i = 0; i < max_nnodes_per_element; i++) {
+        elem_nodes[e].push_back(vert_nodes.at(verts[i]));
+      }
+    }
+
+    // Get number of nodes
+    num_nodes = vert_nodes.size();
+  }
+
+  inline const Map<int, int>& get_vert_nodes() const { return vert_nodes; }
+
+  inline bool is_cut_elem(int elem) const {
+    return static_cast<bool>(cut_elems.count(elem));
+  }
+  inline bool is_regular_stencil_elem(int elem) const {
+    return static_cast<bool>(regular_stencil_elems.count(elem));
+  }
+
+  const inline std::set<int>& get_cut_elems() const { return cut_elems; }
+  const inline std::set<int>& get_regular_stencil_elems() const {
+    return regular_stencil_elems;
+  }
+
+  // Caution: this is a dummy function that does not return meaningful value
+  inline int get_elem_dir(int elem) const { return 0; }
+
+ private:
+  LSFMesh lsf_mesh;
+
+  int num_nodes = -1;
+  int num_elements = -1;
+
+  // level set function values at vertices of the ground grid
+  std::vector<T> lsf_dof;
+
+  /* Below is information about the element-to-node topology, at each update to
+   * the mesh, the dof nodes associated to an element may change from verts to
+   * verts, as well as the elements themselves might correspond to different
+   * cells.
+   *
+   * Recall that cells and verts are defined on the ground grid, and elements
+   * and nodes are defined on the dynamic mesh itself */
+
+  Map<int, std::vector<int>> elem_nodes;
+
+  // indices of vertices that are dof nodes, i.e. vertices that have active
+  // degrees of freedom
+  Map<int, int> node_verts;  // node -> vert
+  Map<int, int> vert_nodes;  // vert -> node
+
+  // indices of cells that are dof elements, i.e. cells that have active degrees
+  // of freedom
+  std::vector<int> elem_cells;    // elem -> cell
+  std::map<int, int> cell_elems;  // cell-> elem
+
+  // Whether the element is cut element or interior element
+  std::set<int> cut_elems;
+
+  // Whether the element has the regular stencil
+  // elements far from the cut or grid boundaries usually have regular stencils
+  std::set<int> regular_stencil_elems;
 };
 
 /**

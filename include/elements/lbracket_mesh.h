@@ -66,6 +66,14 @@ class LbracketGrid2D {
     }
   }
 
+  inline bool is_valid_cell(int ex, int ey) const {
+    if (ey < ny1) {
+      return (ex >= 0 and ex < nx1 and ey >= 0);
+    } else {
+      return (ex >= 0 and ex < nx2 and ey < ny1 + ny2);
+    }
+  }
+
   // coordinates -> vert
   inline int get_coords_vert(int ix, int iy) const {
     if (iy <= ny1 + 1) {

@@ -113,20 +113,20 @@ template <typename T, class Mesh>
 class GDBasis2D;
 
 template <typename T, int Np_1d, QuadPtType quad_type = QuadPtType::INNER,
-          class Grid = StructuredGrid2D<T>, int nquad_1d = Np_1d>
+          class Grid = StructuredGrid2D<T>, int nquad_1d = Np_1d,
+          class CutMesh_ = CutMesh<T, Np_1d, Grid>>
 class GDLSFQuadrature2D final : public QuadratureBase<T, quad_type> {
  public:
   using BulkQuad =
-      GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER, Grid, nquad_1d>;
-  using BCQuad =
-      GDLSFQuadrature2D<T, Np_1d, QuadPtType::SURFACE, Grid, nquad_1d>;
+      GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER, Grid, nquad_1d, CutMesh_>;
+  using BCQuad = GDLSFQuadrature2D<T, Np_1d, QuadPtType::SURFACE, Grid,
+                                   nquad_1d, CutMesh_>;
 
  private:
   // algoim limit, see gaussquad.hpp
   static_assert(Np_1d <= algoim::GaussQuad::p_max);     // algoim limit
   static_assert(nquad_1d <= algoim::GaussQuad::p_max);  // algoim limit
   using GridMesh_ = GridMesh<T, Np_1d, Grid>;
-  using CutMesh_ = CutMesh<T, Np_1d, Grid>;
   using Basis = GDBasis2D<T, CutMesh_>;
 
   constexpr static int spatial_dim = Basis::spatial_dim;
