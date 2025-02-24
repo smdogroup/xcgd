@@ -4,6 +4,7 @@
 
 #include "analysis.h"
 #include "apps/static_elastic.h"
+#include "elements/gd_mesh.h"
 #include "elements/gd_vandermonde.h"
 #include "physics/stress.h"
 #include "utils/argparser.h"
@@ -19,9 +20,10 @@ void execute(ArgParser& p) {
 
   constexpr int spatial_dim = Grid::spatial_dim;
 
-  using Quadrature = GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER, Grid>;
   using GridMesh = GridMesh<T, Np_1d, Grid>;
-  using Mesh = CutMesh<T, Np_1d, Grid>;
+  using Mesh = FiniteCellMesh<T, Np_1d, Grid>;
+  using Quadrature =
+      GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER, Grid, Np_1d, Mesh>;
   using Basis = GDBasis2D<T, Mesh>;
 
   json j = read_json(p.get<std::string>("image_json"));
@@ -57,7 +59,7 @@ void execute(ArgParser& p) {
       ElasticityExternalLoad<T, Basis::spatial_dim, typeof(load_func)>;
   using Elastic = StaticElastic<T, Mesh, Quadrature, Basis, typeof(int_func)>;
   using LoadQuadrature =
-      GDGaussQuadrature2D<T, Np_1d, QuadPtType::SURFACE, SurfQuad::RIGHT, Mesh>;
+      GDLSFQuadrature2D<T, Np_1d, QuadPtType::SURFACE, Grid, Np_1d, Mesh>;
 
   double E = 1.0, nu = 0.3;
   Elastic elastic(E, nu, mesh, quadrature, basis, int_func);
@@ -69,12 +71,13 @@ void execute(ArgParser& p) {
   for (int e = 0; e < mesh.get_num_elements(); e++) {
     double xloc[2];
     grid.get_cell_xloc(mesh.get_elem_cell(e), xloc);
-    if (xloc[0] > lxy_val - 0.6 * h) {
+    if (xloc[0] > 0.95 * lxy_val and
+        (xloc[1] > 0.39 * lxy_val and xloc[1] < 0.41 * lxy_val)) {
       load_elements.insert(e);
     }
   }
 
-  const auto& elastic_mesh = elastic.get_mesh();
+  auto& elastic_mesh = elastic.get_mesh();
 
   LoadQuadrature load_quadrature(elastic_mesh, load_elements);
 
@@ -167,13 +170,29 @@ void execute(ArgParser& p) {
   SamplerStrainStressAnalysis sampler_strain_stress_analysis(
       mesh, sampler, basis, strain_stress);
 
+  // Export cut vtk
+  ToVTK<T, Mesh> cut_vtk(
+      mesh, "analysis_verification_cut_Np_" + std::to_string(Np_1d) + ".vtk");
+  cut_vtk.write_mesh();
+  cut_vtk.write_sol("lsf", mesh.get_lsf_nodes().data());
+
+  std::vector<double> bc_nodes_v(mesh.get_num_nodes(), 0.0);
+  for (int i : bc_nodes) bc_nodes_v[i] = 1.0;
+  cut_vtk.write_sol("bc_nodes", bc_nodes_v.data());
+
+  cut_vtk.write_vec("displacement", sol.data());
+
+  std::vector<double> load_elem_v(mesh.get_num_elements(), 0.0);
+  for (int e : load_elements) load_elem_v[e] = 1.0;
+  cut_vtk.write_cell_sol("loaded_elems", load_elem_v.data());
+
   // Perform the SPR on stress components
-  {
+  if (0) {
     StopWatch watch;
     constexpr int nsamples_per_elem_1d = Np_1d - 1;
     constexpr int Amat_dim = Np_1d * Np_1d;  // for 2d problem
     using SPRSampler = GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER, Grid,
-                                         nsamples_per_elem_1d>;
+                                         nsamples_per_elem_1d, Mesh>;
     SPRSampler spr_sampler(mesh);
 
     using SPRAnalysis =

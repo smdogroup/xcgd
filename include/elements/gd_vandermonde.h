@@ -31,7 +31,7 @@ class GDGaussQuadrature2D final : public QuadratureBase<T, quad_type> {
                 "quad_type and surf_quad are not compatible");
 
  public:
-  GDGaussQuadrature2D(const Mesh& mesh, const std::set<int> elements = {})
+  GDGaussQuadrature2D(Mesh& mesh, const std::set<int> elements = {})
       : mesh(mesh), elements(elements) {
     for (int i = 0; i < Np_1d; i++) {
       pts_1d[i] = algoim::GaussQuad::x(nquad_1d, i);  // in (0, 1)
@@ -103,7 +103,7 @@ class GDGaussQuadrature2D final : public QuadratureBase<T, quad_type> {
   }
 
  private:
-  const Mesh& mesh;
+  Mesh& mesh;
   std::set<int> elements;
   std::array<T, nquad_1d> pts_1d, wts_1d;
 };
@@ -133,8 +133,8 @@ class GDLSFQuadrature2D final : public QuadratureBase<T, quad_type> {
   constexpr static int max_nnodes_per_element = Basis::max_nnodes_per_element;
 
  public:
-  GDLSFQuadrature2D(CutMesh_& mesh)
-      : mesh(mesh), lsf_mesh(mesh.get_lsf_mesh()) {}
+  GDLSFQuadrature2D(CutMesh_& mesh, const std::set<int> elements = {})
+      : mesh(mesh), lsf_mesh(mesh.get_lsf_mesh()), elements(elements) {}
 
   /**
    * @brief Get the quadrature points and weights
@@ -149,6 +149,10 @@ class GDLSFQuadrature2D final : public QuadratureBase<T, quad_type> {
    */
   int get_quadrature_pts(int elem, std::vector<T>& pts, std::vector<T>& wts,
                          std::vector<T>& ns) const {
+    if (elements.size() and !elements.count(elem)) {
+      return 0;
+    }
+
     // this is the element index in lsf mesh
     int cell = mesh.get_elem_cell(elem);
 
@@ -187,6 +191,10 @@ class GDLSFQuadrature2D final : public QuadratureBase<T, quad_type> {
                               std::vector<T>& wts, std::vector<T>& ns,
                               std::vector<T>& pts_grad,
                               std::vector<T>& wts_grad) const {
+    if (elements.size() and !elements.count(elem)) {
+      return 0;
+    }
+
     // this is the element index in lsf mesh
     int cell = mesh.get_elem_cell(elem);
 
@@ -332,6 +340,8 @@ class GDLSFQuadrature2D final : public QuadratureBase<T, quad_type> {
 
   // Mesh for the LSF dof. All grid verts are dof nodes.
   const GridMesh_& lsf_mesh;
+
+  std::set<int> elements;
 };
 
 /**

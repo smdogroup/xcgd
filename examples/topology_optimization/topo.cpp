@@ -15,7 +15,7 @@
 #include "apps/convolution_filter.h"
 #include "apps/helmholtz_filter.h"
 #include "apps/robust_projection.h"
-#include "apps/SPR.h"
+#include "apps/spr.h"
 #include "apps/static_elastic.h"
 #include "elements/element_utils.h"
 #include "elements/gd_vandermonde.h"
@@ -466,10 +466,14 @@ class TopoAnalysis {
 
   using LoadPhysics =
       ElasticityExternalLoad<T, Basis::spatial_dim, typeof(load_func)>;
-  using LoadQuadrature =
+  using LoadQuadratureRight =
       GDGaussQuadrature2D<T, Np_1d, QuadPtType::SURFACE, SurfQuad::RIGHT, Mesh>;
-  using LoadAnalysis =
-      GalerkinAnalysis<T, Mesh, LoadQuadrature, Basis, LoadPhysics, use_ersatz>;
+  using LoadAnalysisRight = GalerkinAnalysis<T, Mesh, LoadQuadratureRight,
+                                             Basis, LoadPhysics, use_ersatz>;
+  using LoadQuadratureTop =
+      GDGaussQuadrature2D<T, Np_1d, QuadPtType::SURFACE, SurfQuad::TOP, Mesh>;
+  using LoadAnalysisTop = GalerkinAnalysis<T, Mesh, LoadQuadratureTop, Basis,
+                                           LoadPhysics, use_ersatz>;
 
   int constexpr static spatial_dim = Basis::spatial_dim;
 
@@ -645,20 +649,47 @@ class TopoAnalysis {
       //   dvs[i] = (shrink_level + 0.5) * dh;
       // }
 
+      /**
+       * @brief
+       *        |
+       *        |-> b1
+       *        |
+       *     nx2
+       *   -------      ||
+       *  |       |  b3<||> b4
+       *  | grid2 | ny2 ||
+       *  |       |                      ^
+       *  |        ------                |  b2
+       *  |              |  ny1, ly1    ----
+       *  |    grid1     |              ----
+       *  |              | ---           |  b5
+       *   --------------   | b7
+       *       nx1, lx1
+       *    |
+       *  <-| b6
+       */
       if (is_lbracket) {
         bool b1 = ixy[0] * h[0] >
                   lbracket_frac * lxy[0] - (shrink_level - 0.5) * h[0];
         bool b2 = ixy[1] * h[1] >
                   lbracket_frac * lxy[1] - (shrink_level - 0.5) * h[1];
-        bool b3 = ixy[0] * h[0] < lxy[0] - (shrink_level - 0.5) * h[0];
-        bool b4 =
+        bool b3 = ixy[0] * h[0] < lxy[0] * (1.0 - 1.5 * loaded_frac) -
+                                      (shrink_level - 0.5) * h[0];
+        bool b4 = ixy[0] * h[0] < lxy[0] - (shrink_level - 0.5) * h[0];
+        bool b5 =
             (ixy[1] + 1.0) * h[1] < (lbracket_frac - loaded_frac) * lxy[1] -
                                         (shrink_level - 0.5) * h[1];
+
+        bool b6 = ixy[0] * h[0] < (shrink_level - 0.5) * h[0];
+        bool b7 = ixy[1] * h[1] < (shrink_level - 0.5) * h[1];
 
         if (b1 and b2 and b3) {
           dvs[i] = (shrink_level + 0.5) * dh;
         }
-        if (!b3 and b4) {
+        if (!b4 and b5) {
+          dvs[i] = (shrink_level + 0.5) * dh;
+        }
+        if (b6 or b7) {
           dvs[i] = (shrink_level + 0.5) * dh;
         }
       }
@@ -777,20 +808,30 @@ class TopoAnalysis {
     try {
       LoadPhysics load_physics(load_func);
       std::set<int> load_elements;
-      const auto& elastic_mesh = elastic.get_mesh();
+      auto& elastic_mesh = elastic.get_mesh();
       int elastic_nelems = elastic_mesh.get_num_elements();
       for (int i = 0; i < elastic_nelems; i++) {
         if (loaded_cells.count(elastic_mesh.get_elem_cell(i))) {
           load_elements.insert(i);
         }
       }
-      LoadQuadrature load_quadrature(elastic_mesh, load_elements);
-      LoadAnalysis load_analysis(elastic_mesh, load_quadrature,
-                                 elastic.get_basis(), load_physics);
 
-      std::vector<T> sol =
-          elastic.solve(bc_dof, std::vector<T>(bc_dof.size(), T(0.0)),
-                        std::tuple<LoadAnalysis>(load_analysis), chol);
+      std::vector<T> sol;
+
+      bool lbracket_load_top = parser.get_bool_option("lbracket_load_top");
+      if (lbracket_load_top) {
+        LoadQuadratureTop load_quadrature(elastic_mesh, load_elements);
+        LoadAnalysisTop load_analysis(elastic_mesh, load_quadrature,
+                                      elastic.get_basis(), load_physics);
+        sol = elastic.solve(bc_dof, std::vector<T>(bc_dof.size(), T(0.0)),
+                            std::tuple<LoadAnalysisTop>(load_analysis), chol);
+      } else {
+        LoadQuadratureRight load_quadrature(elastic_mesh, load_elements);
+        LoadAnalysisRight load_analysis(elastic_mesh, load_quadrature,
+                                        elastic.get_basis(), load_physics);
+        sol = elastic.solve(bc_dof, std::vector<T>(bc_dof.size(), T(0.0)),
+                            std::tuple<LoadAnalysisRight>(load_analysis), chol);
+      }
 
       return sol;
     } catch (const StencilConstructionFailed& e) {
@@ -815,7 +856,6 @@ class TopoAnalysis {
 
   auto eval_obj_con(const std::vector<T>& x) {
     // Get options
-    double area_frac = parser.get_double_option("area_frac");
     bool stress_use_discrete_ks =
         parser.get_bool_option("stress_use_discrete_ks");
     bool stress_use_spr = parser.get_bool_option("stress_use_spr");
@@ -872,9 +912,8 @@ class TopoAnalysis {
           max_stress_ratio + log(ks_energy) / stress_ks.get_ksrho();
     } else {
       ks_stress_ratio =
-          max_stress_ratio +
-          log(ks_energy / (prob_mesh.get_domain_area() * area_frac)) /
-              stress_ks.get_ksrho();
+          max_stress_ratio + log(ks_energy / (prob_mesh.get_domain_area())) /
+                                 stress_ks.get_ksrho();
     }
 
     // Save information
@@ -1311,7 +1350,12 @@ class TopoProb {
         prefix(prefix),
         parser(parser),
         domain_area(topo.get_prob_mesh().get_domain_area()),
-        area_frac(parser.get_double_option("area_frac")),
+        area_frac_init(parser.get_double_option("area_frac_init")),
+        area_frac_final(parser.get_double_option("area_frac_final")),
+        area_frac_decrease_every(
+            parser.get_int_option("area_frac_decrease_every")),
+        area_frac_decrease_rate(
+            parser.get_double_option("area_frac_decrease_rate")),
         stress_ksrho_init(parser.get_double_option("stress_ksrho_init")),
         stress_ksrho_final(parser.get_double_option("stress_ksrho_final")),
         stress_ksrho_increase_every(
@@ -1372,10 +1416,10 @@ class TopoProb {
       char line[2048];
       std::snprintf(
           line, 2048,
-          "\n%6s%6s%13s%13s%13s%13s%9s%13s%13s%9s%13s%9s%13s%13s%15s\n",
+          "\n%6s%6s%13s%13s%13s%13s%9s%9s%13s%13s%9s%13s%9s%13s%13s%15s\n",
           "major", "minor", "obj", "comp", "x_regular", "grad_pen", "vol(\%)",
-          "max(vm)", "max(vm/y)", "ksrho", "ks(vm/y)", "kserr(\%)", "ks_ub",
-          "|dx|_infty", "uptime(hms)");
+          "vub(\%)", "max(vm)", "max(vm/y)", "ksrho", "ks(vm/y)", "kserr(\%)",
+          "ks_ub", "|dx|_infty", "uptime(hms)");
       std::cout << line;
       progress_file << line;
     }
@@ -1388,10 +1432,11 @@ class TopoProb {
     }
     std::snprintf(
         line, 2048,
-        "%6s%6d%13.3e%13.3e%13.3e%13.3e%9.3f%13.3e%13.3e%9.3f%13.3e%9.3f"
+        "%6s%6d%13.3e%13.3e%13.3e%13.3e%9.3f%9.3f%13.3e%13.3e%9.3f%13.3e%9.3f"
         "%13.3e%13.3e%15s\n",
         major_it.c_str(), minor_counter, obj, comp, reg, pterm,
-        100.0 * vol_frac, max_stress, max_stress_ratio, ksrho, ks_stress_ratio,
+        100.0 * vol_frac, 100.0 * area_frac, max_stress, max_stress_ratio,
+        ksrho, ks_stress_ratio,
         (ks_stress_ratio - max_stress_ratio) / max_stress_ratio * 100.0,
         ks_stress_ratio_ub, HFx_change, watch.format_time(watch.lap()).c_str());
     std::cout << line;
@@ -1501,6 +1546,13 @@ class TopoProb {
       ksrho = 6.789;
     }
     topo.set_stress_ksrho(ksrho);
+
+    // Update area constraint
+    area_frac = area_frac_init - area_frac_decrease_rate *
+                                     int(counter / area_frac_decrease_every);
+    if (area_frac < area_frac_final) {
+      area_frac = area_frac_final;
+    }
 
     // Update stress constraint
     stress_ratio_ub =
@@ -1728,6 +1780,10 @@ class TopoProb {
   const ConfigParser& parser;
   double domain_area = 0.0;
   double area_frac = 0.0;
+  double area_frac_init = 0.0;
+  double area_frac_final = 0.0;
+  int area_frac_decrease_every = 0.0;
+  double area_frac_decrease_rate = 0.0;
   double stress_ksrho_init = 0.0;
   double stress_ksrho_final = 0.0;
   int stress_ksrho_increase_every = 0;
@@ -2116,10 +2172,16 @@ void execute(int argc, char* argv[]) {
   double loaded_frac = parser.get_double_option("loaded_frac");
   if constexpr (use_lbracket_grid) {
     double lbracket_frac = parser.get_double_option("lbracket_frac");
-    constexpr bool load_top = false;
-    prob_mesh = std::make_shared<
-        LbracketGridMesh<T, Np_1d, load_top, use_finite_cell_mesh>>(
-        nxy, lxy, loaded_frac, lbracket_frac);
+    bool lbracket_load_top = parser.get_bool_option("lbracket_load_top");
+    if (lbracket_load_top) {
+      prob_mesh = std::make_shared<
+          LbracketGridMesh<T, Np_1d, true, use_finite_cell_mesh>>(
+          nxy, lxy, loaded_frac, lbracket_frac);
+    } else {
+      prob_mesh = std::make_shared<
+          LbracketGridMesh<T, Np_1d, false, use_finite_cell_mesh>>(
+          nxy, lxy, loaded_frac, lbracket_frac);
+    }
   } else {
     if (instance == "cantilever") {
       prob_mesh =

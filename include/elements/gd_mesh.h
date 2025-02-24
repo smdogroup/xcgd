@@ -1131,40 +1131,8 @@ class FiniteCellMesh final : public GDMeshBase<T, Np_1d, Grid_> {
     return nnodes;
   }
 
-  // Compute node_patch_elems on the fly
   std::set<int> get_node_patch_elems(int node) const {
-    std::set<int> ret;
-    int ixy[spatial_dim] = {-1, -1};
-    int vert = node_verts.at(node);
-    this->grid.get_vert_coords(vert, ixy);
-
-    int ex = -1, ey = -1;
-
-    // lower-left patch, if any
-    ex = ixy[0] - 1, ey = ixy[1] - 1;
-    if (this->grid.is_valid_cell(ex, ey)) {
-      ret.insert(cell_elems.at(this->grid.get_coords_cell(ex, ey)));
-    }
-
-    // lower-right patch, if any
-    ex = ixy[0], ey = ixy[1] - 1;
-    if (this->grid.is_valid_cell(ex, ey)) {
-      ret.insert(cell_elems.at(this->grid.get_coords_cell(ex, ey)));
-    }
-
-    // upper-left patch, if any
-    ex = ixy[0] - 1, ey = ixy[1];
-    if (this->grid.is_valid_cell(ex, ey)) {
-      ret.insert(cell_elems.at(this->grid.get_coords_cell(ex, ey)));
-    }
-
-    // upper-right patch, if any
-    ex = ixy[0], ey = ixy[1];
-    if (this->grid.is_valid_cell(ex, ey)) {
-      ret.insert(cell_elems.at(this->grid.get_coords_cell(ex, ey)));
-    }
-
-    return ret;
+    return node_patch_elems.at(node);
   }
 
   const Map<int, std::vector<int>>& get_elem_nodes() const {
@@ -1234,6 +1202,7 @@ class FiniteCellMesh final : public GDMeshBase<T, Np_1d, Grid_> {
     cell_elems.clear();
     cut_elems.clear();
     regular_stencil_elems.clear();
+    node_patch_elems.clear();
 
     int ncells = this->grid.get_num_cells();
 
@@ -1302,6 +1271,16 @@ class FiniteCellMesh final : public GDMeshBase<T, Np_1d, Grid_> {
 
     // Get number of nodes
     num_nodes = vert_nodes.size();
+
+    // Populate node_patch_elems
+    for (int e = 0; e < num_elements; e++) {
+      int nodes[corner_nodes_per_element];
+      get_elem_corner_nodes(e, nodes);
+      for (int i = 0; i < corner_nodes_per_element; i++) {
+        int n = nodes[i];
+        node_patch_elems[n].insert(e);
+      }
+    }
   }
 
   inline const Map<int, int>& get_vert_nodes() const { return vert_nodes; }
@@ -1356,6 +1335,9 @@ class FiniteCellMesh final : public GDMeshBase<T, Np_1d, Grid_> {
   // Whether the element has the regular stencil
   // elements far from the cut or grid boundaries usually have regular stencils
   std::set<int> regular_stencil_elems;
+
+  // node -> element patches
+  std::map<int, std::set<int>> node_patch_elems;
 };
 
 /**
