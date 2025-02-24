@@ -15,7 +15,7 @@
 #include "apps/convolution_filter.h"
 #include "apps/helmholtz_filter.h"
 #include "apps/robust_projection.h"
-#include "apps/spr.h"
+#include "apps/SPR.h"
 #include "apps/static_elastic.h"
 #include "elements/element_utils.h"
 #include "elements/gd_vandermonde.h"
