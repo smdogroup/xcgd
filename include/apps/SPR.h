@@ -27,13 +27,13 @@ class SPRStress2D {
   static constexpr int spatial_dim = Basis::spatial_dim;
   // TODO: don't hardcode quadrature class as GDLSFQuadrature2D
   using SPRSampler = GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER, Grid,
-                                       nsamples_per_elem_1d>;
+                                       nsamples_per_elem_1d, Mesh>;
   using StrainStress = LinearElasticity2DStrainStress<T>;
   using SPRAnalysis =
       GalerkinAnalysis<T, Mesh, SPRSampler, Basis, StrainStress, use_ersatz>;
 
  public:
-  SPRStress2D(const Mesh& mesh, const Basis& basis, double E, double nu)
+  SPRStress2D(Mesh& mesh, Basis& basis, double E, double nu)
       : mesh(mesh), basis(basis), strain_stress(E, nu) {}
 
   // return sx_nodal, sy_nodal, sxy_nodal
@@ -235,7 +235,7 @@ class SPRStress2D {
   void applyGradient() {}
 
  private:
-  const Mesh& mesh;
-  const Basis& basis;
+  Mesh& mesh;
+  Basis& basis;
   StrainStress strain_stress;
 };

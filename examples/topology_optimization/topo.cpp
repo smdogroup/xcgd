@@ -36,11 +36,13 @@
 
 using fspath = std::filesystem::path;
 
-template <typename T, int Np_1d, class Grid_>
+template <typename T, int Np_1d, class Grid_, bool use_finite_cell_mesh>
 class ProbMeshBase {
  public:
   using Grid = Grid_;
-  using Mesh = CutMesh<T, Np_1d, Grid>;
+  using Mesh = typename std::conditional<use_finite_cell_mesh,
+                                         FiniteCellMesh<T, Np_1d, Grid>,
+                                         CutMesh<T, Np_1d, Grid>>::type;
 
   virtual T get_domain_area() = 0;
   virtual int get_nvars() = 0;
@@ -67,11 +69,12 @@ class ProbMeshBase {
   virtual Mesh& get_dilate_mesh() = 0;
 };
 
-template <typename T, int Np_1d>
+template <typename T, int Np_1d, bool use_finite_cell_mesh>
 class CantileverMesh final
-    : public ProbMeshBase<T, Np_1d, StructuredGrid2D<T>> {
+    : public ProbMeshBase<T, Np_1d, StructuredGrid2D<T>, use_finite_cell_mesh> {
  private:
-  using Base = ProbMeshBase<T, Np_1d, StructuredGrid2D<T>>;
+  using Base =
+      ProbMeshBase<T, Np_1d, StructuredGrid2D<T>, use_finite_cell_mesh>;
 
  public:
   using typename Base::Grid;
@@ -151,10 +154,12 @@ class CantileverMesh final
   std::set<int> loaded_cells, loaded_verts, protected_verts;
 };
 
-template <typename T, int Np_1d>
-class LbracketMesh final : public ProbMeshBase<T, Np_1d, StructuredGrid2D<T>> {
+template <typename T, int Np_1d, bool use_finite_cell_mesh>
+class LbracketMesh final
+    : public ProbMeshBase<T, Np_1d, StructuredGrid2D<T>, use_finite_cell_mesh> {
  private:
-  using Base = ProbMeshBase<T, Np_1d, StructuredGrid2D<T>>;
+  using Base =
+      ProbMeshBase<T, Np_1d, StructuredGrid2D<T>, use_finite_cell_mesh>;
 
  public:
   using typename Base::Grid;
@@ -302,11 +307,12 @@ class LbracketMesh final : public ProbMeshBase<T, Np_1d, StructuredGrid2D<T>> {
 
 // load_top: true to put load on the top of the lbracket arm, false to put load
 // on the side
-template <typename T, int Np_1d, bool load_top = false>
+template <typename T, int Np_1d, bool load_top = false,
+          bool use_finite_cell_mesh = false>
 class LbracketGridMesh final
-    : public ProbMeshBase<T, Np_1d, LbracketGrid2D<T>> {
+    : public ProbMeshBase<T, Np_1d, LbracketGrid2D<T>, use_finite_cell_mesh> {
  private:
-  using Base = ProbMeshBase<T, Np_1d, LbracketGrid2D<T>>;
+  using Base = ProbMeshBase<T, Np_1d, LbracketGrid2D<T>, use_finite_cell_mesh>;
 
  public:
   using typename Base::Grid;
@@ -409,17 +415,18 @@ class LbracketGridMesh final
 };
 
 template <typename T, int Np_1d, int Np_1d_filter, bool use_ersatz_,
-          class Grid_>
+          class Grid_, bool use_finite_cell_mesh>
 class TopoAnalysis {
  public:
   static constexpr bool use_ersatz = use_ersatz_;
   static constexpr int get_spatial_dim() { return Grid_::spatial_dim; }
 
  private:
-  using ProbMesh = ProbMeshBase<T, Np_1d, Grid_>;
+  using ProbMesh = ProbMeshBase<T, Np_1d, Grid_, use_finite_cell_mesh>;
   using Grid = typename ProbMesh::Grid;
   using Mesh = typename ProbMesh::Mesh;
-  using Quadrature = GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER, Grid>;
+  using Quadrature =
+      GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER, Grid, Np_1d, Mesh>;
   using Basis = GDBasis2D<T, Mesh>;
   using HFilter = HelmholtzFilter<T, Np_1d_filter, Grid>;
   using CFilter = ConvolutionFilter<T, Grid>;
@@ -2033,7 +2040,8 @@ void optimize_snopt(bool smoke_test, std::string prefix, ConfigParser& parser,
                     pi.data(), rc.data(), nS, nInf, sInf, objective);
 }
 
-template <int Np_1d, bool use_ersatz, bool use_lbracket_grid>
+template <int Np_1d, bool use_ersatz, bool use_lbracket_grid,
+          bool use_finite_cell_mesh>
 void execute(int argc, char* argv[]) {
   constexpr int Np_1d_filter = Np_1d > 2 ? 4 : 2;
   MPI_Init(&argc, &argv);
@@ -2041,7 +2049,8 @@ void execute(int argc, char* argv[]) {
   using T = double;
   using Grid = typename std::conditional<use_lbracket_grid, LbracketGrid2D<T>,
                                          StructuredGrid2D<T>>::type;
-  using TopoAnalysis = TopoAnalysis<T, Np_1d, Np_1d_filter, use_ersatz, Grid>;
+  using TopoAnalysis = TopoAnalysis<T, Np_1d, Np_1d_filter, use_ersatz, Grid,
+                                    use_finite_cell_mesh>;
   using TopoProb = TopoProb<T, TopoAnalysis>;
 
   bool smoke_test = false;
@@ -2103,20 +2112,24 @@ void execute(int argc, char* argv[]) {
         "expect lbracket or cantilever for option instance, got " + instance);
   }
 
-  std::shared_ptr<ProbMeshBase<T, Np_1d, Grid>> prob_mesh;
+  std::shared_ptr<ProbMeshBase<T, Np_1d, Grid, use_finite_cell_mesh>> prob_mesh;
   double loaded_frac = parser.get_double_option("loaded_frac");
   if constexpr (use_lbracket_grid) {
     double lbracket_frac = parser.get_double_option("lbracket_frac");
-    prob_mesh = std::make_shared<LbracketGridMesh<T, Np_1d>>(
+    constexpr bool load_top = false;
+    prob_mesh = std::make_shared<
+        LbracketGridMesh<T, Np_1d, load_top, use_finite_cell_mesh>>(
         nxy, lxy, loaded_frac, lbracket_frac);
   } else {
     if (instance == "cantilever") {
       prob_mesh =
-          std::make_shared<CantileverMesh<T, Np_1d>>(nxy, lxy, loaded_frac);
+          std::make_shared<CantileverMesh<T, Np_1d, use_finite_cell_mesh>>(
+              nxy, lxy, loaded_frac);
     } else if (instance == "lbracket") {
       double lbracket_frac = parser.get_double_option("lbracket_frac");
-      prob_mesh = std::make_shared<LbracketMesh<T, Np_1d>>(
-          nxy, lxy, loaded_frac, lbracket_frac);
+      prob_mesh =
+          std::make_shared<LbracketMesh<T, Np_1d, use_finite_cell_mesh>>(
+              nxy, lxy, loaded_frac, lbracket_frac);
     } else {
       throw std::runtime_error("invalid instance " + instance);
     }
@@ -2150,6 +2163,7 @@ int main(int argc, char* argv[]) {
   int Np_1d = parser.get_int_option("Np_1d");
   bool use_ersatz = parser.get_bool_option("use_ersatz");
   bool use_lbracket_grid = parser.get_bool_option("use_lbracket_grid");
+  bool use_finite_cell_mesh = parser.get_bool_option("use_finite_cell_mesh");
 
   if (Np_1d % 2) {
     std::printf("[Error]Invalid input, expect even Np_1d, got %d\n", Np_1d);
@@ -2160,15 +2174,31 @@ int main(int argc, char* argv[]) {
     case 2:
       if (use_ersatz) {
         if (use_lbracket_grid) {
-          execute<2, true, true>(argc, argv);
+          if (use_finite_cell_mesh) {
+            execute<2, true, true, true>(argc, argv);
+          } else {
+            execute<2, true, true, false>(argc, argv);
+          }
         } else {
-          execute<2, true, false>(argc, argv);
+          if (use_finite_cell_mesh) {
+            execute<2, true, false, true>(argc, argv);
+          } else {
+            execute<2, true, false, false>(argc, argv);
+          }
         }
       } else {
         if (use_lbracket_grid) {
-          execute<2, false, true>(argc, argv);
+          if (use_finite_cell_mesh) {
+            execute<2, false, true, true>(argc, argv);
+          } else {
+            execute<2, false, true, false>(argc, argv);
+          }
         } else {
-          execute<2, false, false>(argc, argv);
+          if (use_finite_cell_mesh) {
+            execute<2, false, false, true>(argc, argv);
+          } else {
+            execute<2, false, false, false>(argc, argv);
+          }
         }
       }
       break;
@@ -2176,16 +2206,32 @@ int main(int argc, char* argv[]) {
     case 4:
       if (use_ersatz) {
         if (use_lbracket_grid) {
-          execute<4, true, true>(argc, argv);
+          if (use_finite_cell_mesh) {
+            execute<4, true, true, true>(argc, argv);
+          } else {
+            execute<4, true, true, false>(argc, argv);
+          }
         } else {
-          execute<4, true, false>(argc, argv);
+          if (use_finite_cell_mesh) {
+            execute<4, true, false, true>(argc, argv);
+          } else {
+            execute<4, true, false, false>(argc, argv);
+          }
         }
 
       } else {
         if (use_lbracket_grid) {
-          execute<4, false, true>(argc, argv);
+          if (use_finite_cell_mesh) {
+            execute<4, false, true, true>(argc, argv);
+          } else {
+            execute<4, false, true, false>(argc, argv);
+          }
         } else {
-          execute<4, false, false>(argc, argv);
+          if (use_finite_cell_mesh) {
+            execute<4, false, false, true>(argc, argv);
+          } else {
+            execute<4, false, false, false>(argc, argv);
+          }
         }
       }
       break;
