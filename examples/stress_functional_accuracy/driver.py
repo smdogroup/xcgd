@@ -7,6 +7,7 @@ from os.path import join
 import json
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+import os
 
 
 def print_and_log(logpath, string):
@@ -92,8 +93,8 @@ def annotate_slope(
     return
 
 
-def run_experiments(run_name, instance, save_vtk: bool):
-    logpath = f"{run_name}.log"
+def run_experiments(run_name, mesh, instance, save_vtk: bool, smoke: bool):
+    logpath = os.path.join(run_name, f"{run_name}.log")
     open(logpath, "w").close()  # erase existing file
 
     df_data = {
@@ -104,12 +105,19 @@ def run_experiments(run_name, instance, save_vtk: bool):
         "energy_norm": [],
     }
 
-    for Np_1d in [2, 4, 6]:
-        for nxy in map(int, np.logspace(3, 7, 20, base=2)):
-            prefix = f"{run_name}_Np_{Np_1d}_nxy_{nxy}"
+    Np_1d_list = [2, 4, 6]
+    nxy_list = map(int, np.logspace(3, 7, 20, base=2))
+    if smoke:
+        Np_1d_list = [2, 4]
+        nxy_list = [4, 8, 16, 32]
+
+    for Np_1d in Np_1d_list:
+        for nxy in nxy_list:
+            prefix = os.path.join(run_name, f"Np_{Np_1d}_nxy_{nxy}")
             cmd = [
                 "./stress_functional_accuracy",
                 f"--instance={instance}",
+                f"--use-finite-cell-mesh={1 if mesh == 'finite-cell-mesh' else 0}",
                 f"--Np_1d={Np_1d}",
                 f"--nxy={nxy}",
                 f"--prefix={prefix}",
@@ -132,7 +140,7 @@ def run_experiments(run_name, instance, save_vtk: bool):
             df_data["energy_norm"].append(j["energy_norm"])
 
     df = pd.DataFrame(df_data)
-    df.to_csv(f"{run_name}.csv", index=False)
+    df.to_csv(os.path.join(run_name, f"{run_name}.csv"), index=False)
     return df
 
 
@@ -177,21 +185,33 @@ def plot(df, voffset, voffset_text):
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--instance", default="square", choices=["square", "circle"])
+    p.add_argument(
+        "--mesh", default="cut-mesh", choices=["cut-mesh", "finite-cell-mesh"]
+    )
     p.add_argument("--csv", type=str)
     p.add_argument("--voffset", default=-0.2, type=float)
     p.add_argument("--voffset_text", default=-0.4, type=float)
     p.add_argument("--save-vtk", action="store_true")
+    p.add_argument("--smoke-test", action="store_true")
     args = p.parse_args()
 
-    run_name = f"energy_precision_{args.instance}"
+    run_name = f"energy_precision_{args.mesh}_{args.instance}"
+
+    if args.smoke_test:
+        run_name = "smoke_" + run_name
+
+    if not os.path.isdir(run_name):
+        os.mkdir(run_name)
 
     if args.csv is None:
-        df = run_experiments(run_name, args.instance, args.save_vtk)
+        df = run_experiments(
+            run_name, args.mesh, args.instance, args.save_vtk, args.smoke_test
+        )
     else:
         df = pd.read_csv(args.csv)
     print(df)
 
     fig, _ = plot(df, args.voffset, args.voffset_text)
 
-    fig.savefig(f"{run_name}.pdf")
+    fig.savefig(os.path.join(run_name, f"{run_name}.pdf"))
     plt.show()

@@ -9,15 +9,14 @@
 #define PI 3.14159265358979323846
 #define k (1.4 * PI)
 
-template <int Np_1d>
+template <int Np_1d, bool use_finite_cell_mesh>
 void execute(std::string prefix, int nxy, std::string instance, bool save_vtk) {
   using T = double;
   using Grid = StructuredGrid2D<T>;
 
-  // using Mesh = CutMesh<T, Np_1d>;
-  // using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
-
-  using Mesh = FiniteCellMesh<T, Np_1d>;
+  using Mesh =
+      typename std::conditional<use_finite_cell_mesh, FiniteCellMesh<T, Np_1d>,
+                                CutMesh<T, Np_1d>>::type;
   using Quadrature =
       GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER, Grid, Np_1d, Mesh>;
   using Basis = GDBasis2D<T, Mesh>;
@@ -56,7 +55,6 @@ void execute(std::string prefix, int nxy, std::string instance, bool save_vtk) {
   Quadrature quadrature(*mesh);
   Basis basis(*mesh);
 
-  // double nitsche_eta = (Np_1d + 1) * (Np_1d + 1) * 1e3 * nxy;
   double nitsche_eta = 1e8;
   PoissonApp<T, Mesh, Quadrature, Basis, typeof(poisson_source_fun)>
       poisson_app(*mesh, quadrature, basis, poisson_source_fun);
@@ -173,6 +171,7 @@ int main(int argc, char* argv[]) {
   p.add_argument<int>("--nxy", 32);
   p.add_argument<std::string>("--prefix", {});
   p.add_argument<std::string>("--instance", "square");
+  p.add_argument<int>("--use-finite-cell-mesh", 0);
   p.add_argument<int>("--save-vtk", 1);
   p.parse_args(argc, argv);
 
@@ -187,23 +186,30 @@ int main(int argc, char* argv[]) {
   int Np_1d = p.get<int>("Np_1d");
   int nxy = p.get<int>("nxy");
   std::string instance = p.get<std::string>("instance");
+  bool use_finite_cell_mesh = p.get<int>("use-finite-cell-mesh");
   bool save_vtk = p.get<int>("save-vtk");
 
   switch (Np_1d) {
     case 2:
-      execute<2>(prefix, nxy, instance, save_vtk);
+      if (use_finite_cell_mesh) {
+        execute<2, true>(prefix, nxy, instance, save_vtk);
+      } else {
+        execute<2, false>(prefix, nxy, instance, save_vtk);
+      }
       break;
     case 4:
-      execute<4>(prefix, nxy, instance, save_vtk);
+      if (use_finite_cell_mesh) {
+        execute<4, true>(prefix, nxy, instance, save_vtk);
+      } else {
+        execute<4, false>(prefix, nxy, instance, save_vtk);
+      }
       break;
     case 6:
-      execute<6>(prefix, nxy, instance, save_vtk);
-      break;
-    case 8:
-      execute<8>(prefix, nxy, instance, save_vtk);
-      break;
-    case 10:
-      execute<10>(prefix, nxy, instance, save_vtk);
+      if (use_finite_cell_mesh) {
+        execute<6, true>(prefix, nxy, instance, save_vtk);
+      } else {
+        execute<6, false>(prefix, nxy, instance, save_vtk);
+      }
       break;
     default:
       printf("Unsupported Np_1d (%d), exiting...\n", Np_1d);
