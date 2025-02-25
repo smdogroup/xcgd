@@ -2,6 +2,8 @@
 #include "apps/static_elastic.h"
 #include "elements/gd_mesh.h"
 #include "elements/gd_vandermonde.h"
+#include "physics/linear_elasticity.h"
+#include "physics/stress.h"
 #include "utils/argparser.h"
 #include "utils/json.h"
 #include "utils/vtk.h"
@@ -10,7 +12,228 @@
 #define k (1.4 * PI)
 
 template <int Np_1d, bool use_finite_cell_mesh>
-void execute(std::string prefix, int nxy, std::string instance, bool save_vtk) {
+void execute_elasticity(std::string prefix, int nxy) {
+  using T = double;
+  using Grid = StructuredGrid2D<T>;
+
+  using Mesh =
+      typename std::conditional<use_finite_cell_mesh, FiniteCellMesh<T, Np_1d>,
+                                CutMesh<T, Np_1d>>::type;
+  using Quadrature =
+      GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER, Grid, Np_1d, Mesh>;
+  using Basis = GDBasis2D<T, Mesh>;
+  constexpr int spatial_dim = Basis::spatial_dim;
+
+  auto elasticity_source = [](const A2D::Vec<T, spatial_dim>& xloc) {
+    A2D::Vec<T, spatial_dim> ret;
+    return ret;
+  };
+
+  T Tx = 10.0, R = 1.0;
+
+  auto elasticity_stress_exact = [Tx, R](const A2D::Vec<T, spatial_dim>& xloc) {
+    T theta = atan(xloc[1] / xloc[0]);
+    T r = sqrt(xloc[0] * xloc[0] + xloc[1] * xloc[1]);
+
+    T R2 = R * R;
+    T r2 = r * r;
+    T R4 = R * R * R * R;
+    T r4 = r * r * r * r;
+
+    T Sr = Tx / 2.0 * (1.0 - R2 / r2) +
+           Tx / 2.0 * (1.0 + 3.0 * R4 / r4 - 4.0 * R2 / r2) * cos(2.0 * theta);
+    T St = Tx / 2.0 * (1.0 + R2 / r2) -
+           Tx / 2.0 * (1.0 + 3.0 * R4 / r4) * cos(2.0 * theta);
+    T Srt =
+        -Tx / 2.0 * (1.0 - 3.0 * R4 / r4 + 2.0 * R2 / r2) * sin(2.0 * theta);
+
+    T C = cos(theta);
+    T S = sin(theta);
+
+    T Sx = C * C * Sr - 2.0 * C * S * Srt + S * S * St;
+    T Sy = S * S * Sr + 2.0 * C * S * Srt + C * C * St;
+    T Sxy = C * S * (Sr - St) + Srt * (C * C - S * S);
+
+    A2D::SymMat<T, spatial_dim> Stensor;
+    Stensor(0, 0) = Sx;
+    Stensor(1, 1) = Sy;
+    Stensor(0, 1) = Sxy;
+    return Stensor;
+  };
+
+  using PhysicsApp =
+      StaticElastic<T, Mesh, Quadrature, Basis, typeof(elasticity_source)>;
+
+  int nx_ny[2] = {nxy, nxy};
+  T L = 4.0;
+  T dh = L / nxy;
+  T lxy[2] = {L, L};
+  Grid grid(nx_ny, lxy);
+
+  Mesh mesh(grid, [R](T* x) { return R * R - x[0] * x[0] - x[1] * x[1]; });
+
+  Quadrature quadrature(mesh);
+  Basis basis(mesh);
+
+  double E = 1e5, nu = 0.3;
+  PhysicsApp physics_app(E, nu, mesh, quadrature, basis, elasticity_source);
+
+  // Set bcs
+  std::vector<int> dof_bcs;
+  std::vector<T> dof_vals;
+
+  for (int node : mesh.get_left_boundary_nodes()) {
+    T xloc[spatial_dim];
+    mesh.get_node_xloc(node, xloc);
+    dof_bcs.push_back(2 * node);
+    dof_vals.push_back(0.0);
+  }
+
+  for (int node : mesh.get_lower_boundary_nodes()) {
+    T xloc[spatial_dim];
+    mesh.get_node_xloc(node, xloc);
+    dof_bcs.push_back(2 * node + 1);
+    dof_vals.push_back(0.0);
+  }
+
+  auto load_func_top =
+      [elasticity_stress_exact](const A2D::Vec<T, spatial_dim>& xloc) {
+        A2D::SymMat<T, spatial_dim> stress = elasticity_stress_exact(xloc);
+
+        A2D::Vec<T, spatial_dim> ret;
+        ret(0) = stress(0, 1);
+        ret(1) = stress(1, 1);
+        return ret;
+      };
+  auto load_func_right =
+      [elasticity_stress_exact](const A2D::Vec<T, spatial_dim>& xloc) {
+        A2D::SymMat<T, spatial_dim> stress = elasticity_stress_exact(xloc);
+
+        A2D::Vec<T, spatial_dim> ret;
+        ret(0) = stress(0, 0);
+        ret(1) = stress(0, 1);
+        return ret;
+      };
+
+  using LoadPhysicsTop =
+      ElasticityExternalLoad<T, Basis::spatial_dim, typeof(load_func_top)>;
+  using LoadPhysicsRight =
+      ElasticityExternalLoad<T, Basis::spatial_dim, typeof(load_func_right)>;
+
+  LoadPhysicsTop load_physics_top(load_func_top);
+  LoadPhysicsRight load_physics_right(load_func_right);
+
+  constexpr bool use_ersatz = false;
+  using LoadQuadratureTop =
+      GDGaussQuadrature2D<T, Np_1d, QuadPtType::SURFACE, SurfQuad::TOP, Mesh>;
+  using LoadAnalysisTop = GalerkinAnalysis<T, Mesh, LoadQuadratureTop, Basis,
+                                           LoadPhysicsTop, use_ersatz>;
+
+  using LoadQuadratureRight =
+      GDGaussQuadrature2D<T, Np_1d, QuadPtType::SURFACE, SurfQuad::RIGHT, Mesh>;
+  using LoadAnalysisRight =
+      GalerkinAnalysis<T, Mesh, LoadQuadratureRight, Basis, LoadPhysicsRight,
+                       use_ersatz>;
+
+  std::set<int> load_elements_top, load_elements_right;
+  const auto& cell_elems = mesh.get_cell_elems();
+  for (int i = 0; i < nxy; i++) {
+    load_elements_top.insert(cell_elems.at(grid.get_coords_cell(i, nxy - 1)));
+    load_elements_right.insert(cell_elems.at(grid.get_coords_cell(nxy - 1, i)));
+  }
+
+  LoadQuadratureTop load_quadrature_top(mesh, load_elements_top);
+  LoadQuadratureRight load_quadrature_right(mesh, load_elements_right);
+
+  LoadAnalysisTop load_analysis_top(mesh, load_quadrature_top, basis,
+                                    load_physics_top);
+  LoadAnalysisRight load_analysis_right(mesh, load_quadrature_right, basis,
+                                        load_physics_right);
+
+  std::vector<T> sol = physics_app.solve(
+      dof_bcs, dof_vals,
+      std::make_tuple(load_analysis_top, load_analysis_right));
+
+  // Evaluate norm errors
+  using EnergyNormPhysics =
+      LinearElasticityEnergyNormError<T, spatial_dim,
+                                      typeof(elasticity_stress_exact)>;
+  using EnergyNormAnalysis =
+      GalerkinAnalysis<T, Mesh, Quadrature, Basis, EnergyNormPhysics>;
+
+  EnergyNormPhysics stress_norm_physics(E, nu, elasticity_stress_exact);
+  EnergyNormAnalysis stress_norm_analysis(mesh, quadrature, basis,
+                                          stress_norm_physics);
+
+  json j = {
+      {"stress_norm", sqrt(stress_norm_analysis.energy(nullptr, sol.data()))}};
+  write_json(std::filesystem::path(prefix) / std::filesystem::path("sol.json"),
+             j);
+
+  // Cut vtk
+  {
+    ToVTK<T, Mesh> cut_vtk(
+        mesh, std::filesystem::path(prefix) / std::filesystem::path("cut.vtk"));
+    cut_vtk.write_mesh();
+
+    std::vector<T> load_elems_v(mesh.get_num_elements(), 0.0);
+    for (int e : load_elements_top) load_elems_v[e] = 1.0;
+    for (int e : load_elements_right) load_elems_v[e] = 1.0;
+
+    cut_vtk.write_sol("lsf", mesh.get_lsf_nodes().data());
+    cut_vtk.write_vec("sol", sol.data());
+    cut_vtk.write_vec("rhs", physics_app.get_rhs().data());
+    cut_vtk.write_cell_sol("loaded_elems", load_elems_v.data());
+  }
+
+  // evaluate stress at quadratures
+  {
+    using StrainStress = LinearElasticity2DStrainStress<T>;
+    using StrainStressAnalysis =
+        GalerkinAnalysis<T, Mesh, Quadrature, Basis, StrainStress>;
+
+    StrainStress strain_stress(E, nu);
+    StrainStressAnalysis strain_stress_analysis(mesh, quadrature, basis,
+                                                strain_stress);
+
+    std::vector<StrainStressType> types = {
+        StrainStressType::sx, StrainStressType::sy, StrainStressType::sxy,
+        StrainStressType::ex, StrainStressType::ey, StrainStressType::exy};
+    std::vector<std::string> names = {"sx", "sy", "sxy", "ex", "ey", "exy"};
+
+    FieldToVTKNew<T, spatial_dim> quad_vtk(std::filesystem::path(prefix) /
+                                           std::filesystem::path("quad.vtk"));
+
+    std::vector<T> xloc_q =
+        strain_stress_analysis.interpolate_energy(sol.data()).first;
+    quad_vtk.add_mesh(xloc_q);
+    quad_vtk.write_mesh();
+
+    for (int i = 0; i < 3; i++) {
+      strain_stress.set_type(types[i]);
+      quad_vtk.add_sol(
+          names[i],
+          strain_stress_analysis.interpolate_energy(sol.data()).second);
+      quad_vtk.write_sol(names[i]);
+
+      // Compute exact stress components
+      int num_quads = xloc_q.size() / spatial_dim;
+      std::vector<T> exact;
+      for (int q = 0; q < num_quads; q++) {
+        T xloc[spatial_dim] = {xloc_q[spatial_dim * q],
+                               xloc_q[spatial_dim * q + 1]};
+        exact.push_back(elasticity_stress_exact(xloc)[i]);
+      }
+
+      quad_vtk.add_sol(names[i] + "_exact", exact);
+      quad_vtk.write_sol(names[i] + "_exact");
+    }
+  }
+}
+
+template <int Np_1d, bool use_finite_cell_mesh>
+void execute_poisson(std::string prefix, int nxy, std::string instance,
+                     bool save_vtk) {
   using T = double;
   using Grid = StructuredGrid2D<T>;
 
@@ -88,8 +311,8 @@ void execute(std::string prefix, int nxy, std::string instance, bool save_vtk) {
 
   // Evaluate norm errors
   using EnergyNormPhysics =
-      PoissonEnergyNorm<T, spatial_dim, typeof(poisson_exact_fun),
-                        typeof(poisson_stress_fun)>;
+      PoissonEnergyNormError<T, spatial_dim, typeof(poisson_exact_fun),
+                             typeof(poisson_stress_fun)>;
   using EnergyNormAnalysis =
       GalerkinAnalysis<T, Mesh, Quadrature, Basis, EnergyNormPhysics>;
 
@@ -165,19 +388,33 @@ void execute(std::string prefix, int nxy, std::string instance, bool save_vtk) {
   }
 }
 
+template <int Np_1d, bool use_finite_cell_mesh>
+void execute(std::string physics, std::string prefix, int nxy,
+             std::string instance, bool save_vtk) {
+  if (physics == "poisson") {
+    execute_poisson<Np_1d, use_finite_cell_mesh>(prefix, nxy, instance,
+                                                 save_vtk);
+  } else {
+    execute_elasticity<Np_1d, use_finite_cell_mesh>(prefix, nxy);
+  }
+}
+
 int main(int argc, char* argv[]) {
   ArgParser p;
   p.add_argument<int>("--Np_1d", 2);
   p.add_argument<int>("--nxy", 32);
+  p.add_argument<std::string>("--physics", "elasticity",
+                              {"poisson", "elasticity"});
   p.add_argument<std::string>("--prefix", {});
   p.add_argument<std::string>("--instance", "square");
   p.add_argument<int>("--use-finite-cell-mesh", 0);
   p.add_argument<int>("--save-vtk", 1);
   p.parse_args(argc, argv);
 
+  std::string physics = p.get<std::string>("physics");
   std::string prefix = p.get<std::string>("prefix");
   if (prefix.empty()) {
-    prefix = get_local_time();
+    prefix = physics + "_" + get_local_time();
   }
 
   p.write_args_to_file(std::filesystem::path(prefix) /
@@ -192,23 +429,23 @@ int main(int argc, char* argv[]) {
   switch (Np_1d) {
     case 2:
       if (use_finite_cell_mesh) {
-        execute<2, true>(prefix, nxy, instance, save_vtk);
+        execute<2, true>(physics, prefix, nxy, instance, save_vtk);
       } else {
-        execute<2, false>(prefix, nxy, instance, save_vtk);
+        execute<2, false>(physics, prefix, nxy, instance, save_vtk);
       }
       break;
     case 4:
       if (use_finite_cell_mesh) {
-        execute<4, true>(prefix, nxy, instance, save_vtk);
+        execute<4, true>(physics, prefix, nxy, instance, save_vtk);
       } else {
-        execute<4, false>(prefix, nxy, instance, save_vtk);
+        execute<4, false>(physics, prefix, nxy, instance, save_vtk);
       }
       break;
     case 6:
       if (use_finite_cell_mesh) {
-        execute<6, true>(prefix, nxy, instance, save_vtk);
+        execute<6, true>(physics, prefix, nxy, instance, save_vtk);
       } else {
-        execute<6, false>(prefix, nxy, instance, save_vtk);
+        execute<6, false>(physics, prefix, nxy, instance, save_vtk);
       }
       break;
     default:

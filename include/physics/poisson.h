@@ -641,12 +641,12 @@ class PoissonCutDirichletNitscheParameterEigM final
   }
 };
 
-// Energy norm ||e|| = (∫(u - uh)^2 + (du - duh)^T(du - duh) )^0.5
+// Energy norm error ||e|| = [∫[(u - uh)^2 + (du - duh)^T(du - duh)]dΩ]^0.5
 template <typename T, int spatial_dim, class u_fun_t, class stress_fun_t>
-class PoissonEnergyNorm final : public PhysicsBase<T, spatial_dim, 0, 1> {
+class PoissonEnergyNormError final : public PhysicsBase<T, spatial_dim, 0, 1> {
  public:
-  PoissonEnergyNorm(const u_fun_t& u_fun, const stress_fun_t& stress_fun,
-                    double c1 = 1.0, double c2 = 1.0)
+  PoissonEnergyNormError(const u_fun_t& u_fun, const stress_fun_t& stress_fun,
+                         double c1 = 1.0, double c2 = 1.0)
       : u_fun(u_fun), stress_fun(stress_fun), c1(c1), c2(c2) {}
 
   T energy(T weight, T _, A2D::Vec<T, spatial_dim>& xloc,

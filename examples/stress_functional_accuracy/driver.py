@@ -93,20 +93,22 @@ def annotate_slope(
     return
 
 
-def run_experiments(run_name, mesh, instance, save_vtk: bool, smoke: bool):
+def run_experiments(run_name, mesh, physics, instance, save_vtk: bool, smoke: bool):
     logpath = os.path.join(run_name, f"{run_name}.log")
     open(logpath, "w").close()  # erase existing file
 
     df_data = {
         "Np_1d": [],
         "h": [],
-        "val_norm": [],
         "stress_norm": [],
-        "energy_norm": [],
     }
 
+    if physics == "poisson":
+        df_data["val_norm"] = []
+        df_data["energy_norm"] = []
+
     Np_1d_list = [2, 4, 6]
-    nxy_list = map(int, np.logspace(3, 7, 20, base=2))
+    nxy_list = list(map(int, np.logspace(3, 7, 20, base=2)))
     if smoke:
         Np_1d_list = [2, 4]
         nxy_list = [4, 8, 16, 32]
@@ -116,6 +118,7 @@ def run_experiments(run_name, mesh, instance, save_vtk: bool, smoke: bool):
             prefix = os.path.join(run_name, f"Np_{Np_1d}_nxy_{nxy}")
             cmd = [
                 "./stress_functional_accuracy",
+                f"--physics={physics}",
                 f"--instance={instance}",
                 f"--use-finite-cell-mesh={1 if mesh == 'finite-cell-mesh' else 0}",
                 f"--Np_1d={Np_1d}",
@@ -135,16 +138,18 @@ def run_experiments(run_name, mesh, instance, save_vtk: bool, smoke: bool):
 
             df_data["Np_1d"].append(Np_1d)
             df_data["h"].append(1.0 / nxy)
-            df_data["val_norm"].append(j["val_norm"])
             df_data["stress_norm"].append(j["stress_norm"])
-            df_data["energy_norm"].append(j["energy_norm"])
+
+            if physics == "poisson":
+                df_data["val_norm"].append(j["val_norm"])
+                df_data["energy_norm"].append(j["energy_norm"])
 
     df = pd.DataFrame(df_data)
     df.to_csv(os.path.join(run_name, f"{run_name}.csv"), index=False)
     return df
 
 
-def plot(df, voffset, voffset_text):
+def plot_poisson(df, voffset, voffset_text):
     fig, axs = plt.subplots(
         ncols=3,
         nrows=1,
@@ -182,8 +187,40 @@ def plot(df, voffset, voffset_text):
     return fig, axs
 
 
+def plot_elasticity(df, voffset, voffset_text):
+    fig, ax = plt.subplots(
+        ncols=1,
+        nrows=1,
+        figsize=(6.4, 4.8),
+        constrained_layout=True,
+    )
+
+    for Np_1d, sub_df in df.groupby("Np_1d"):
+        # Get averaged slope
+        x = sub_df["h"]
+        y = sub_df["stress_norm"]
+        slope, _ = np.polyfit(np.log10(x), np.log10(y), deg=1)
+        label = f"$p={Np_1d - 1}, \Delta:{slope:.2f}$"
+        ax.loglog(x, y, "-o", label=label)
+        x0, x1 = x.iloc[-2:]
+        y0, y1 = y.iloc[-2:]
+        annotate_slope(
+            ax, (x0, y0), (x1, y1), voffset=voffset, voffset_text=voffset_text
+        )
+
+        ylabel = r"$\left[\int_h  \text{tr}((\mathbf{S} - \mathbf{S}_h)^T(\mathbf{S} - \mathbf{S}_h)) d\Omega\right]^{1/2}$"
+
+        ax.grid(which="both")
+        ax.legend()
+        ax.set_xlabel(r"$h$")
+        ax.set_ylabel(ylabel)
+
+    return fig, ax
+
+
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
+    p.add_argument("--physics", default="poisson", choices=["poisson", "elasticity"])
     p.add_argument("--instance", default="square", choices=["square", "circle"])
     p.add_argument(
         "--mesh", default="cut-mesh", choices=["cut-mesh", "finite-cell-mesh"]
@@ -195,7 +232,7 @@ if __name__ == "__main__":
     p.add_argument("--smoke-test", action="store_true")
     args = p.parse_args()
 
-    run_name = f"energy_precision_{args.mesh}_{args.instance}"
+    run_name = f"{args.physics}_energy_precision_{args.mesh}_{args.instance}"
 
     if args.smoke_test:
         run_name = "smoke_" + run_name
@@ -205,13 +242,20 @@ if __name__ == "__main__":
 
     if args.csv is None:
         df = run_experiments(
-            run_name, args.mesh, args.instance, args.save_vtk, args.smoke_test
+            run_name,
+            args.mesh,
+            args.physics,
+            args.instance,
+            args.save_vtk,
+            args.smoke_test,
         )
     else:
         df = pd.read_csv(args.csv)
     print(df)
 
-    fig, _ = plot(df, args.voffset, args.voffset_text)
+    if args.physics == "poisson":
+        fig, _ = plot_poisson(df, args.voffset, args.voffset_text)
+    else:
+        fig, _ = plot_elasticity(df, args.voffset, args.voffset_text)
 
     fig.savefig(os.path.join(run_name, f"{run_name}.pdf"))
-    plt.show()

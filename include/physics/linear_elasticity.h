@@ -451,4 +451,59 @@ class LinearElasticityCutDirichlet final
   const BCFunc& bc_func;  // the Dirichlet boundary value evaluator
 };
 
+// Energy norm error ||e|| = [∫(s - sh)^T(s - sh)dΩ]^0.5
+template <typename T, int spatial_dim_, class StressFun>
+class LinearElasticityEnergyNormError final
+    : public PhysicsBase<T, spatial_dim_, 1, spatial_dim_> {
+ private:
+  using PhysicsBase_s = PhysicsBase<T, spatial_dim_, 1, spatial_dim_>;
+  static_assert(spatial_dim_ == 3 or spatial_dim_ == 2,
+                "LinearElasticityEnergyNormError is only implemented for 2D "
+                "and 3D problems");
+
+ public:
+  using PhysicsBase_s::data_per_node;
+  using PhysicsBase_s::dof_per_node;
+  using PhysicsBase_s::spatial_dim;
+
+  // stress_fun returns a symmetric stress tensor
+  LinearElasticityEnergyNormError(T E, T nu, const StressFun& stress_fun)
+      : mu(0.5 * E / (1.0 + nu)),
+        lambda(spatial_dim == 3 ? E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu))
+                                : E * nu / ((1.0 + nu) * (1.0 - nu))),
+        stress_fun(stress_fun) {}
+
+  T energy(T weight, T _, A2D::Vec<T, spatial_dim>& xloc,
+           A2D::Vec<T, spatial_dim>& ___,
+           A2D::Mat<T, spatial_dim, spatial_dim>& J,
+           A2D::Vec<T, dof_per_node>& u,
+           A2D::Mat<T, dof_per_node, spatial_dim>& grad) const {
+    // det
+    T detJ;
+    A2D::MatDet(J, detJ);
+
+    // numerical stress
+    A2D::SymMat<T, spatial_dim> E, S;
+    A2D::MatGreenStrain<A2D::GreenStrainType::LINEAR>(grad, E);
+    A2D::SymIsotropic(mu, lambda, E, S);
+
+    // Exact stress
+    A2D::SymMat<T, spatial_dim> S_exact = stress_fun(xloc);
+
+    // Diff in "energy"
+    // Note: we take a shortcut here and are not using the exact strain energy
+    // tr(E^TS) instead, we compute tr(S^TS) for simplicity
+    A2D::SymMat<T, spatial_dim> S_diff;
+    A2D::MatSum(1.0, S, -1.0, S_exact, S_diff);
+    T energy_diff;
+    A2D::SymMatMultTrace(S_diff, S_diff, energy_diff);
+
+    return weight * detJ * energy_diff;
+  }
+
+ private:
+  T mu, lambda;  // Lame parameters
+  const StressFun& stress_fun;
+};
+
 #endif  // XCGD_LINEAR_ELASTICITY_H
