@@ -9,6 +9,14 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import os
 
+from typing import List
+
+
+def save_cmd(prefix, cmd: List[str]):
+    with open(os.path.join(prefix, "cmd.txt"), "w") as f:
+        f.write(" ".join(cmd))
+        f.write("\n")
+
 
 def print_and_log(logpath, string):
     with open(logpath, "a") as f:
@@ -93,7 +101,16 @@ def annotate_slope(
     return
 
 
-def run_experiments(run_name, mesh, physics, instance, save_vtk: bool, smoke: bool):
+def run_experiments(
+    run_name,
+    mesh,
+    physics,
+    instance,
+    save_vtk: bool,
+    use_ersatz: bool,
+    ersatz_ratio: float,
+    smoke: bool,
+):
     logpath = os.path.join(run_name, f"{run_name}.log")
     open(logpath, "w").close()  # erase existing file
 
@@ -116,6 +133,8 @@ def run_experiments(run_name, mesh, physics, instance, save_vtk: bool, smoke: bo
     for Np_1d in Np_1d_list:
         for nxy in nxy_list:
             prefix = os.path.join(run_name, f"Np_{Np_1d}_nxy_{nxy}")
+            if not os.path.isdir(prefix):
+                os.mkdir(prefix)
             cmd = [
                 "./stress_functional_accuracy",
                 f"--physics={physics}",
@@ -124,8 +143,12 @@ def run_experiments(run_name, mesh, physics, instance, save_vtk: bool, smoke: bo
                 f"--Np_1d={Np_1d}",
                 f"--nxy={nxy}",
                 f"--prefix={prefix}",
+                f"--use-ersatz={int(use_ersatz)}",
+                f"--ersatz-ratio={ersatz_ratio}",
                 f"--save-vtk={int(save_vtk)}",
             ]
+
+            save_cmd(prefix, cmd)
 
             t1 = time()
             j = execute(prefix, cmd)
@@ -229,10 +252,17 @@ if __name__ == "__main__":
     p.add_argument("--voffset", default=-0.2, type=float)
     p.add_argument("--voffset_text", default=-0.4, type=float)
     p.add_argument("--save-vtk", action="store_true")
+    p.add_argument("--use-ersatz", action="store_true")
+    p.add_argument("--ersatz-ratio", default=1e-6, type=float)
     p.add_argument("--smoke-test", action="store_true")
     args = p.parse_args()
 
-    run_name = f"{args.physics}_energy_precision_{args.mesh}_{args.instance}"
+    if args.physics == "poisson":
+        run_name = f"{args.physics}_energy_precision_{args.mesh}_{args.instance}"
+    else:
+        run_name = f"{args.physics}_energy_precision_{args.mesh}"
+        if args.use_ersatz:
+            run_name += f"_ersatz_{args.ersatz_ratio}"
 
     if args.smoke_test:
         run_name = "smoke_" + run_name
@@ -247,6 +277,8 @@ if __name__ == "__main__":
             args.physics,
             args.instance,
             args.save_vtk,
+            args.use_ersatz,
+            args.ersatz_ratio,
             args.smoke_test,
         )
     else:

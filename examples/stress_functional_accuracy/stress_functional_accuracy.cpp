@@ -11,8 +11,30 @@
 #define PI 3.14159265358979323846
 #define k (1.4 * PI)
 
-template <int Np_1d, bool use_finite_cell_mesh>
-void execute_elasticity(std::string prefix, int nxy) {
+// only useful if ersatz material is used
+template <typename T, int dim, class Mesh>
+std::vector<T> grid_dof_to_cut_dof(const Mesh& mesh, const std::vector<T> u) {
+  if (u.size() != mesh.get_grid().get_num_verts() * dim) {
+    throw std::runtime_error(
+        "grid_dof_to_cut_dof() only takes dof vectors of size nverts * dim "
+        "(" +
+        std::to_string(mesh.get_grid().get_num_verts() * dim) + "), got " +
+        std::to_string(u.size()));
+  }
+
+  int nnodes = mesh.get_num_nodes();
+  std::vector<T> u0(dim * nnodes);
+  for (int i = 0; i < nnodes; i++) {
+    int vert = mesh.get_node_vert(i);
+    for (int d = 0; d < dim; d++) {
+      u0[dim * i + d] = u[dim * vert + d];
+    }
+  }
+  return u0;
+}
+
+template <int Np_1d, bool use_finite_cell_mesh, bool use_ersatz = false>
+void execute_elasticity(std::string prefix, int nxy, double ersatz_ratio) {
   using T = double;
   using Grid = StructuredGrid2D<T>;
 
@@ -61,8 +83,12 @@ void execute_elasticity(std::string prefix, int nxy) {
     return Stensor;
   };
 
-  using PhysicsApp =
-      StaticElastic<T, Mesh, Quadrature, Basis, typeof(elasticity_source)>;
+  using PhysicsApp = typename std::conditional<
+      use_ersatz,
+      StaticElasticErsatz<T, Mesh, Quadrature, Basis, typeof(elasticity_source),
+                          Grid>,
+      StaticElastic<T, Mesh, Quadrature, Basis,
+                    typeof(elasticity_source)>>::type;
 
   int nx_ny[2] = {nxy, nxy};
   T L = 4.0;
@@ -76,7 +102,15 @@ void execute_elasticity(std::string prefix, int nxy) {
   Basis basis(mesh);
 
   double E = 1e5, nu = 0.3;
-  PhysicsApp physics_app(E, nu, mesh, quadrature, basis, elasticity_source);
+
+  std::shared_ptr<PhysicsApp> physics_app;
+  if constexpr (use_ersatz) {
+    physics_app = std::make_shared<PhysicsApp>(E, nu, mesh, quadrature, basis,
+                                               elasticity_source, ersatz_ratio);
+  } else {
+    physics_app = std::make_shared<PhysicsApp>(E, nu, mesh, quadrature, basis,
+                                               elasticity_source);
+  }
 
   // Set bcs
   std::vector<int> dof_bcs;
@@ -85,15 +119,21 @@ void execute_elasticity(std::string prefix, int nxy) {
   for (int node : mesh.get_left_boundary_nodes()) {
     T xloc[spatial_dim];
     mesh.get_node_xloc(node, xloc);
-    dof_bcs.push_back(2 * node);
     dof_vals.push_back(0.0);
+    if (use_ersatz) {
+      node = mesh.get_node_vert(node);
+    }
+    dof_bcs.push_back(2 * node);
   }
 
   for (int node : mesh.get_lower_boundary_nodes()) {
     T xloc[spatial_dim];
     mesh.get_node_xloc(node, xloc);
-    dof_bcs.push_back(2 * node + 1);
     dof_vals.push_back(0.0);
+    if (use_ersatz) {
+      node = mesh.get_node_vert(node);
+    }
+    dof_bcs.push_back(2 * node + 1);
   }
 
   auto load_func_top =
@@ -123,7 +163,6 @@ void execute_elasticity(std::string prefix, int nxy) {
   LoadPhysicsTop load_physics_top(load_func_top);
   LoadPhysicsRight load_physics_right(load_func_right);
 
-  constexpr bool use_ersatz = false;
   using LoadQuadratureTop =
       GDGaussQuadrature2D<T, Np_1d, QuadPtType::SURFACE, SurfQuad::TOP, Mesh>;
   using LoadAnalysisTop = GalerkinAnalysis<T, Mesh, LoadQuadratureTop, Basis,
@@ -150,9 +189,27 @@ void execute_elasticity(std::string prefix, int nxy) {
   LoadAnalysisRight load_analysis_right(mesh, load_quadrature_right, basis,
                                         load_physics_right);
 
-  std::vector<T> sol = physics_app.solve(
+  std::vector<T> sol = physics_app->solve(
       dof_bcs, dof_vals,
       std::make_tuple(load_analysis_top, load_analysis_right));
+
+  // Grid vtk
+  {
+    using GMesh = GridMesh<T, Np_1d, Grid>;
+    GMesh gmesh(grid);
+    ToVTK<T, GMesh> grid_vtk((gmesh), std::filesystem::path(prefix) /
+                                          std::filesystem::path("grid.vtk"));
+    grid_vtk.write_mesh();
+    grid_vtk.write_sol("lsf", mesh.get_lsf_dof().data());
+
+    if (use_ersatz) {
+      grid_vtk.write_vec("sol", sol.data());
+    }
+  }
+
+  if (use_ersatz) {
+    sol = grid_dof_to_cut_dof<T, spatial_dim, Mesh>(mesh, sol);
+  }
 
   // Evaluate norm errors
   using EnergyNormPhysics =
@@ -182,7 +239,7 @@ void execute_elasticity(std::string prefix, int nxy) {
 
     cut_vtk.write_sol("lsf", mesh.get_lsf_nodes().data());
     cut_vtk.write_vec("sol", sol.data());
-    cut_vtk.write_vec("rhs", physics_app.get_rhs().data());
+    cut_vtk.write_vec("rhs", physics_app->get_rhs().data());
     cut_vtk.write_cell_sol("loaded_elems", load_elems_v.data());
   }
 
@@ -208,6 +265,12 @@ void execute_elasticity(std::string prefix, int nxy) {
         strain_stress_analysis.interpolate_energy(sol.data()).first;
     quad_vtk.add_mesh(xloc_q);
     quad_vtk.write_mesh();
+
+    // Energy norm at each quadrature points
+    std::vector<T> stress_norm_q =
+        stress_norm_analysis.interpolate_energy(sol.data()).second;
+    quad_vtk.add_sol("stress_norm_err", stress_norm_q);
+    quad_vtk.write_sol("stress_norm_err");
 
     for (int i = 0; i < 3; i++) {
       strain_stress.set_type(types[i]);
@@ -390,12 +453,18 @@ void execute_poisson(std::string prefix, int nxy, std::string instance,
 
 template <int Np_1d, bool use_finite_cell_mesh>
 void execute(std::string physics, std::string prefix, int nxy,
-             std::string instance, bool save_vtk) {
+             std::string instance, bool save_vtk, bool use_ersatz,
+             double ersatz_ratio) {
   if (physics == "poisson") {
     execute_poisson<Np_1d, use_finite_cell_mesh>(prefix, nxy, instance,
                                                  save_vtk);
   } else {
-    execute_elasticity<Np_1d, use_finite_cell_mesh>(prefix, nxy);
+    if (use_ersatz) {
+      execute_elasticity<Np_1d, use_finite_cell_mesh, true>(prefix, nxy,
+                                                            ersatz_ratio);
+    } else {
+      execute_elasticity<Np_1d, use_finite_cell_mesh, false>(prefix, nxy, 0.0);
+    }
   }
 }
 
@@ -409,6 +478,8 @@ int main(int argc, char* argv[]) {
   p.add_argument<std::string>("--instance", "square");
   p.add_argument<int>("--use-finite-cell-mesh", 0);
   p.add_argument<int>("--save-vtk", 1);
+  p.add_argument<int>("--use-ersatz", 0);
+  p.add_argument<double>("--ersatz-ratio", 1e-6);
   p.parse_args(argc, argv);
 
   std::string physics = p.get<std::string>("physics");
@@ -425,27 +496,35 @@ int main(int argc, char* argv[]) {
   std::string instance = p.get<std::string>("instance");
   bool use_finite_cell_mesh = p.get<int>("use-finite-cell-mesh");
   bool save_vtk = p.get<int>("save-vtk");
+  bool use_ersatz = p.get<int>("use-ersatz");
+  double ersatz_ratio = p.get<double>("ersatz-ratio");
 
   switch (Np_1d) {
     case 2:
       if (use_finite_cell_mesh) {
-        execute<2, true>(physics, prefix, nxy, instance, save_vtk);
+        execute<2, true>(physics, prefix, nxy, instance, save_vtk, use_ersatz,
+                         ersatz_ratio);
       } else {
-        execute<2, false>(physics, prefix, nxy, instance, save_vtk);
+        execute<2, false>(physics, prefix, nxy, instance, save_vtk, use_ersatz,
+                          ersatz_ratio);
       }
       break;
     case 4:
       if (use_finite_cell_mesh) {
-        execute<4, true>(physics, prefix, nxy, instance, save_vtk);
+        execute<4, true>(physics, prefix, nxy, instance, save_vtk, use_ersatz,
+                         ersatz_ratio);
       } else {
-        execute<4, false>(physics, prefix, nxy, instance, save_vtk);
+        execute<4, false>(physics, prefix, nxy, instance, save_vtk, use_ersatz,
+                          ersatz_ratio);
       }
       break;
     case 6:
       if (use_finite_cell_mesh) {
-        execute<6, true>(physics, prefix, nxy, instance, save_vtk);
+        execute<6, true>(physics, prefix, nxy, instance, save_vtk, use_ersatz,
+                         ersatz_ratio);
       } else {
-        execute<6, false>(physics, prefix, nxy, instance, save_vtk);
+        execute<6, false>(physics, prefix, nxy, instance, save_vtk, use_ersatz,
+                          ersatz_ratio);
       }
       break;
     default:
