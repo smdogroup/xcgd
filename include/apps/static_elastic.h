@@ -266,6 +266,26 @@ class StaticElasticErsatz final {
     mesh_r.update_mesh();
   }
 
+  StaticElasticErsatz(T E_l, T nu_l, T E_r, T nu_r, Mesh& mesh,
+                      Quadrature& quadrature, Basis& basis,
+                      const IntFunc& int_func)
+      : grid(mesh.get_grid()),
+        mesh_l(mesh),
+        mesh_r(grid),
+        quadrature_l(quadrature),
+        quadrature_r(mesh_r),
+        basis_l(basis),
+        basis_r(mesh_r),
+        physics_l(E_l, nu_l, int_func),
+        physics_r(E_r, nu_r, int_func),
+        analysis_l(mesh_l, quadrature_l, basis_l, physics_l),
+        analysis_r(mesh_r, quadrature_r, basis_r, physics_r) {
+    for (int i = 0; i < grid.get_num_verts(); i++) {
+      mesh_r.get_lsf_dof()[i] = -mesh_l.get_lsf_dof()[i];
+    }
+    mesh_r.update_mesh();
+  }
+
   ~StaticElasticErsatz() = default;
 
   // Compute Jacobian matrix without boundary conditions
@@ -498,5 +518,141 @@ class StaticElasticErsatz final {
 
   std::vector<T> rhs;
 };
+
+#if 0
+template <typename T, class Mesh, class Quadrature, class Basis, class IntFunc>
+class StaticElasticNitsche final {
+ public:
+  using Physics = LinearElasticity<T, Basis::spatial_dim, IntFunc>;
+
+ private:
+  using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
+  using BSRMat = GalerkinBSRMat<T, Physics::dof_per_node>;
+  using CSCMat = SparseUtils::CSCMat<T>;
+
+ public:
+  StaticElasticNitsche(T E, T nu, Mesh& mesh, Quadrature& quadrature,
+                       Basis& basis, const IntFunc& int_func)
+      : mesh(mesh),
+        quadrature(quadrature),
+        basis(basis),
+        physics(E, nu, int_func),
+        analysis(mesh, quadrature, basis, physics) {}
+
+  ~StaticElasticNitsche() = default;
+
+  std::vector<T> solve() {
+    int ndof = Physics::dof_per_node * mesh.get_num_nodes();
+
+    // Set up Jacobian matrix
+    int *rowp = nullptr, *cols = nullptr;
+    auto& mesh = this->mesh;
+    SparseUtils::CSRFromConnectivityFunctor(
+        mesh.get_num_nodes(), mesh.get_num_elements(),
+        mesh.max_nnodes_per_element,
+        [&mesh](int elem, int* nodes) -> int {
+          return mesh.get_elem_dof_nodes(elem, nodes);
+        },
+        &rowp, &cols);
+
+    int nnz = rowp[mesh.get_num_nodes()];
+    BSRMat* jac_bsr = new BSRMat(mesh.get_num_nodes(), nnz, rowp, cols);
+    std::vector<T> zeros(ndof, 0.0);
+
+    analysis_bulk.jacobian(nullptr, zeros.data(), jac_bsr);
+    analysis_bcs.jacobian(nullptr, zeros.data(), jac_bsr,
+                          false);  // Add bcs contribution
+    CSCMat* jac_csc = SparseUtils::bsr_to_csc(jac_bsr);
+
+    // Set up the right hand side
+    std::vector<T> rhs(ndof, 0.0);
+
+    analysis_bulk.residual(nullptr, zeros.data(), rhs.data());
+    analysis_bcs.residual(nullptr, zeros.data(), rhs.data());
+    for (int i = 0; i < ndof; i++) {
+      rhs[i] *= -1.0;
+    }
+
+    // Solve
+    SparseUtils::CholOrderingType order = SparseUtils::CholOrderingType::ND;
+    SparseUtils::SparseCholesky<T>* chol =
+        new SparseUtils::SparseCholesky<T>(jac_csc);
+    chol->factor();
+    std::vector<T> sol = rhs;
+    chol->solve(sol.data());
+
+    if (jac_bsr) delete jac_bsr;
+    if (jac_csc) delete jac_csc;
+    if (chol) delete chol;
+
+    return sol;
+  }
+
+
+  std::vector<T> solve(
+      const std::vector<int>& bc_dof, const std::vector<T>& bc_vals,
+      std::shared_ptr<SparseUtils::SparseCholesky<T>>* chol_out = nullptr) {
+    int ndof = Physics::dof_per_node * mesh.get_num_nodes();
+
+    // Compute Jacobian matrix
+    BSRMat* jac_bsr = jacobian();
+    jac_bsr->zero_rows(bc_dof.size(), bc_dof.data());
+    CSCMat* jac_csc = SparseUtils::bsr_to_csc(jac_bsr);
+    jac_csc->zero_columns(bc_dof.size(), bc_dof.data());
+
+    // Set right hand side (Dirichlet bcs and load)
+    rhs = std::vector<T>(ndof, 0.0);
+    std::vector<T> t1(ndof, 0.0), t2(ndof, 0.0);
+
+    analysis.residual(nullptr, t1.data(), rhs.data());
+    for (int i = 0; i < rhs.size(); i++) {
+      rhs[i] *= -1.0;
+    }
+    for (int i = 0; i < bc_dof.size(); i++) {
+      rhs[bc_dof[i]] = bc_vals[i];
+    }
+
+    for (int i = 0; i < bc_dof.size(); i++) {
+      t1[bc_dof[i]] = bc_vals[i];
+    }
+
+    jac_bsr->axpy(t1.data(), t2.data());
+    for (int i = 0; i < bc_dof.size(); i++) {
+      t2[bc_dof[i]] = 0.0;
+    }
+
+    for (int i = 0; i < rhs.size(); i++) {
+      t2[i] = rhs[i] - t2[i];
+    }
+
+    // Factorize Jacobian matrix
+    SparseUtils::CholOrderingType order = SparseUtils::CholOrderingType::ND;
+    std::shared_ptr<SparseUtils::SparseCholesky<T>> chol =
+        std::make_shared<SparseUtils::SparseCholesky<T>>(jac_csc);
+    chol->factor();
+    std::vector<T> sol = t2;
+    chol->solve(sol.data());
+
+    if (chol_out) {
+      *chol_out = chol;
+    }
+
+    if (jac_bsr) delete jac_bsr;
+    if (jac_csc) delete jac_csc;
+
+    return sol;
+  }
+
+ private:
+  Mesh& mesh;
+  Quadrature& quadrature;
+  Basis& basis;
+
+  Physics physics;
+  Analysis analysis;
+
+  std::vector<T> rhs;
+};
+#endif
 
 #endif  // XCGD_STATIC_ELASTIC_H

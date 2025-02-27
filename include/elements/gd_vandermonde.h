@@ -119,8 +119,8 @@ class GDLSFQuadrature2D final : public QuadratureBase<T, quad_type> {
  public:
   using BulkQuad =
       GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER, Grid, nquad_1d, CutMesh_>;
-  using BCQuad = GDLSFQuadrature2D<T, Np_1d, QuadPtType::SURFACE, Grid,
-                                   nquad_1d, CutMesh_>;
+  using InterfaceQuad = GDLSFQuadrature2D<T, Np_1d, QuadPtType::SURFACE, Grid,
+                                          nquad_1d, CutMesh_>;
 
  private:
   // algoim limit, see gaussquad.hpp

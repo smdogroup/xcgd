@@ -138,99 +138,7 @@ class PoissonApp final {
   Analysis analysis;
 };
 
-template <typename T, class Mesh, class Quadrature, class Basis,
-          class SourceFunc, class BCFunc>
-class PoissonNitscheApp final {
- public:
-  using PoissonBulk = PoissonPhysics<T, Basis::spatial_dim, SourceFunc>;
-  using PoissonBCs = PoissonCutDirichlet<T, Basis::spatial_dim, BCFunc>;
-
- private:
-  using QuadratureBulk = Quadrature;
-  using QuadratureBCs = typename Quadrature::BCQuad;
-
-  using AnalysisBulk =
-      GalerkinAnalysis<T, Mesh, QuadratureBulk, Basis, PoissonBulk>;
-  using AnalysisBCs =
-      GalerkinAnalysis<T, Mesh, QuadratureBCs, Basis, PoissonBCs>;
-
-  using BSRMat = GalerkinBSRMat<T, PoissonBulk::dof_per_node>;
-  using CSCMat = SparseUtils::CSCMat<T>;
-
- public:
-  PoissonNitscheApp(Mesh& mesh, Quadrature& quadrature, Basis& basis,
-                    SourceFunc& source_fun, BCFunc& bc_fun, double nitsche_eta)
-      : mesh(mesh),
-        quadrature_bulk(quadrature),
-        quadrature_bcs(mesh),
-        basis(basis),
-        poisson_bulk(source_fun),
-        poisson_bcs(nitsche_eta, bc_fun),
-        analysis_bulk(mesh, quadrature_bulk, basis, poisson_bulk),
-        analysis_bcs(mesh, quadrature_bcs, basis, poisson_bcs) {}
-
-  std::vector<T> solve() {
-    int nnodes = mesh.get_num_nodes();
-    int nelems = mesh.get_num_elements();
-
-    int ndof = nnodes * PoissonBulk::dof_per_node;
-
-    // Set up the Jacobian matrix for Poisson's problem with Nitsche's boundary
-    // conditions
-    int *rowp = nullptr, *cols = nullptr;
-    static constexpr int max_nnodes_per_element = Mesh::max_nnodes_per_element;
-    SparseUtils::CSRFromConnectivityFunctor(
-        nnodes, nelems, max_nnodes_per_element,
-        [this](int elem, int* nodes) -> int {
-          return this->mesh.get_elem_dof_nodes(elem, nodes);
-        },
-        &rowp, &cols);
-    int nnz = rowp[nnodes];
-    BSRMat* jac_bsr = new BSRMat(nnodes, nnz, rowp, cols);
-    std::vector<T> zeros(ndof, 0.0);
-
-    analysis_bulk.jacobian(nullptr, zeros.data(), jac_bsr);
-    analysis_bcs.jacobian(nullptr, zeros.data(), jac_bsr,
-                          false);  // Add bcs contribution
-    CSCMat* jac_csc = SparseUtils::bsr_to_csc(jac_bsr);
-
-    // Set up the right hand side
-    std::vector<T> rhs(ndof, 0.0);
-
-    analysis_bulk.residual(nullptr, zeros.data(), rhs.data());
-    analysis_bcs.residual(nullptr, zeros.data(), rhs.data());
-    for (int i = 0; i < ndof; i++) {
-      rhs[i] *= -1.0;
-    }
-
-    // Solve
-    SparseUtils::CholOrderingType order = SparseUtils::CholOrderingType::ND;
-    SparseUtils::SparseCholesky<T>* chol =
-        new SparseUtils::SparseCholesky<T>(jac_csc);
-    chol->factor();
-    std::vector<T> sol = rhs;
-    chol->solve(sol.data());
-
-    if (jac_bsr) delete jac_bsr;
-    if (jac_csc) delete jac_csc;
-    if (chol) delete chol;
-
-    return sol;
-  }
-
- private:
-  Mesh& mesh;
-  QuadratureBulk& quadrature_bulk;
-  QuadratureBCs quadrature_bcs;  // Note that this is not a reference
-
-  Basis& basis;
-
-  PoissonBulk poisson_bulk;
-  PoissonBCs poisson_bcs;
-  AnalysisBulk analysis_bulk;
-  AnalysisBCs analysis_bcs;
-};
-
+#if 0
 // This app solves the Poisson's equation using the finite cell method
 template <typename T, class Mesh, class Quadrature, class Basis,
           class SourceFunc, class BCFunc>
@@ -241,7 +149,7 @@ class PoissonFiniteCellApp final {
 
  private:
   using QuadratureBulk = Quadrature;
-  using QuadratureBCs = typename Quadrature::BCQuad;
+  using QuadratureBCs = typename Quadrature::InterfaceQuad;
 
   using AnalysisBulk =
       GalerkinAnalysis<T, Mesh, QuadratureBulk, Basis, PoissonBulk>;
@@ -325,3 +233,4 @@ class PoissonFiniteCellApp final {
   AnalysisBulk analysis_bulk;
   AnalysisBCs analysis_bcs;
 };
+#endif

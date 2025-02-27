@@ -1,15 +1,17 @@
+#include "apps/nitsche.h"
 #include "apps/poisson_app.h"
 #include "apps/static_elastic.h"
 #include "elements/gd_mesh.h"
 #include "elements/gd_vandermonde.h"
 #include "physics/linear_elasticity.h"
+#include "physics/poisson.h"
 #include "physics/stress.h"
 #include "utils/argparser.h"
 #include "utils/json.h"
 #include "utils/vtk.h"
 
 #define PI 3.14159265358979323846
-#define k (1.4 * PI)
+#define k (1.2345 * PI)
 
 // only useful if ersatz material is used
 template <typename T, int dim, class Mesh>
@@ -33,8 +35,139 @@ std::vector<T> grid_dof_to_cut_dof(const Mesh& mesh, const std::vector<T> u) {
   return u0;
 }
 
+template <typename T, class Mesh, class Quadrature, class Basis,
+          class StressFunc>
+void eval_bulk_stress(std::string vtk_path, T E, T nu, Mesh& mesh,
+                      Quadrature& quadrature, Basis& basis, std::vector<T> sol,
+                      StressFunc& stress_func) {
+  int constexpr spatial_dim = Basis::spatial_dim;
+
+  using StrainStress = LinearElasticity2DStrainStress<T>;
+  using StrainStressAnalysis =
+      GalerkinAnalysis<T, Mesh, Quadrature, Basis, StrainStress>;
+
+  StrainStress strain_stress(E, nu);
+  StrainStressAnalysis strain_stress_analysis(mesh, quadrature, basis,
+                                              strain_stress);
+
+  std::vector<StrainStressType> types = {
+      StrainStressType::sx, StrainStressType::sy, StrainStressType::sxy,
+      StrainStressType::ex, StrainStressType::ey, StrainStressType::exy};
+  std::vector<std::string> names = {"sx", "sy", "sxy", "ex", "ey", "exy"};
+
+  FieldToVTKNew<T, spatial_dim> quad_vtk(vtk_path);
+
+  std::vector<T> xloc_q =
+      strain_stress_analysis.interpolate_energy(sol.data()).first;
+  quad_vtk.add_mesh(xloc_q);
+  quad_vtk.write_mesh();
+
+  // Evaluate norm errors
+  using EnergyNormPhysics =
+      LinearElasticityEnergyNormError<T, spatial_dim, StressFunc>;
+  using EnergyNormAnalysis =
+      GalerkinAnalysis<T, Mesh, Quadrature, Basis, EnergyNormPhysics>;
+
+  EnergyNormPhysics stress_norm_physics(E, nu, stress_func);
+  EnergyNormAnalysis stress_norm_analysis(mesh, quadrature, basis,
+                                          stress_norm_physics);
+  // Energy norm at each quadrature points
+  std::vector<T> stress_norm_q =
+      stress_norm_analysis.interpolate_energy(sol.data()).second;
+  quad_vtk.add_sol("stress_norm_err", stress_norm_q);
+  quad_vtk.write_sol("stress_norm_err");
+
+  std::vector<int> I = {0, 1, 0};
+  std::vector<int> J = {0, 1, 1};
+
+  for (int i = 0; i < 3; i++) {
+    strain_stress.set_type(types[i]);
+    quad_vtk.add_sol(
+        names[i], strain_stress_analysis.interpolate_energy(sol.data()).second);
+    quad_vtk.write_sol(names[i]);
+
+    // Compute exact stress components
+    int num_quads = xloc_q.size() / spatial_dim;
+    std::vector<T> exact;
+    for (int q = 0; q < num_quads; q++) {
+      T xloc[spatial_dim] = {xloc_q[spatial_dim * q],
+                             xloc_q[spatial_dim * q + 1]};
+
+      exact.push_back(stress_func(xloc)(I[i], J[i]));
+    }
+
+    quad_vtk.add_sol(names[i] + "_exact", exact);
+    quad_vtk.write_sol(names[i] + "_exact");
+  }
+}
+
+template <typename T, class Mesh, class Quadrature, class Basis,
+          class StressFunc, class LSFGradFunc>
+void eval_interface_stress(std::string vtk_path, T E, T nu, Mesh& mesh,
+                           Quadrature& quadrature, Basis& basis,
+                           std::vector<T> sol, StressFunc& stress_func,
+                           LSFGradFunc& lsf_grad_func) {
+  int constexpr spatial_dim = Basis::spatial_dim;
+  using SurfQuadrature = typename Quadrature::InterfaceQuad;
+  SurfQuadrature surf_quadrature(mesh);
+
+  using SurfStress = LinearElasticity2DSurfStress<T>;
+  using SurfStressAnalysis =
+      GalerkinAnalysis<T, Mesh, SurfQuadrature, Basis, SurfStress>;
+
+  SurfStress surf_stress(E, nu);
+  SurfStressAnalysis surf_stress_analysis(mesh, surf_quadrature, basis,
+                                          surf_stress);
+
+  std::vector<SurfStressType> surf_stress_types = {SurfStressType::normal,
+                                                   SurfStressType::tangent};
+  std::vector<std::string> surf_stress_type_names = {"normal_stress",
+                                                     "tangent_stress"};
+
+  FieldToVTKNew<T, spatial_dim> surf_quad_vtk(vtk_path);
+
+  std::vector<T> xloc_surf_q =
+      surf_stress_analysis.interpolate_energy(sol.data()).first;
+  surf_quad_vtk.add_mesh(xloc_surf_q);
+  surf_quad_vtk.write_mesh();
+
+  // Get exact boundary Stress
+  int num_quads = xloc_surf_q.size() / spatial_dim;
+  std::map<std::string, std::vector<T>> exact = {{"normal_stress", {}},
+                                                 {"tangent_stress", {}}};
+  for (int q = 0; q < num_quads; q++) {
+    T xloc[spatial_dim] = {xloc_surf_q[spatial_dim * q],
+                           xloc_surf_q[spatial_dim * q + 1]};
+
+    auto S = stress_func(xloc);
+    std::vector<T> lsf_grad = lsf_grad_func(xloc);
+
+    // Compute normal and tangent stress
+    T nrm = sqrt(lsf_grad[0] * lsf_grad[0] + lsf_grad[1] * lsf_grad[1]);
+    T Cos = lsf_grad[0] / nrm;
+    T Sin = lsf_grad[1] / nrm;
+
+    exact["normal_stress"].push_back(S(0, 0) * Cos * Cos + S(1, 1) * Sin * Sin +
+                                     2.0 * S(0, 1) * Sin * Cos);
+    exact["tangent_stress"].push_back((S(0, 0) - S(1, 1)) * Sin * Cos +
+                                      S(0, 1) * (Sin * Sin - Cos * Cos));
+  }
+
+  for (int i = 0; i < 2; i++) {
+    auto t = surf_stress_types[i];
+    auto n = surf_stress_type_names[i];
+    surf_stress.set_type(t);
+    surf_quad_vtk.add_sol(n + "_exact", exact[n]);
+    surf_quad_vtk.add_sol(
+        n, surf_stress_analysis.interpolate_energy(sol.data()).second);
+
+    surf_quad_vtk.write_sol(n + "_exact");
+    surf_quad_vtk.write_sol(n);
+  }
+}
+
 template <int Np_1d, bool use_finite_cell_mesh, bool use_ersatz = false>
-void execute_elasticity(std::string prefix, int nxy, double ersatz_ratio) {
+void execute_bulk_elasticity(std::string prefix, int nxy, double ersatz_ratio) {
   using T = double;
   using Grid = StructuredGrid2D<T>;
 
@@ -52,6 +185,30 @@ void execute_elasticity(std::string prefix, int nxy, double ersatz_ratio) {
   };
 
   T Tx = 10.0, R = 1.0;
+
+  auto elasticity_stress_exact_polar =
+      [Tx, R](const A2D::Vec<T, spatial_dim>& xloc) {
+        T theta = atan(xloc[1] / xloc[0]);
+        T r = sqrt(xloc[0] * xloc[0] + xloc[1] * xloc[1]);
+
+        T R2 = R * R;
+        T r2 = r * r;
+        T R4 = R * R * R * R;
+        T r4 = r * r * r * r;
+
+        T Sr =
+            Tx / 2.0 * (1.0 - R2 / r2) +
+            Tx / 2.0 * (1.0 + 3.0 * R4 / r4 - 4.0 * R2 / r2) * cos(2.0 * theta);
+        T St = Tx / 2.0 * (1.0 + R2 / r2) -
+               Tx / 2.0 * (1.0 + 3.0 * R4 / r4) * cos(2.0 * theta);
+        T Srt = -Tx / 2.0 * (1.0 - 3.0 * R4 / r4 + 2.0 * R2 / r2) *
+                sin(2.0 * theta);
+        A2D::SymMat<T, spatial_dim> Stensor;
+        Stensor(0, 0) = Sr;
+        Stensor(1, 1) = St;
+        Stensor(0, 1) = Srt;
+        return Stensor;
+      };
 
   auto elasticity_stress_exact = [Tx, R](const A2D::Vec<T, spatial_dim>& xloc) {
     T theta = atan(xloc[1] / xloc[0]);
@@ -244,6 +401,7 @@ void execute_elasticity(std::string prefix, int nxy, double ersatz_ratio) {
   }
 
   // evaluate stress at quadratures
+  // TODO: this code can be replaced by calling eval_bulk_stress()
   {
     using StrainStress = LinearElasticity2DStrainStress<T>;
     using StrainStressAnalysis =
@@ -272,6 +430,9 @@ void execute_elasticity(std::string prefix, int nxy, double ersatz_ratio) {
     quad_vtk.add_sol("stress_norm_err", stress_norm_q);
     quad_vtk.write_sol("stress_norm_err");
 
+    std::vector<int> I = {0, 1, 0};
+    std::vector<int> J = {0, 1, 1};
+
     for (int i = 0; i < 3; i++) {
       strain_stress.set_type(types[i]);
       quad_vtk.add_sol(
@@ -285,18 +446,368 @@ void execute_elasticity(std::string prefix, int nxy, double ersatz_ratio) {
       for (int q = 0; q < num_quads; q++) {
         T xloc[spatial_dim] = {xloc_q[spatial_dim * q],
                                xloc_q[spatial_dim * q + 1]};
-        exact.push_back(elasticity_stress_exact(xloc)[i]);
+        exact.push_back(elasticity_stress_exact(xloc)(I[i], J[i]));
       }
 
       quad_vtk.add_sol(names[i] + "_exact", exact);
       quad_vtk.write_sol(names[i] + "_exact");
     }
   }
+
+  // Evaluate stress at interface
+  {
+    using SurfQuadrature =
+        GDLSFQuadrature2D<T, Np_1d, QuadPtType::SURFACE, Grid, Np_1d, Mesh>;
+    SurfQuadrature surf_quadrature(mesh);
+
+    using SurfStress = LinearElasticity2DSurfStress<T>;
+    using SurfStressAnalysis =
+        GalerkinAnalysis<T, Mesh, SurfQuadrature, Basis, SurfStress>;
+
+    SurfStress surf_stress(E, nu);
+    SurfStressAnalysis surf_stress_analysis(mesh, surf_quadrature, basis,
+                                            surf_stress);
+
+    std::vector<SurfStressType> surf_stress_types = {SurfStressType::normal,
+                                                     SurfStressType::tangent};
+    std::vector<std::string> surf_stress_type_names = {"normal_stress",
+                                                       "tangent_stress"};
+
+    FieldToVTKNew<T, spatial_dim> surf_quad_vtk(
+        std::filesystem::path(prefix) / std::filesystem::path("surf_quad.vtk"));
+
+    std::vector<T> xloc_surf_q =
+        surf_stress_analysis.interpolate_energy(sol.data()).first;
+    surf_quad_vtk.add_mesh(xloc_surf_q);
+    surf_quad_vtk.write_mesh();
+
+    // Get exact boundary Stress
+    int num_quads = xloc_surf_q.size() / spatial_dim;
+    std::map<std::string, std::vector<T>> exact = {{"normal_stress", {}},
+                                                   {"tangent_stress", {}}};
+    for (int q = 0; q < num_quads; q++) {
+      T xloc[spatial_dim] = {xloc_surf_q[spatial_dim * q],
+                             xloc_surf_q[spatial_dim * q + 1]};
+
+      auto Stensor = elasticity_stress_exact_polar(xloc);
+      exact["normal_stress"].push_back(Stensor(0, 0));
+      exact["tangent_stress"].push_back(Stensor(0, 1));
+    }
+
+    for (int i = 0; i < 2; i++) {
+      auto t = surf_stress_types[i];
+      auto n = surf_stress_type_names[i];
+      surf_stress.set_type(t);
+      surf_quad_vtk.add_sol(n + "_exact", exact[n]);
+      surf_quad_vtk.add_sol(
+          n, surf_stress_analysis.interpolate_energy(sol.data()).second);
+
+      surf_quad_vtk.write_sol(n + "_exact");
+      surf_quad_vtk.write_sol(n);
+    }
+  }
 }
 
 template <int Np_1d, bool use_finite_cell_mesh>
-void execute_poisson(std::string prefix, int nxy, std::string instance,
-                     bool save_vtk) {
+void execute_interface_elasticity(std::string prefix, int nxy) {
+  using T = double;
+  using Grid = StructuredGrid2D<T>;
+
+  using Mesh =
+      typename std::conditional<use_finite_cell_mesh, FiniteCellMesh<T, Np_1d>,
+                                CutMesh<T, Np_1d>>::type;
+  using Quadrature =
+      GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER, Grid, Np_1d, Mesh>;
+  using Basis = GDBasis2D<T, Mesh>;
+  constexpr int spatial_dim = Basis::spatial_dim;
+
+  auto elasticity_exact_fun = [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
+    A2D::Vec<T, Basis::spatial_dim> u;
+    u(0) = sin(k * xloc(0)) * sin(k * xloc(1));
+    u(1) = cos(k * xloc(0)) * cos(k * xloc(1));
+
+    return u;
+  };
+
+  auto stress_general_fun = [](T E, T nu,
+                               const A2D::Vec<T, Basis::spatial_dim>& xloc) {
+    constexpr int spatial_dim = Basis::spatial_dim;
+    constexpr int dof_per_node = Basis::spatial_dim;
+
+    T mu = 0.5 * E / (1.0 + nu);
+    T lambda = E * nu / ((1.0 + nu) * (1.0 - nu));
+
+    double k2 = k * k;
+
+    A2D::Mat<T, dof_per_node, spatial_dim> grad;
+    T ux = k * cos(k * xloc(0)) * sin(k * xloc(1));
+    T uy = k * sin(k * xloc(0)) * cos(k * xloc(1));
+    T vx = -k * sin(k * xloc(0)) * cos(k * xloc(1));
+    T vy = -k * cos(k * xloc(0)) * sin(k * xloc(1));
+
+    grad(0, 0) = ux;
+    grad(0, 1) = uy;
+    grad(1, 0) = vx;
+    grad(1, 1) = vy;
+
+    A2D::SymMat<T, spatial_dim> Etensor, Stensor;
+
+    A2D::MatGreenStrain<A2D::GreenStrainType::LINEAR>(grad, Etensor);
+    A2D::SymIsotropic(mu, lambda, Etensor, Stensor);
+    return Stensor;
+  };
+
+  auto intf_general_fun = [](T E, T nu,
+                             const A2D::Vec<T, Basis::spatial_dim>& xloc) {
+    constexpr int spatial_dim = Basis::spatial_dim;
+    constexpr int dof_per_node = Basis::spatial_dim;
+
+    T mu = 0.5 * E / (1.0 + nu);
+    T lambda = E * nu / ((1.0 + nu) * (1.0 - nu));
+
+    double k2 = k * k;
+
+    A2D::Mat<T, dof_per_node, spatial_dim> grad;
+    T ux = k * cos(k * xloc(0)) * sin(k * xloc(1));
+    T uy = k * sin(k * xloc(0)) * cos(k * xloc(1));
+    T vx = -k * sin(k * xloc(0)) * cos(k * xloc(1));
+    T vy = -k * cos(k * xloc(0)) * sin(k * xloc(1));
+
+    grad(0, 0) = ux;
+    grad(0, 1) = uy;
+    grad(1, 0) = vx;
+    grad(1, 1) = vy;
+
+    T uxx = -k2 * sin(k * xloc(0)) * sin(k * xloc(1));
+    T uxy = k2 * cos(k * xloc(0)) * cos(k * xloc(1));
+    T uyx = k2 * cos(k * xloc(0)) * cos(k * xloc(1));
+    T uyy = -k2 * sin(k * xloc(0)) * sin(k * xloc(1));
+    T vxx = -k2 * cos(k * xloc(0)) * cos(k * xloc(1));
+    T vxy = k2 * sin(k * xloc(0)) * sin(k * xloc(1));
+    T vyx = k2 * sin(k * xloc(0)) * sin(k * xloc(1));
+    T vyy = -k2 * cos(k * xloc(0)) * cos(k * xloc(1));
+
+    A2D::ADObj<A2D::Mat<T, dof_per_node, spatial_dim>> grad_obj(grad);
+    A2D::ADObj<A2D::SymMat<T, spatial_dim>> E_obj, S_obj;
+
+    auto stack = A2D::MakeStack(
+        A2D::MatGreenStrain<A2D::GreenStrainType::LINEAR>(grad_obj, E_obj),
+        A2D::SymIsotropic(mu, lambda, E_obj, S_obj));
+
+    // Spartials(i, j) = ∂S(i, j)/∂x(j)
+    A2D::Mat<T, dof_per_node, spatial_dim> Spartials;
+
+    for (int i = 0; i < spatial_dim; i++) {
+      for (int j = 0; j < spatial_dim; j++) {
+        grad_obj.bvalue().zero();
+        E_obj.bvalue().zero();
+        S_obj.bvalue().zero();
+        S_obj.bvalue()(i, j) = 1.0;
+
+        stack.reverse();
+
+        // ∂S(i, j)/∂x(j) = ∂S(i, j)/∂grad * ∂grad/∂x(j)
+        auto& bgrad = grad_obj.bvalue();
+
+        if (j == 0) {
+          Spartials(i, j) = bgrad(0, 0) * uxx + bgrad(0, 1) * uyx +
+                            bgrad(1, 0) * vxx + bgrad(1, 1) * vyx;
+        } else {
+          Spartials(i, j) = bgrad(0, 0) * uxy + bgrad(0, 1) * uyy +
+                            bgrad(1, 0) * vxy + bgrad(1, 1) * vyy;
+        }
+      }
+    }
+
+    A2D::Vec<T, dof_per_node> intf;
+    intf(0) = -(Spartials(0, 0) + Spartials(0, 1));
+    intf(1) = -(Spartials(1, 0) + Spartials(1, 1));
+
+    return intf;
+  };
+
+  T R = 0.489;
+  auto lsf_fun = [R](const T* x) { return R * R - x[0] * x[0] - x[1] * x[1]; };
+  auto lsf_grad_fun = [](const T* x) {
+    std::vector<T> ret = {-2.0 * x[0], -2.0 * x[1]};
+    return ret;
+  };
+
+  T E1 = 100, nu1 = 0.3;
+  T E2 = 40, nu2 = 0.4;
+  auto elasticity_intf_fun = [E1, nu1, E2, nu2, lsf_fun, intf_general_fun](
+                                 const A2D::Vec<T, Basis::spatial_dim>& xloc) {
+    if (lsf_fun(xloc.get_data()) < 0.0) {
+      return intf_general_fun(E1, nu1, xloc);
+    } else {
+      return intf_general_fun(E2, nu2, xloc);
+    }
+  };
+
+  auto elasticity_stress_fun =
+      [E1, nu1, E2, nu2, lsf_fun,
+       stress_general_fun](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
+        if (lsf_fun(xloc.get_data()) < 0.0) {
+          return stress_general_fun(E1, nu1, xloc);
+        } else {
+          return stress_general_fun(E2, nu2, xloc);
+        }
+      };
+
+  auto stress_fun_l = [E1, nu1, stress_general_fun](
+                          const A2D::Vec<T, Basis::spatial_dim>& xloc) {
+    return stress_general_fun(E1, nu1, xloc);
+  };
+
+  auto stress_fun_r = [E2, nu2, stress_general_fun](
+                          const A2D::Vec<T, Basis::spatial_dim>& xloc) {
+    return stress_general_fun(E2, nu2, xloc);
+  };
+
+  using PhysicsApp = StaticElasticErsatz<T, Mesh, Quadrature, Basis,
+                                         typeof(elasticity_intf_fun), Grid>;
+
+  int nx_ny[2] = {nxy, nxy};
+  T L = 1.0;
+  T dh = L / nxy;
+  T lxy[2] = {L, L};
+  Grid grid(nx_ny, lxy);
+
+  Mesh mesh(grid, lsf_fun);
+
+  Quadrature quadrature(mesh);
+  Basis basis(mesh);
+
+  std::shared_ptr<PhysicsApp> physics_app;
+  physics_app = std::make_shared<PhysicsApp>(E1, nu1, E2, nu2, mesh, quadrature,
+                                             basis, elasticity_intf_fun);
+
+  // Set bcs
+  std::vector<int> dof_bcs;
+  std::vector<T> dof_vals;
+
+  using GMesh = GridMesh<T, Np_1d, Grid>;
+  GMesh gmesh(grid);
+  for (auto nodes :
+       {gmesh.get_left_boundary_nodes(), gmesh.get_right_boundary_nodes(),
+        gmesh.get_upper_boundary_nodes(), gmesh.get_lower_boundary_nodes()}) {
+    for (int node : nodes) {
+      T xloc[Basis::spatial_dim];
+      gmesh.get_node_xloc(node, xloc);
+      auto vals = elasticity_exact_fun(A2D::Vec<T, Basis::spatial_dim>(xloc));
+      for (int d = 0; d < Basis::spatial_dim; d++) {
+        dof_bcs.push_back(Basis::spatial_dim * node + d);
+        dof_vals.push_back(vals(d));
+      }
+    }
+  }
+
+  std::vector<T> sol = physics_app->solve(dof_bcs, dof_vals);
+
+  // Evaluate norm errors
+  using EnergyNormPhysics =
+      LinearElasticityEnergyNormError<T, spatial_dim,
+                                      typeof(elasticity_stress_fun)>;
+  constexpr bool from_to_grid_mesh = true;
+  using EnergyNormAnalysis =
+      GalerkinAnalysis<T, Mesh, Quadrature, Basis, EnergyNormPhysics,
+                       from_to_grid_mesh>;
+
+  EnergyNormPhysics stress_norm_physics_l(E1, nu1, elasticity_stress_fun);
+  EnergyNormPhysics stress_norm_physics_r(E2, nu2, elasticity_stress_fun);
+
+  EnergyNormAnalysis stress_norm_analysis_l(mesh, quadrature, basis,
+                                            stress_norm_physics_l);
+  EnergyNormAnalysis stress_norm_analysis_r(mesh, quadrature, basis,
+                                            stress_norm_physics_r);
+
+  json j = {{"stress_norm",
+             sqrt(stress_norm_analysis_l.energy(nullptr, sol.data()) +
+                  stress_norm_analysis_r.energy(nullptr, sol.data()))}};
+  write_json(std::filesystem::path(prefix) / std::filesystem::path("sol.json"),
+             j);
+
+  // Grid vtk
+  {
+    using GMesh = GridMesh<T, Np_1d, Grid>;
+    GMesh gmesh(grid);
+    ToVTK<T, GMesh> grid_vtk((gmesh), std::filesystem::path(prefix) /
+                                          std::filesystem::path("grid.vtk"));
+    grid_vtk.write_mesh();
+    grid_vtk.write_sol("lsf", mesh.get_lsf_dof().data());
+    grid_vtk.write_vec("sol", sol.data());
+
+    // Compute exact sol
+    int nnodes = gmesh.get_num_nodes();
+    int ndof = nnodes * PhysicsApp::Physics::dof_per_node;
+    std::vector<T> sol_exact(ndof, 0.0);
+    for (int i = 0; i < nnodes; i++) {
+      T xloc[Basis::spatial_dim];
+      gmesh.get_node_xloc(i, xloc);
+      auto disp = elasticity_exact_fun(A2D::Vec<T, Basis::spatial_dim>(xloc));
+      for (int d = 0; d < Basis::spatial_dim; d++) {
+        sol_exact[i * Basis::spatial_dim + d] = disp(d);
+      }
+    }
+
+    grid_vtk.write_vec("sol_exact", sol_exact.data());
+  }
+
+  // Evaluate stress at quadratures
+  {
+    // left mesh
+    eval_bulk_stress(
+        std::filesystem::path(prefix) / std::filesystem::path("quad_left.vtk"),
+        E1, nu1, physics_app->get_mesh(), physics_app->get_quadrature(),
+        physics_app->get_basis(),
+        grid_dof_to_cut_dof<T, spatial_dim>(physics_app->get_mesh(), sol),
+        stress_fun_l);
+
+    // right mesh
+    eval_bulk_stress(
+        std::filesystem::path(prefix) / std::filesystem::path("quad_right.vtk"),
+        E2, nu2, physics_app->get_mesh_ersatz(),
+        physics_app->get_quadrature_ersatz(), physics_app->get_basis_ersatz(),
+        grid_dof_to_cut_dof<T, spatial_dim>(physics_app->get_mesh_ersatz(),
+                                            sol),
+        stress_fun_r);
+
+    // // Grid mesh
+    // using GQuadrature = GDGaussQuadrature2D<T, Np_1d, QuadPtType::INNER,
+    //                                         SurfQuad::NA, GMesh, Np_1d>;
+    // using GBasis = GDBasis2D<T, GMesh>;
+    // GQuadrature gquadrature(gmesh);
+    // GBasis gbasis(gmesh);
+    // eval_bulk_stress(std::filesystem::path(prefix) /
+    //                                std::filesystem::path("quad_global.vtk"),
+    //                            E, nu, gmesh, gquadrature, gbasis, sol,
+    //                            elasticity_stress_fun);
+  }
+
+  // Evaluate stress at interface
+  {
+    eval_interface_stress(
+        std::filesystem::path(prefix) /
+            std::filesystem::path("interface_left.vtk"),
+        E1, nu1, physics_app->get_mesh(), physics_app->get_quadrature(),
+        physics_app->get_basis(),
+        grid_dof_to_cut_dof<T, spatial_dim>(physics_app->get_mesh(), sol),
+        stress_fun_l, lsf_grad_fun);
+
+    eval_interface_stress(std::filesystem::path(prefix) /
+                              std::filesystem::path("interface_right.vtk"),
+                          E2, nu2, physics_app->get_mesh_ersatz(),
+                          physics_app->get_quadrature_ersatz(),
+                          physics_app->get_basis_ersatz(),
+                          grid_dof_to_cut_dof<T, spatial_dim>(
+                              physics_app->get_mesh_ersatz(), sol),
+                          stress_fun_r, lsf_grad_fun);
+  }
+}
+
+template <int Np_1d, bool use_finite_cell_mesh>
+void execute_mms(std::string prefix, int nxy, std::string physics,
+                 std::string instance, bool save_vtk) {
   using T = double;
   using Grid = StructuredGrid2D<T>;
 
@@ -323,6 +834,112 @@ void execute_poisson(std::string prefix, int nxy, std::string instance,
     return -2.0 * k * k * sin(k * xloc(0)) * sin(k * xloc(1));
   };
 
+  auto elasticity_exact_fun = [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
+    A2D::Vec<T, Basis::spatial_dim> u;
+    u(0) = sin(k * xloc(0)) * sin(k * xloc(1));
+    u(1) = cos(k * xloc(0)) * cos(k * xloc(1));
+
+    return u;
+  };
+
+  T E = 100.0, nu = 0.3;
+  auto elasticity_stress_fun =
+      [E, nu](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
+        constexpr int spatial_dim = Basis::spatial_dim;
+        constexpr int dof_per_node = Basis::spatial_dim;
+
+        T mu = 0.5 * E / (1.0 + nu);
+        T lambda = E * nu / ((1.0 + nu) * (1.0 - nu));
+
+        double k2 = k * k;
+
+        A2D::Mat<T, dof_per_node, spatial_dim> grad;
+        T ux = k * cos(k * xloc(0)) * sin(k * xloc(1));
+        T uy = k * sin(k * xloc(0)) * cos(k * xloc(1));
+        T vx = -k * sin(k * xloc(0)) * cos(k * xloc(1));
+        T vy = -k * cos(k * xloc(0)) * sin(k * xloc(1));
+
+        grad(0, 0) = ux;
+        grad(0, 1) = uy;
+        grad(1, 0) = vx;
+        grad(1, 1) = vy;
+
+        A2D::SymMat<T, spatial_dim> Etensor, Stensor;
+
+        A2D::MatGreenStrain<A2D::GreenStrainType::LINEAR>(grad, Etensor);
+        A2D::SymIsotropic(mu, lambda, Etensor, Stensor);
+        return Stensor;
+      };
+
+  auto elasticity_intf_fun = [E,
+                              nu](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
+    constexpr int spatial_dim = Basis::spatial_dim;
+    constexpr int dof_per_node = Basis::spatial_dim;
+
+    T mu = 0.5 * E / (1.0 + nu);
+    T lambda = E * nu / ((1.0 + nu) * (1.0 - nu));
+
+    double k2 = k * k;
+
+    A2D::Mat<T, dof_per_node, spatial_dim> grad;
+    T ux = k * cos(k * xloc(0)) * sin(k * xloc(1));
+    T uy = k * sin(k * xloc(0)) * cos(k * xloc(1));
+    T vx = -k * sin(k * xloc(0)) * cos(k * xloc(1));
+    T vy = -k * cos(k * xloc(0)) * sin(k * xloc(1));
+
+    grad(0, 0) = ux;
+    grad(0, 1) = uy;
+    grad(1, 0) = vx;
+    grad(1, 1) = vy;
+
+    T uxx = -k2 * sin(k * xloc(0)) * sin(k * xloc(1));
+    T uxy = k2 * cos(k * xloc(0)) * cos(k * xloc(1));
+    T uyx = k2 * cos(k * xloc(0)) * cos(k * xloc(1));
+    T uyy = -k2 * sin(k * xloc(0)) * sin(k * xloc(1));
+    T vxx = -k2 * cos(k * xloc(0)) * cos(k * xloc(1));
+    T vxy = k2 * sin(k * xloc(0)) * sin(k * xloc(1));
+    T vyx = k2 * sin(k * xloc(0)) * sin(k * xloc(1));
+    T vyy = -k2 * cos(k * xloc(0)) * cos(k * xloc(1));
+
+    A2D::ADObj<A2D::Mat<T, dof_per_node, spatial_dim>> grad_obj(grad);
+    A2D::ADObj<A2D::SymMat<T, spatial_dim>> E_obj, S_obj;
+
+    auto stack = A2D::MakeStack(
+        A2D::MatGreenStrain<A2D::GreenStrainType::LINEAR>(grad_obj, E_obj),
+        A2D::SymIsotropic(mu, lambda, E_obj, S_obj));
+
+    // Spartials(i, j) = ∂S(i, j)/∂x(j)
+    A2D::Mat<T, dof_per_node, spatial_dim> Spartials;
+
+    for (int i = 0; i < spatial_dim; i++) {
+      for (int j = 0; j < spatial_dim; j++) {
+        grad_obj.bvalue().zero();
+        E_obj.bvalue().zero();
+        S_obj.bvalue().zero();
+        S_obj.bvalue()(i, j) = 1.0;
+
+        stack.reverse();
+
+        // ∂S(i, j)/∂x(j) = ∂S(i, j)/∂grad * ∂grad/∂x(j)
+        auto& bgrad = grad_obj.bvalue();
+
+        if (j == 0) {
+          Spartials(i, j) = bgrad(0, 0) * uxx + bgrad(0, 1) * uyx +
+                            bgrad(1, 0) * vxx + bgrad(1, 1) * vyx;
+        } else {
+          Spartials(i, j) = bgrad(0, 0) * uxy + bgrad(0, 1) * uyy +
+                            bgrad(1, 0) * vxy + bgrad(1, 1) * vyy;
+        }
+      }
+    }
+
+    A2D::Vec<T, dof_per_node> intf;
+    intf(0) = -(Spartials(0, 0) + Spartials(0, 1));
+    intf(1) = -(Spartials(1, 0) + Spartials(1, 1));
+
+    return intf;
+  };
+
   int nx_ny[2] = {nxy, nxy};
   T lxy[2] = {1.0, 1.0};
   Grid grid(nx_ny, lxy);
@@ -342,17 +959,47 @@ void execute_poisson(std::string prefix, int nxy, std::string instance,
   Basis basis(*mesh);
 
   double nitsche_eta = 1e8;
+
+  using PoissonBulk =
+      PoissonPhysics<T, Basis::spatial_dim, typeof(poisson_source_fun)>;
+  using PoissonBCs =
+      PoissonCutDirichlet<T, Basis::spatial_dim, typeof(poisson_exact_fun)>;
+
+  using ElasticityBulk =
+      LinearElasticity<T, spatial_dim, typeof(elasticity_intf_fun)>;
+
+  using ElasticityBCs =
+      LinearElasticityCutDirichlet<T, spatial_dim, spatial_dim,
+                                   typeof(elasticity_exact_fun)>;
+
+  PoissonBulk poisson_bulk(poisson_source_fun);
+  PoissonBCs poisson_bcs(nitsche_eta, poisson_exact_fun);
+
+  ElasticityBulk elasticity_bulk(E, nu, elasticity_intf_fun);
+  ElasticityBCs elasticity_bcs(nitsche_eta, elasticity_exact_fun);
+
   PoissonApp<T, Mesh, Quadrature, Basis, typeof(poisson_source_fun)>
       poisson_app(*mesh, quadrature, basis, poisson_source_fun);
-  PoissonNitscheApp<T, Mesh, Quadrature, Basis, typeof(poisson_source_fun),
-                    typeof(poisson_exact_fun)>
-      poisson_nitsche_app(*mesh, quadrature, basis, poisson_source_fun,
-                          poisson_exact_fun, nitsche_eta);
+
+  NitscheApp<T, Mesh, Quadrature, Basis, PoissonBulk, PoissonBCs>
+      poisson_nitsche_app(*mesh, quadrature, basis, poisson_bulk, poisson_bcs);
+
+  StaticElastic<T, Mesh, Quadrature, Basis, typeof(elasticity_intf_fun)>
+      elasticity_app(E, nu, *mesh, quadrature, basis, elasticity_intf_fun);
+
+  NitscheApp<T, Mesh, Quadrature, Basis, ElasticityBulk, ElasticityBCs>
+      elasticity_nitsche_app(*mesh, quadrature, basis, elasticity_bulk,
+                             elasticity_bcs);
 
   // Solve
   std::vector<T> sol;
 
   if (instance == "square") {
+    if (physics == "elasticity-mms") {
+      throw std::runtime_error(
+          "instance == \"square\" is not implemented for physics == "
+          "elasticity-mms");
+    }
     std::vector<int> dof_bcs;
     std::vector<T> dof_vals;
 
@@ -369,34 +1016,60 @@ void execute_poisson(std::string prefix, int nxy, std::string instance,
 
     sol = poisson_app.solve(dof_bcs, dof_vals);
   } else {
-    sol = poisson_nitsche_app.solve();
+    if (physics == "poisson") {
+      sol = poisson_nitsche_app.solve();
+    } else {
+      sol = elasticity_nitsche_app.solve();
+    }
   }
 
   // Evaluate norm errors
-  using EnergyNormPhysics =
+  using PoissonEnergyNormPhysics =
       PoissonEnergyNormError<T, spatial_dim, typeof(poisson_exact_fun),
                              typeof(poisson_stress_fun)>;
-  using EnergyNormAnalysis =
-      GalerkinAnalysis<T, Mesh, Quadrature, Basis, EnergyNormPhysics>;
 
-  EnergyNormPhysics val_norm_physics(poisson_exact_fun, poisson_stress_fun, 1.0,
-                                     0.0);
-  EnergyNormPhysics stress_norm_physics(poisson_exact_fun, poisson_stress_fun,
-                                        0.0, 1.0);
-  EnergyNormPhysics energy_norm_physics(poisson_exact_fun, poisson_stress_fun,
-                                        1.0, 1.0);
+  using ElasticityEnergyNormPhysics =
+      LinearElasticityEnergyNormError<T, spatial_dim,
+                                      typeof(elasticity_stress_fun)>;
+  using PoissonEnergyNormAnalysis =
+      GalerkinAnalysis<T, Mesh, Quadrature, Basis, PoissonEnergyNormPhysics>;
 
-  EnergyNormAnalysis val_norm_analysis(*mesh, quadrature, basis,
-                                       val_norm_physics);
-  EnergyNormAnalysis stress_norm_analysis(*mesh, quadrature, basis,
-                                          stress_norm_physics);
-  EnergyNormAnalysis energy_norm_analysis(*mesh, quadrature, basis,
-                                          energy_norm_physics);
+  using ElasticityEnergyNormAnalysis =
+      GalerkinAnalysis<T, Mesh, Quadrature, Basis, ElasticityEnergyNormPhysics>;
 
-  json j = {
-      {"val_norm", sqrt(val_norm_analysis.energy(nullptr, sol.data()))},
-      {"stress_norm", sqrt(stress_norm_analysis.energy(nullptr, sol.data()))},
-      {"energy_norm", sqrt(energy_norm_analysis.energy(nullptr, sol.data()))}};
+  PoissonEnergyNormPhysics poisson_val_norm_physics(
+      poisson_exact_fun, poisson_stress_fun, 1.0, 0.0);
+  PoissonEnergyNormPhysics poisson_stress_norm_physics(
+      poisson_exact_fun, poisson_stress_fun, 0.0, 1.0);
+  PoissonEnergyNormPhysics poisson_energy_norm_physics(
+      poisson_exact_fun, poisson_stress_fun, 1.0, 1.0);
+
+  ElasticityEnergyNormPhysics elasticity_stress_norm_physics(
+      E, nu, elasticity_stress_fun);
+
+  PoissonEnergyNormAnalysis poisson_val_norm_analysis(*mesh, quadrature, basis,
+                                                      poisson_val_norm_physics);
+  PoissonEnergyNormAnalysis poisson_stress_norm_analysis(
+      *mesh, quadrature, basis, poisson_stress_norm_physics);
+  PoissonEnergyNormAnalysis poisson_energy_norm_analysis(
+      *mesh, quadrature, basis, poisson_energy_norm_physics);
+
+  ElasticityEnergyNormAnalysis elasticity_stress_norm_analysis(
+      *mesh, quadrature, basis, elasticity_stress_norm_physics);
+
+  json j;
+
+  if (physics == "poisson") {
+    j = {{"val_norm",
+          sqrt(poisson_val_norm_analysis.energy(nullptr, sol.data()))},
+         {"stress_norm",
+          sqrt(poisson_stress_norm_analysis.energy(nullptr, sol.data()))},
+         {"energy_norm",
+          sqrt(poisson_energy_norm_analysis.energy(nullptr, sol.data()))}};
+  } else {
+    j = {{"stress_norm",
+          sqrt(elasticity_stress_norm_analysis.energy(nullptr, sol.data()))}};
+  }
 
   write_json(std::filesystem::path(prefix) / std::filesystem::path("sol.json"),
              j);
@@ -409,45 +1082,42 @@ void execute_poisson(std::string prefix, int nxy, std::string instance,
     vtk.write_sol("u", sol.data());
     vtk.write_sol("lsf", mesh->get_lsf_nodes().data());
 
-    FieldToVTKNew<T, spatial_dim> sampling_vtk(
-        std::filesystem::path(prefix) / std::filesystem::path("sampling.vtk"));
+    FieldToVTKNew<T, spatial_dim> quad_vtk(std::filesystem::path(prefix) /
+                                           std::filesystem::path("quad.vtk"));
 
-    // using Sampler = GDSampler2D<T, 15, Mesh>;
-    // Sampler sampler(*mesh, 0.0, 0.0);
+    if (physics == "poisson") {
+      std::vector<T> xloc_samples =
+          poisson_val_norm_analysis.interpolate_energy(sol.data()).first;
+      quad_vtk.add_mesh(xloc_samples);
+      quad_vtk.write_mesh();
 
-    using Sampler = Quadrature;
-    Sampler& sampler = quadrature;
+      std::vector<T> val_norm_samples =
+          poisson_val_norm_analysis.interpolate_energy(sol.data()).second;
+      std::vector<T> stress_norm_samples =
+          poisson_stress_norm_analysis.interpolate_energy(sol.data()).second;
+      std::vector<T> energy_norm_samples =
+          poisson_energy_norm_analysis.interpolate_energy(sol.data()).second;
 
-    using EnergyNormSamplerAnalysis =
-        GalerkinAnalysis<T, Mesh, Sampler, Basis, EnergyNormPhysics>;
+      quad_vtk.add_sol("val_norm", val_norm_samples);
+      quad_vtk.write_sol("val_norm");
 
-    EnergyNormSamplerAnalysis val_norm_sampler_analysis(*mesh, sampler, basis,
-                                                        val_norm_physics);
-    EnergyNormSamplerAnalysis stress_norm_sampler_analysis(
-        *mesh, sampler, basis, stress_norm_physics);
-    EnergyNormSamplerAnalysis energy_norm_sampler_analysis(
-        *mesh, sampler, basis, energy_norm_physics);
+      quad_vtk.add_sol("stress_norm", stress_norm_samples);
+      quad_vtk.write_sol("stress_norm");
 
-    std::vector<T> xloc_samples =
-        val_norm_sampler_analysis.interpolate_energy(sol.data()).first;
-    sampling_vtk.add_mesh(xloc_samples);
-    sampling_vtk.write_mesh();
+      quad_vtk.add_sol("energy_norm", energy_norm_samples);
+      quad_vtk.write_sol("energy_norm");
+    } else {
+      std::vector<T> xloc_samples =
+          elasticity_stress_norm_analysis.interpolate_energy(sol.data()).first;
+      quad_vtk.add_mesh(xloc_samples);
+      quad_vtk.write_mesh();
 
-    std::vector<T> val_norm_samples =
-        val_norm_sampler_analysis.interpolate_energy(sol.data()).second;
-    std::vector<T> stress_norm_samples =
-        stress_norm_sampler_analysis.interpolate_energy(sol.data()).second;
-    std::vector<T> energy_norm_samples =
-        energy_norm_sampler_analysis.interpolate_energy(sol.data()).second;
+      std::vector<T> stress_norm_samples =
+          elasticity_stress_norm_analysis.interpolate_energy(sol.data()).second;
 
-    sampling_vtk.add_sol("val_norm", val_norm_samples);
-    sampling_vtk.write_sol("val_norm");
-
-    sampling_vtk.add_sol("stress_norm", stress_norm_samples);
-    sampling_vtk.write_sol("stress_norm");
-
-    sampling_vtk.add_sol("energy_norm", energy_norm_samples);
-    sampling_vtk.write_sol("energy_norm");
+      quad_vtk.add_sol("stress_norm", stress_norm_samples);
+      quad_vtk.write_sol("stress_norm");
+    }
   }
 }
 
@@ -455,16 +1125,19 @@ template <int Np_1d, bool use_finite_cell_mesh>
 void execute(std::string physics, std::string prefix, int nxy,
              std::string instance, bool save_vtk, bool use_ersatz,
              double ersatz_ratio) {
-  if (physics == "poisson") {
-    execute_poisson<Np_1d, use_finite_cell_mesh>(prefix, nxy, instance,
-                                                 save_vtk);
-  } else {
+  if (physics == "poisson" or physics == "elasticity-mms") {
+    execute_mms<Np_1d, use_finite_cell_mesh>(prefix, nxy, physics, instance,
+                                             save_vtk);
+  } else if (physics == "elasticity-bulk") {
     if (use_ersatz) {
-      execute_elasticity<Np_1d, use_finite_cell_mesh, true>(prefix, nxy,
-                                                            ersatz_ratio);
+      execute_bulk_elasticity<Np_1d, use_finite_cell_mesh, true>(prefix, nxy,
+                                                                 ersatz_ratio);
     } else {
-      execute_elasticity<Np_1d, use_finite_cell_mesh, false>(prefix, nxy, 0.0);
+      execute_bulk_elasticity<Np_1d, use_finite_cell_mesh, false>(prefix, nxy,
+                                                                  0.0);
     }
+  } else {  // physics == "elasticity-interface"
+    execute_interface_elasticity<Np_1d, use_finite_cell_mesh>(prefix, nxy);
   }
 }
 
@@ -472,20 +1145,21 @@ int main(int argc, char* argv[]) {
   ArgParser p;
   p.add_argument<int>("--Np_1d", 2);
   p.add_argument<int>("--nxy", 32);
-  p.add_argument<std::string>("--physics", "elasticity",
-                              {"poisson", "elasticity"});
+  p.add_argument<std::string>(
+      "--physics", "elasticity-mms",
+      {"poisson", "elasticity-mms", "elasticity-bulk", "elasticity-interface"});
   p.add_argument<std::string>("--prefix", {});
-  p.add_argument<std::string>("--instance", "square");
-  p.add_argument<int>("--use-finite-cell-mesh", 0);
-  p.add_argument<int>("--save-vtk", 1);
-  p.add_argument<int>("--use-ersatz", 0);
+  p.add_argument<std::string>("--instance", "square", {"square", "circle"});
+  p.add_argument<int>("--use-finite-cell-mesh", 0, {0, 1});
+  p.add_argument<int>("--save-vtk", 1, {0, 1});
+  p.add_argument<int>("--use-ersatz", 0, {0, 1});
   p.add_argument<double>("--ersatz-ratio", 1e-6);
   p.parse_args(argc, argv);
 
   std::string physics = p.get<std::string>("physics");
   std::string prefix = p.get<std::string>("prefix");
   if (prefix.empty()) {
-    prefix = physics + "_" + get_local_time();
+    prefix = get_local_time() + "_" + physics;
   }
 
   p.write_args_to_file(std::filesystem::path(prefix) /

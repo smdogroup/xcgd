@@ -243,7 +243,16 @@ def plot_elasticity(df, voffset, voffset_text):
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
-    p.add_argument("--physics", default="poisson", choices=["poisson", "elasticity"])
+    p.add_argument(
+        "--physics",
+        default="poisson",
+        choices=[
+            "poisson",
+            "elasticity-mms",
+            "elasticity-bulk",
+            "elasticity-interface",
+        ],
+    )
     p.add_argument("--instance", default="square", choices=["square", "circle"])
     p.add_argument(
         "--mesh", default="cut-mesh", choices=["cut-mesh", "finite-cell-mesh"]
@@ -257,12 +266,28 @@ if __name__ == "__main__":
     p.add_argument("--smoke-test", action="store_true")
     args = p.parse_args()
 
-    if args.physics == "poisson":
+    # Sanity checks
+    if args.physics == "elasticity-mms" and args.instance == "square":
+        print(f"[Error] square is not implemented for elasticity-mms")
+        exit(-1)
+    if args.physics != "poisson" and args.instance != "square":
+        print(
+            f"[Warning] instance {args.instance} has no effect for --physics {args.physics}"
+        )
+    if args.physics != "elasticity-bulk" and args.use_ersatz:
+        print(f"[Warning] physics {args.physics} does not have --use_ersatz option")
+    if args.instance == "square" and args.mesh == "finite-cell-mesh":
+        print(
+            f"[Warning] option --mesh does not have effect for {args.instance} instance"
+        )
+
+    if args.physics == "poisson" or args.physics == "elasticity-mms":
         run_name = f"{args.physics}_energy_precision_{args.mesh}_{args.instance}"
     else:
         run_name = f"{args.physics}_energy_precision_{args.mesh}"
-        if args.use_ersatz:
-            run_name += f"_ersatz_{args.ersatz_ratio}"
+
+    if args.physics == "elasticity" and args.use_ersatz:
+        run_name += f"_ersatz_{args.ersatz_ratio}"
 
     if args.smoke_test:
         run_name = "smoke_" + run_name

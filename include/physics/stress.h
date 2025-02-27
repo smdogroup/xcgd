@@ -110,14 +110,73 @@ class LinearElasticity2DStrainStress final : public PhysicsBase<T, 2, 0, 2> {
   StrainStressType strain_stress_type;
 };
 
+// normal is outer normal
+// tangent is outer normal rotating 90 degrees counterclockwise
+enum class SurfStressType { normal, tangent };
+
+template <typename T>
+class LinearElasticity2DSurfStress final : public PhysicsBase<T, 2, 0, 2> {
+ private:
+  using PhysicsBase_s = PhysicsBase<T, 2, 0, 2>;
+
+ public:
+  using PhysicsBase_s::data_per_node;
+  using PhysicsBase_s::dof_per_node;
+  using PhysicsBase_s::spatial_dim;
+
+  LinearElasticity2DSurfStress(
+      T E, T nu, SurfStressType surf_stress_type = SurfStressType::normal)
+      : mu(0.5 * E / (1.0 + nu)),
+        lambda(E * nu / ((1.0 + nu) * (1.0 - nu))),
+        surf_stress_type(surf_stress_type) {}
+
+  void set_type(SurfStressType surf_stress_type_) {
+    surf_stress_type = surf_stress_type_;
+  }
+
+  T energy(T weight, T _, A2D::Vec<T, spatial_dim>& __,
+           A2D::Vec<T, spatial_dim>& nrm_ref,
+           A2D::Mat<T, spatial_dim, spatial_dim>& J,
+           A2D::Vec<T, dof_per_node>& ____,
+           A2D::Mat<T, dof_per_node, spatial_dim>& grad) const {
+    // Evaluate stress tensor in cartesian coordinates
+    T trS, detS, von_mises;
+    A2D::SymMat<T, spatial_dim> E, S;
+    A2D::MatGreenStrain<A2D::GreenStrainType::LINEAR>(grad, E);
+    A2D::SymIsotropic(mu, lambda, E, S);
+
+    // Compute sin and cos
+    A2D::Vec<T, spatial_dim> nrm;
+    A2D::MatVecMult(J, nrm_ref, nrm);
+    A2D::VecNormalize(nrm, nrm);
+    T Cos = nrm(0);
+    T Sin = nrm(1);
+
+    switch (surf_stress_type) {
+      case SurfStressType::normal: {
+        return S(0, 0) * Cos * Cos + S(1, 1) * Sin * Sin +
+               2.0 * S(0, 1) * Sin * Cos;
+      }
+      case SurfStressType::tangent: {
+        return (S(0, 0) - S(1, 1)) * Sin * Cos +
+               S(0, 1) * (Sin * Sin - Cos * Cos);
+      }
+    }
+  }
+
+ private:
+  T mu, lambda;  // Lame parameters
+  SurfStressType surf_stress_type;
+};
+
 /*
  * Evaluates the approximated maximum Von Mises stress over a domain using
  * continuous KS aggregation:
  *
  *   max s ~= m + 1/ρ * ln(∫exp(ρ * (s - m))dΩ)
  *
- * where m = max(s) to prevent floating-point number overflow for exponential, ρ
- * is the ks parameter, s = Von Mises stress / yield stress
+ * where m = max(s) to prevent floating-point number overflow for
+ * exponential, ρ is the ks parameter, s = Von Mises stress / yield stress
  *
  * */
 template <typename T>

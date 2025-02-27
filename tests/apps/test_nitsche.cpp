@@ -1,9 +1,7 @@
-#include <memory>
-#include <type_traits>
-
-#include "apps/poisson_app.h"
+#include "apps/nitsche.h"
 #include "elements/gd_mesh.h"
 #include "elements/gd_vandermonde.h"
+#include "physics/poisson.h"
 #include "test_commons.h"
 #include "utils/vtk.h"
 
@@ -19,10 +17,18 @@ void expect_sol_near(T xmin, T xmax, T ymin, T ymax, Mesh &mesh,
             (1.0 + xloc[1]) * (1.0 + xloc[1]));
   };
 
-  using Poisson = PoissonApp<T, Mesh, Quadrature, Basis, typeof(source_fun)>;
+  using PoissonBulk = PoissonPhysics<T, Basis::spatial_dim, typeof(source_fun)>;
+  using PoissonBCs =
+      PoissonCutDirichlet<T, Basis::spatial_dim, typeof(exact_fun)>;
 
-  std::shared_ptr<Poisson> poisson;
-  poisson = std::make_shared<Poisson>(mesh, quadrature, basis, source_fun);
+  using Nitsche =
+      NitscheApp<T, Mesh, Quadrature, Basis, PoissonBulk, PoissonBCs>;
+
+  PoissonBulk poisson_bulk(source_fun);
+  double nitsche_eta = 1e6;
+  PoissonBCs poisson_bcs(nitsche_eta, exact_fun);
+
+  Nitsche nitsche(mesh, quadrature, basis, poisson_bulk, poisson_bcs);
 
   int nnodes = mesh.get_num_nodes();
 
@@ -44,10 +50,9 @@ void expect_sol_near(T xmin, T xmax, T ymin, T ymax, Mesh &mesh,
     sol_exact[i] = exact_fun(xloc);
   }
 
-  std::vector<T> sol;
-  sol = poisson->solve(dof_bcs, dof_vals);
+  std::vector<T> sol = nitsche.solve();
 
-  ToVTK<T, Mesh> vtk(mesh, "poisson.vtk");
+  ToVTK<T, Mesh> vtk(mesh, "nitsche_poisson.vtk");
   vtk.write_mesh();
   vtk.write_sol("u", sol.data());
 
@@ -63,20 +68,19 @@ void expect_sol_near(T xmin, T xmax, T ymin, T ymax, Mesh &mesh,
 }
 
 template <int Np_1d>
-void test_poisson_app() {
+void test_poisson_app_nitsche() {
   using T = double;
   using Grid = StructuredGrid2D<T>;
-  using Quadrature = GDGaussQuadrature2D<T, Np_1d>;
-  using Mesh = GridMesh<T, Np_1d>;
+  using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
+  using Mesh = CutMesh<T, Np_1d>;
   using Basis = GDBasis2D<T, Mesh>;
   int nxy[2] = {32, 32};
   T lxy[2] = {2.0, 2.0};
   T xy0[2] = {-1.0, -1.0};
   Grid grid(nxy, lxy, xy0);
-  Mesh mesh(grid);
+  Mesh mesh(grid, [](T *x) { return x[0] * x[0] + x[1] * x[1] - 0.8 * 0.8; });
   Quadrature quadrature(mesh);
   Basis basis(mesh);
   expect_sol_near(-1.0, 1.0, -1.0, 1.0, mesh, quadrature, basis);
 }
-
-TEST(apps, Poisson) { test_poisson_app<4>(); }
+TEST(apps, PoissonNitsche) { test_poisson_app_nitsche<4>(); }
