@@ -22,7 +22,7 @@ void expect_sol_near(T xmin, T xmax, T ymin, T ymax, Mesh &mesh,
       PoissonCutDirichlet<T, Basis::spatial_dim, typeof(exact_fun)>;
 
   using Nitsche =
-      NitscheApp<T, Mesh, Quadrature, Basis, PoissonBulk, PoissonBCs>;
+      NitscheBCsApp<T, Mesh, Quadrature, Basis, PoissonBulk, PoissonBCs>;
 
   PoissonBulk poisson_bulk(source_fun);
   double nitsche_eta = 1e6;

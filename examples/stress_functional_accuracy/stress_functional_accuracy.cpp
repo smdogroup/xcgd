@@ -981,13 +981,13 @@ void execute_mms(std::string prefix, int nxy, std::string physics,
   PoissonApp<T, Mesh, Quadrature, Basis, typeof(poisson_source_fun)>
       poisson_app(*mesh, quadrature, basis, poisson_source_fun);
 
-  NitscheApp<T, Mesh, Quadrature, Basis, PoissonBulk, PoissonBCs>
+  NitscheBCsApp<T, Mesh, Quadrature, Basis, PoissonBulk, PoissonBCs>
       poisson_nitsche_app(*mesh, quadrature, basis, poisson_bulk, poisson_bcs);
 
   StaticElastic<T, Mesh, Quadrature, Basis, typeof(elasticity_intf_fun)>
       elasticity_app(E, nu, *mesh, quadrature, basis, elasticity_intf_fun);
 
-  NitscheApp<T, Mesh, Quadrature, Basis, ElasticityBulk, ElasticityBCs>
+  NitscheBCsApp<T, Mesh, Quadrature, Basis, ElasticityBulk, ElasticityBCs>
       elasticity_nitsche_app(*mesh, quadrature, basis, elasticity_bulk,
                              elasticity_bcs);
 

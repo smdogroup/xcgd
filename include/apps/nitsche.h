@@ -10,7 +10,7 @@
 
 template <typename T, class Mesh, class Quadrature, class Basis,
           class PhysicsBulk, class PhysicsBCs>
-class NitscheApp final {
+class NitscheBCsApp final {
  public:
  private:
   using QuadratureBulk = Quadrature;
@@ -28,8 +28,8 @@ class NitscheApp final {
   using CSCMat = SparseUtils::CSCMat<T>;
 
  public:
-  NitscheApp(Mesh& mesh, Quadrature& quadrature, Basis& basis,
-             PhysicsBulk& physics_bulk, PhysicsBCs& physics_bcs)
+  NitscheBCsApp(Mesh& mesh, Quadrature& quadrature, Basis& basis,
+                PhysicsBulk& physics_bulk, PhysicsBCs& physics_bcs)
       : mesh(mesh),
         quadrature_bulk(quadrature),
         quadrature_bcs(mesh),
