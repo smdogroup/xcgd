@@ -225,7 +225,7 @@ class StaticElastic final {
   std::vector<T> rhs;
 };
 
-// App class for the elastic problem using a main mesh and a conjugate
+// App class for the elastic problem using a main mesh and a complement
 // mesh for ersatz material, where
 // (conjucate mesh) U (main mesh) = grid
 template <typename T, class Mesh, class Quadrature, class Basis, class IntFunc,
