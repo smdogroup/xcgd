@@ -807,7 +807,7 @@ void execute_interface_elasticity(std::string prefix, int nxy) {
 
 template <int Np_1d, bool use_finite_cell_mesh>
 void execute_mms(std::string prefix, int nxy, std::string physics,
-                 std::string instance, bool save_vtk) {
+                 std::string instance, double nitsche_eta, bool save_vtk) {
   using T = double;
   using Grid = StructuredGrid2D<T>;
 
@@ -957,8 +957,6 @@ void execute_mms(std::string prefix, int nxy, std::string physics,
 
   Quadrature quadrature(*mesh);
   Basis basis(*mesh);
-
-  double nitsche_eta = 1e8;
 
   using PoissonBulk =
       PoissonPhysics<T, Basis::spatial_dim, typeof(poisson_source_fun)>;
@@ -1124,10 +1122,10 @@ void execute_mms(std::string prefix, int nxy, std::string physics,
 template <int Np_1d, bool use_finite_cell_mesh>
 void execute(std::string physics, std::string prefix, int nxy,
              std::string instance, bool save_vtk, bool use_ersatz,
-             double ersatz_ratio) {
+             double ersatz_ratio, double nitsche_eta) {
   if (physics == "poisson" or physics == "elasticity-mms") {
     execute_mms<Np_1d, use_finite_cell_mesh>(prefix, nxy, physics, instance,
-                                             save_vtk);
+                                             nitsche_eta, save_vtk);
   } else if (physics == "elasticity-bulk") {
     if (use_ersatz) {
       execute_bulk_elasticity<Np_1d, use_finite_cell_mesh, true>(prefix, nxy,
@@ -1154,6 +1152,7 @@ int main(int argc, char* argv[]) {
   p.add_argument<int>("--save-vtk", 1, {0, 1});
   p.add_argument<int>("--use-ersatz", 0, {0, 1});
   p.add_argument<double>("--ersatz-ratio", 1e-6);
+  p.add_argument<double>("--nitsche-eta", 1e8);
   p.parse_args(argc, argv);
 
   std::string physics = p.get<std::string>("physics");
@@ -1172,33 +1171,34 @@ int main(int argc, char* argv[]) {
   bool save_vtk = p.get<int>("save-vtk");
   bool use_ersatz = p.get<int>("use-ersatz");
   double ersatz_ratio = p.get<double>("ersatz-ratio");
+  double nitsche_eta = p.get<double>("nitsche-eta");
 
   switch (Np_1d) {
     case 2:
       if (use_finite_cell_mesh) {
         execute<2, true>(physics, prefix, nxy, instance, save_vtk, use_ersatz,
-                         ersatz_ratio);
+                         ersatz_ratio, nitsche_eta);
       } else {
         execute<2, false>(physics, prefix, nxy, instance, save_vtk, use_ersatz,
-                          ersatz_ratio);
+                          ersatz_ratio, nitsche_eta);
       }
       break;
     case 4:
       if (use_finite_cell_mesh) {
         execute<4, true>(physics, prefix, nxy, instance, save_vtk, use_ersatz,
-                         ersatz_ratio);
+                         ersatz_ratio, nitsche_eta);
       } else {
         execute<4, false>(physics, prefix, nxy, instance, save_vtk, use_ersatz,
-                          ersatz_ratio);
+                          ersatz_ratio, nitsche_eta);
       }
       break;
     case 6:
       if (use_finite_cell_mesh) {
         execute<6, true>(physics, prefix, nxy, instance, save_vtk, use_ersatz,
-                         ersatz_ratio);
+                         ersatz_ratio, nitsche_eta);
       } else {
         execute<6, false>(physics, prefix, nxy, instance, save_vtk, use_ersatz,
-                          ersatz_ratio);
+                          ersatz_ratio, nitsche_eta);
       }
       break;
     default:

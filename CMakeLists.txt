@@ -130,4 +130,5 @@ if (XCGD_INSTALL_LIBRARY)
 
   # Install headers
   install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/ DESTINATION include)
+  install(DIRECTORY ${PROJECT_SOURCE_DIR}/external/ DESTINATION external)
 endif()

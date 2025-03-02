@@ -109,6 +109,7 @@ def run_experiments(
     save_vtk: bool,
     use_ersatz: bool,
     ersatz_ratio: float,
+    nitsche_eta: float,
     smoke: bool,
 ):
     logpath = os.path.join(run_name, f"{run_name}.log")
@@ -145,6 +146,7 @@ def run_experiments(
                 f"--prefix={prefix}",
                 f"--use-ersatz={int(use_ersatz)}",
                 f"--ersatz-ratio={ersatz_ratio}",
+                f"--nitsche-eta={nitsche_eta}",
                 f"--save-vtk={int(save_vtk)}",
             ]
 
@@ -263,6 +265,7 @@ if __name__ == "__main__":
     p.add_argument("--save-vtk", action="store_true")
     p.add_argument("--use-ersatz", action="store_true")
     p.add_argument("--ersatz-ratio", default=1e-6, type=float)
+    p.add_argument("--nitsche-eta", default=1e8, type=float)
     p.add_argument("--smoke-test", action="store_true")
     args = p.parse_args()
 
@@ -283,6 +286,9 @@ if __name__ == "__main__":
 
     if args.physics == "poisson" or args.physics == "elasticity-mms":
         run_name = f"{args.physics}_energy_precision_{args.mesh}_{args.instance}"
+        if args.instance == "circle":
+            run_name += f"_nitscheeta_{args.nitsche_eta:.0e}"
+
     else:
         run_name = f"{args.physics}_energy_precision_{args.mesh}"
 
@@ -304,6 +310,7 @@ if __name__ == "__main__":
             args.save_vtk,
             args.use_ersatz,
             args.ersatz_ratio,
+            args.nitsche_eta,
             args.smoke_test,
         )
     else:

@@ -100,6 +100,8 @@ class NitscheBCsApp final {
   AnalysisBCs analysis_bcs;
 };
 
+// WIP:
+#if 0
 /*
  * This class implements an app that solves a two-sided problem (for example,
  * static elastic problem for a two-material structure) that the interface
@@ -298,3 +300,4 @@ class NitscheTwoSidedApp final {
   AnalysisBulk analysis_bulk_s;
   AnalysisBCs analysis_interface;
 };
+#endif
