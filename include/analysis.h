@@ -1,6 +1,7 @@
 #ifndef XCGD_ANALYSIS_H
 #define XCGD_ANALYSIS_H
 
+#include <type_traits>
 #include <vector>
 
 #include "a2dcore.h"
@@ -14,13 +15,15 @@
 
 /**
  *  ...
- * @param from_to_grid_mesh if true, then the global vectors (dof, rhs, phi,
+ * @tparam from_to_grid_mesh if true, then the global vectors (dof, rhs, phi,
  * etc) and global matrices (Jacobian, etc) are defined on the grid mesh,
  * regardless if the Mesh itself is a cut mesh or not. This is useful for
  * two-sided problems such as the elasticity with ersatz material.
+ * @tparam is_interface_physics if true, then this analysis is for the interface
+ * physics, such as LinearElasticityInterface
  */
 template <typename T, class Mesh, class Quadrature, class Basis, class Physics,
-          bool from_to_grid_mesh = false>
+          bool from_to_grid_mesh = false, bool is_interface_physics = false>
 class GalerkinAnalysis final {
  public:
   // Static data taken from the element basis
@@ -34,9 +37,34 @@ class GalerkinAnalysis final {
   static constexpr int max_dof_per_element =
       dof_per_node * max_nnodes_per_element;
 
+  // Constructor for regular analysis
   GalerkinAnalysis(const Mesh& mesh, const Quadrature& quadrature,
                    const Basis& basis, const Physics& physics)
-      : mesh(mesh), quadrature(quadrature), basis(basis), physics(physics) {}
+      : mesh(mesh),
+        mesh_s(mesh),
+        quadrature(quadrature),
+        basis(basis),
+        physics(physics) {
+    static_assert(
+        not is_interface_physics,
+        "constructing a regular analysis but is_interface_physics is true");
+  }
+
+  // Constructor for interface regular analysis
+  GalerkinAnalysis(const Mesh& mesh_m, const Mesh& mesh_s,
+                   const Quadrature& quadrature, const Basis& basis,
+                   const Physics& physics)
+      : mesh(mesh_m),
+        mesh_s(mesh_s),
+        quadrature(quadrature),
+        basis(basis),
+        physics(physics) {
+    static_assert(
+        is_interface_physics,
+        "constructing a interface analysis but is_interface_physics is false");
+    static_assert(Quadrature::quad_type == QuadPtType::SURFACE,
+                  "interface analysis only works with surface quadrature");
+  }
 
   T energy(const T x[], const T dof[], int dof_offset = 0) const {
     T total_energy = 0.0;
@@ -444,7 +472,7 @@ class GalerkinAnalysis final {
         mesh.get_num_elements() * max_dof_per_element * max_dof_per_element,
         T(0.0));
 
-#pragma omp parallel for
+    // #pragma omp parallel for
     for (int i = 0; i < mesh.get_num_elements(); i++) {
       // Get nodes associated to this element
       int nodes[Mesh::max_nnodes_per_element];
@@ -1067,6 +1095,7 @@ class GalerkinAnalysis final {
 
  private:
   const Mesh& mesh;
+  const Mesh& mesh_s;
   const Quadrature& quadrature;
   const Basis& basis;
   const Physics& physics;
