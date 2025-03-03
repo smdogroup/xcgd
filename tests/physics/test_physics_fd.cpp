@@ -249,6 +249,16 @@ void test_linear_elasticity_cut_dirichlet(
   test_physics_fd(tuple, physics, h, tol);
 }
 
+template <class Quadrature, class Basis>
+void test_linear_elasticity_interface(
+    std::tuple<typename Basis::Mesh *, Quadrature *, Basis *> tuple,
+    double h = 1e-5, double tol = 1e-10) {
+  int constexpr dim = Basis::spatial_dim;
+  using Physics = LinearElasticityInterface<T, Basis::spatial_dim, dim>;
+  Physics physics(50.0, 1.2, 0.3, 2.5, 0.2);
+  test_physics_fd(tuple, physics, h, tol);
+}
+
 TEST(physics, PoissonCutDirichlet) {
   test_poisson_cut_dirichlet(create_gd_lsf_surf_basis(), 1e-5, 1e-10);
 }
@@ -267,4 +277,8 @@ TEST(physics, LinearElasticityCutDirichlet) {
 
 TEST(physics, ElasticityExternalLoad) {
   test_elasticity_external_load(create_gd_lsf_surf_basis());
+}
+
+TEST(physics, LinearElasticityInterface) {
+  test_linear_elasticity_interface(create_gd_lsf_surf_basis());
 }
