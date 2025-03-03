@@ -35,8 +35,8 @@ T eval_det(Basis& basis, int elem, const T* element_xloc, std::vector<T> pt) {
 
   A2D::Mat<T, spatial_dim, spatial_dim> J;
   A2D::Vec<T, spatial_dim> xloc;
-  interp_val_grad<T, Basis, spatial_dim>(element_xloc, N.data(), Nxi.data(),
-                                         &xloc, &J);
+  interp_val_grad<T, spatial_dim, max_nnodes_per_element, spatial_dim>(
+      element_xloc, N.data(), Nxi.data(), xloc.get_data(), J.get_data());
 
   T detJ = 0.0;
   A2D::MatDet(J, detJ);
@@ -119,8 +119,8 @@ TEST(adjoint, determinantGrad) {
   for (int j = 0; j < num_quad_pts; j++) {
     int offset_nxi = j * max_nnodes_per_element * spatial_dim;
     A2D::Mat<T, spatial_dim, spatial_dim> J;
-    interp_val_grad<T, Basis, spatial_dim>(element_xloc, nullptr,
-                                           &Nxi[offset_nxi], nullptr, &J);
+    interp_val_grad<T, spatial_dim, max_nnodes_per_element, spatial_dim>(
+        element_xloc, nullptr, &Nxi[offset_nxi], nullptr, J.get_data());
 
     A2D::Vec<T, spatial_dim> det_grad{};
     det_deriv<T, Basis>(element_xloc, Nxixi.data(), J, det_grad);

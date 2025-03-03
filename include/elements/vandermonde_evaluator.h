@@ -333,7 +333,7 @@ void get_phi_vals(const VandermondeEvaluator<T, Mesh>& eval,
         // xi in [xi_min, xi_max]
         eval(-1, xi.data(), N, (T2*)nullptr);
         T2 val;
-        interp_val_grad<T2, Mesh::spatial_dim, Mesh::max_nnodes_per_element>(
+        interp_val_grad<T2, Mesh::spatial_dim, Mesh::max_nnodes_per_element, 1>(
             element_dof, N, nullptr, &val, nullptr);
         return val;
       },

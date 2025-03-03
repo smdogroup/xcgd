@@ -273,8 +273,8 @@ T compute_surface_length(std::string name, const Func& lsf_func) {
       // Evaluate the derivative of the spatial dof in the computational
       // coordinates
       A2D::Mat<T, spatial_dim, spatial_dim> J;
-      interp_val_grad<T, Basis, spatial_dim>(element_xloc, nullptr,
-                                             &Nxi[offset_nxi], nullptr, &J);
+      interp_val_grad<T, spatial_dim, max_nnodes_per_element, spatial_dim>(
+          element_xloc, nullptr, &Nxi[offset_nxi], nullptr, J.get_data());
 
       T dt_val[spatial_dim] = {ns[spatial_dim * j + 1], -ns[spatial_dim * j]};
       T detJ, ds_over_dt = 1.23;

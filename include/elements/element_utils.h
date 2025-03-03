@@ -3,9 +3,11 @@
 
 #include <algorithm>
 #include <array>
+#include <type_traits>
 #include <vector>
 
 #include "a2dcore.h"
+#include "a2ddefs.h"
 #include "element_commons.h"
 #include "physics/physics_commons.h"
 #include "utils/vtk.h"
@@ -250,6 +252,60 @@ void add_element_dfdphi(const Mesh &lsf_mesh, int c, const T element_dfdphi[],
   }
 }
 
+// Helper functions
+inline double *get_ptr(double &val) { return &val; }
+inline std::complex<double> *get_ptr(std::complex<double> &val) { return &val; }
+
+template <typename T, int N>
+inline T *get_ptr(A2D::Vec<T, N> &vec) {
+  return vec.get_data();
+}
+
+template <typename T, int M, int N>
+inline T *get_ptr(A2D::Mat<T, M, N> &vec) {
+  return vec.get_data();
+}
+
+/**
+ * @brief Unified element interpolation function
+ *
+ * @param dof[dim * max_nnodes_per_element]
+ * @param N[max_nnodes_per_element]
+ * @param Nxi[spatial_dim * max_nnodes_per_element]
+ * @param vals[dim]
+ * @param grad[dim * spatial_dim]
+ */
+template <typename T, int spatial_dim, int max_nnodes_per_element, int dim>
+void interp_val_grad(const T dof[], const T N[], const T Nxi[], T *vals,
+                     T *grad) {
+  if (vals) {
+    for (int k = 0; k < dim; k++) {
+      vals[k] = 0.0;
+    }
+  }
+
+  if (grad) {
+    for (int k = 0; k < spatial_dim * dim; k++) {
+      grad[k] = 0.0;
+    }
+  }
+
+  for (int i = 0; i < max_nnodes_per_element; i++) {
+    for (int k = 0; k < dim; k++) {
+      if (vals) {
+        vals[k] += N[i] * dof[dim * i + k];
+      }
+      if (grad) {
+        for (int j = 0; j < spatial_dim; j++) {
+          grad[spatial_dim * k + j] +=
+              Nxi[spatial_dim * i + j] * dof[dim * i + k];
+        }
+      }
+    }
+  }
+}
+
+#if 0
 /**
  * The following two functions evaluate u and ∇u at a quadrature point given the
  * shape function and shape gradient evaluations N and Nxi at this quadrature
@@ -266,9 +322,9 @@ void add_element_dfdphi(const Mesh &lsf_mesh, int c, const T element_dfdphi[],
  * @param grad gradients of vals w.r.t. computational coordinates dv/dxi
  */
 template <typename T, int spatial_dim, int max_nnodes_per_element, int dim>
-void interp_val_grad(const T dof[], const T N[], const T Nxi[],
-                     A2D::Vec<T, dim> *vals,
-                     A2D::Mat<T, dim, spatial_dim> *grad) {
+void interp_val_grad_deprecated(const T dof[], const T N[], const T Nxi[],
+                                A2D::Vec<T, dim> *vals,
+                                A2D::Mat<T, dim, spatial_dim> *grad) {
   if (vals) {
     for (int k = 0; k < dim; k++) {
       (*vals)(k) = 0.0;
@@ -297,17 +353,18 @@ void interp_val_grad(const T dof[], const T N[], const T Nxi[],
 
 // Back compatibility
 template <typename T, class Basis, int dim>
-inline void interp_val_grad(const T dof[], const T N[], const T Nxi[],
-                            A2D::Vec<T, dim> *vals,
-                            A2D::Mat<T, dim, Basis::spatial_dim> *grad) {
-  return interp_val_grad<T, Basis::spatial_dim, Basis::max_nnodes_per_element,
-                         dim>(dof, N, Nxi, vals, grad);
+inline void interp_val_grad_deprecated(
+    const T dof[], const T N[], const T Nxi[], A2D::Vec<T, dim> *vals,
+    A2D::Mat<T, dim, Basis::spatial_dim> *grad) {
+  return interp_val_grad_deprecated<T, Basis::spatial_dim,
+                                    Basis::max_nnodes_per_element, dim>(
+      dof, N, Nxi, vals, grad);
 }
 
 // dim == 1
 template <typename T, int spatial_dim, int max_nnodes_per_element>
-void interp_val_grad(const T *dof, const T *N, const T *Nxi, T *val,
-                     A2D::Vec<T, spatial_dim> *grad) {
+void interp_val_grad_deprecated(const T *dof, const T *N, const T *Nxi, T *val,
+                                A2D::Vec<T, spatial_dim> *grad) {
   if (val) {
     *val = 0.0;
   }
@@ -332,11 +389,14 @@ void interp_val_grad(const T *dof, const T *N, const T *Nxi, T *val,
 
 // Back compatibility
 template <typename T, class Basis>
-inline void interp_val_grad(const T *dof, const T *N, const T *Nxi, T *val,
-                            A2D::Vec<T, Basis::spatial_dim> *grad) {
-  return interp_val_grad<T, Basis::spatial_dim, Basis::max_nnodes_per_element>(
-      dof, N, Nxi, val, grad);
+inline void interp_val_grad_deprecated(const T *dof, const T *N, const T *Nxi,
+                                       T *val,
+                                       A2D::Vec<T, Basis::spatial_dim> *grad) {
+  return interp_val_grad_deprecated<T, Basis::spatial_dim,
+                                    Basis::max_nnodes_per_element>(dof, N, Nxi,
+                                                                   val, grad);
 }
+#endif
 
 /**
  * The following two functions evaluate u and ∇2u at a quadrature point given
@@ -1115,13 +1175,15 @@ class Interpolator final {
         int offset_n = i * Basis::max_nnodes_per_element;
         T val = 0.0;
         if (dof) {
-          interp_val_grad<T, Basis>(element_dof.data(), &N[offset_n], nullptr,
-                                    &val, nullptr);
+          interp_val_grad<T, spatial_dim, Basis::max_nnodes_per_element, 1>(
+              element_dof.data(), &N[offset_n], nullptr, &val, nullptr);
         }
         vals[i] = val;
         A2D::Vec<T, Basis::spatial_dim> xloc;
-        interp_val_grad<T, Basis, Basis::spatial_dim>(
-            element_xloc.data(), &N_xloc[offset_n], nullptr, &xloc, nullptr);
+        interp_val_grad<T, Basis::spatial_dim, Basis::max_nnodes_per_element,
+                        Basis::spatial_dim>(element_xloc.data(),
+                                            &N_xloc[offset_n], nullptr,
+                                            get_ptr(xloc), nullptr);
         for (int d = 0; d < Basis::spatial_dim; d++) {
           ptx[i * Basis::spatial_dim + d] = xloc[d];
         }

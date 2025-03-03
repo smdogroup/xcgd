@@ -32,6 +32,10 @@ class GalerkinAnalysis final {
 
   // Static data taken from the physics
   static constexpr int dof_per_node = Physics::dof_per_node;
+  static constexpr int data_per_node = Physics::data_per_node;
+
+  static_assert(data_per_node == 0 or data_per_node == 1,
+                "we only support data_per_node == 0 or 1 for now");
 
   // Derived static data
   static constexpr int max_dof_per_element =
@@ -114,22 +118,25 @@ class GalerkinAnalysis final {
         // coordinates
         A2D::Vec<T, spatial_dim> xloc, nrm_ref;
         A2D::Mat<T, spatial_dim, spatial_dim> J;
-        interp_val_grad<T, Basis, spatial_dim>(element_xloc, &N[offset_n],
-                                               &Nxi[offset_nxi], &xloc, &J);
+        interp_val_grad<T, spatial_dim, max_nnodes_per_element, spatial_dim>(
+            element_xloc, &N[offset_n], &Nxi[offset_nxi], get_ptr(xloc),
+            get_ptr(J));
 
         // Evaluate the derivative of the dof in the computational coordinates
         typename Physics::dof_t vals{};
         typename Physics::grad_t grad{}, grad_ref{};
-        interp_val_grad<T, Basis>(element_dof, &N[offset_n], &Nxi[offset_nxi],
-                                  &vals, &grad_ref);
+        interp_val_grad<T, spatial_dim, max_nnodes_per_element, dof_per_node>(
+            element_dof, &N[offset_n], &Nxi[offset_nxi], get_ptr(vals),
+            get_ptr(grad_ref));
 
         // Transform gradient from ref coordinates to physical coordinates
         transform(J, grad_ref, grad);
 
         // Add the energy contributions
         if (x) {
-          interp_val_grad<T, Basis>(element_x.data(), &N[offset_n], nullptr,
-                                    &xq, nullptr);
+          interp_val_grad<T, spatial_dim, max_nnodes_per_element,
+                          data_per_node>(element_x.data(), &N[offset_n],
+                                         nullptr, get_ptr(xq), nullptr);
         }
 
         if constexpr (Quadrature::quad_type == QuadPtType::SURFACE) {
@@ -199,17 +206,20 @@ class GalerkinAnalysis final {
         // coordinates
         A2D::Vec<T, spatial_dim> xloc, nrm_ref;
         A2D::Mat<T, spatial_dim, spatial_dim> J;
-        interp_val_grad<T, Basis, spatial_dim>(element_xloc, &N[offset_n],
-                                               &Nxi[offset_nxi], &xloc, &J);
+        interp_val_grad<T, spatial_dim, max_nnodes_per_element, spatial_dim>(
+            element_xloc, &N[offset_n], &Nxi[offset_nxi], get_ptr(xloc),
+            get_ptr(J));
 
         // Evaluate the derivative of the dof in the computational coordinates
         typename Physics::dof_t vals{};
         typename Physics::grad_t grad{}, grad_ref{};
-        interp_val_grad<T, Basis>(element_dof, &N[offset_n], &Nxi[offset_nxi],
-                                  &vals, &grad_ref);
+        interp_val_grad<T, spatial_dim, max_nnodes_per_element, dof_per_node>(
+            element_dof, &N[offset_n], &Nxi[offset_nxi], get_ptr(vals),
+            get_ptr(grad_ref));
         if (x) {
-          interp_val_grad<T, Basis>(element_x.data(), &N[offset_n], nullptr,
-                                    &xq, nullptr);
+          interp_val_grad<T, spatial_dim, max_nnodes_per_element,
+                          data_per_node>(element_x.data(), &N[offset_n],
+                                         nullptr, get_ptr(xq), nullptr);
         }
 
         if constexpr (Quadrature::quad_type == QuadPtType::SURFACE) {
@@ -298,14 +308,16 @@ class GalerkinAnalysis final {
         // coordinates
         A2D::Vec<T, spatial_dim> xloc, nrm_ref;
         A2D::Mat<T, spatial_dim, spatial_dim> J;
-        interp_val_grad<T, Basis, spatial_dim>(element_xloc, &N[offset_n],
-                                               &Nxi[offset_nxi], &xloc, &J);
+        interp_val_grad<T, spatial_dim, max_nnodes_per_element, spatial_dim>(
+            element_xloc, &N[offset_n], &Nxi[offset_nxi], get_ptr(xloc),
+            get_ptr(J));
 
         // Evaluate the derivative of the dof in the computational coordinates
         typename Physics::dof_t vals{};
         typename Physics::grad_t grad{}, grad_ref{};
-        interp_val_grad<T, Basis>(element_dof, &N[offset_n], &Nxi[offset_nxi],
-                                  &vals, &grad_ref);
+        interp_val_grad<T, spatial_dim, max_nnodes_per_element, dof_per_node>(
+            element_dof, &N[offset_n], &Nxi[offset_nxi], get_ptr(vals),
+            get_ptr(grad_ref));
 
         // Transform gradient from ref coordinates to physical coordinates
         transform(J, grad_ref, grad);
@@ -314,16 +326,17 @@ class GalerkinAnalysis final {
         // coordinates
         typename Physics::dof_t direct_vals{};
         typename Physics::grad_t direct_grad{}, direct_grad_ref{};
-        interp_val_grad<T, Basis>(element_direct, &N[offset_n],
-                                  &Nxi[offset_nxi], &direct_vals,
-                                  &direct_grad_ref);
+        interp_val_grad<T, spatial_dim, max_nnodes_per_element, dof_per_node>(
+            element_direct, &N[offset_n], &Nxi[offset_nxi],
+            get_ptr(direct_vals), get_ptr(direct_grad_ref));
 
         // Transform gradient from ref coordinates to physical coordinates
         transform(J, direct_grad_ref, direct_grad);
 
         if (x) {
-          interp_val_grad<T, Basis>(element_x.data(), &N[offset_n], nullptr,
-                                    &xq, nullptr);
+          interp_val_grad<T, spatial_dim, max_nnodes_per_element,
+                          data_per_node>(element_x.data(), &N[offset_n],
+                                         nullptr, get_ptr(xq), nullptr);
         }
 
         if constexpr (Quadrature::quad_type == QuadPtType::SURFACE) {
@@ -413,14 +426,16 @@ class GalerkinAnalysis final {
         // coordinates
         A2D::Vec<T, spatial_dim> xloc, nrm_ref;
         A2D::Mat<T, spatial_dim, spatial_dim> J;
-        interp_val_grad<T, Basis, spatial_dim>(element_xloc, &N[offset_n],
-                                               &Nxi[offset_nxi], &xloc, &J);
+        interp_val_grad<T, spatial_dim, max_nnodes_per_element, spatial_dim>(
+            element_xloc, &N[offset_n], &Nxi[offset_nxi], get_ptr(xloc),
+            get_ptr(J));
 
         // Evaluate the derivative of the dof in the computational coordinates
         typename Physics::dof_t vals{};
         typename Physics::grad_t grad{}, grad_ref{};
-        interp_val_grad<T, Basis>(element_dof, &N[offset_n], &Nxi[offset_nxi],
-                                  &vals, &grad_ref);
+        interp_val_grad<T, spatial_dim, max_nnodes_per_element, dof_per_node>(
+            element_dof, &N[offset_n], &Nxi[offset_nxi], get_ptr(vals),
+            get_ptr(grad_ref));
 
         // Transform gradient from ref coordinates to physical coordinates
         transform(J, grad_ref, grad);
@@ -429,15 +444,17 @@ class GalerkinAnalysis final {
         // coordinates
         typename Physics::dof_t psi_vals{};
         typename Physics::grad_t psi_grad{}, psi_grad_ref{};
-        interp_val_grad<T, Basis>(element_psi, &N[offset_n], &Nxi[offset_nxi],
-                                  &psi_vals, &psi_grad_ref);
+        interp_val_grad<T, spatial_dim, max_nnodes_per_element, dof_per_node>(
+            element_psi, &N[offset_n], &Nxi[offset_nxi], get_ptr(psi_vals),
+            get_ptr(psi_grad_ref));
 
         // Transform gradient from ref coordinates to physical coordinates
         transform(J, psi_grad_ref, psi_grad);
 
         if (x) {
-          interp_val_grad<T, Basis>(element_x.data(), &N[offset_n], nullptr,
-                                    &xq, nullptr);
+          interp_val_grad<T, spatial_dim, max_nnodes_per_element,
+                          data_per_node>(element_x.data(), &N[offset_n],
+                                         nullptr, get_ptr(xq), nullptr);
         }
 
         if constexpr (Quadrature::quad_type == QuadPtType::SURFACE) {
@@ -527,17 +544,20 @@ class GalerkinAnalysis final {
         // coordinates
         A2D::Vec<T, spatial_dim> xloc, nrm_ref;
         A2D::Mat<T, spatial_dim, spatial_dim> J;
-        interp_val_grad<T, Basis, spatial_dim>(element_xloc, &N[offset_n],
-                                               &Nxi[offset_nxi], &xloc, &J);
+        interp_val_grad<T, spatial_dim, max_nnodes_per_element, spatial_dim>(
+            element_xloc, &N[offset_n], &Nxi[offset_nxi], get_ptr(xloc),
+            get_ptr(J));
 
         // Evaluate the derivative of the dof in the computational coordinates
         typename Physics::dof_t vals{};
-        typename Physics::grad_t grad_ref{}, grad{};
-        interp_val_grad<T, Basis>(element_dof, &N[offset_n], &Nxi[offset_nxi],
-                                  &vals, &grad_ref);
+        typename Physics::grad_t grad{}, grad_ref{};
+        interp_val_grad<T, spatial_dim, max_nnodes_per_element, dof_per_node>(
+            element_dof, &N[offset_n], &Nxi[offset_nxi], get_ptr(vals),
+            get_ptr(grad_ref));
         if (x) {
-          interp_val_grad<T, Basis>(element_x.data(), &N[offset_n], nullptr,
-                                    &xq, nullptr);
+          interp_val_grad<T, spatial_dim, max_nnodes_per_element,
+                          data_per_node>(element_x.data(), &N[offset_n],
+                                         nullptr, get_ptr(xq), nullptr);
         }
 
         if constexpr (Quadrature::quad_type == QuadPtType::SURFACE) {
@@ -646,8 +666,9 @@ class GalerkinAnalysis final {
 
         A2D::Vec<T, spatial_dim> xloc, nrm_ref;
         A2D::Mat<T, spatial_dim, spatial_dim> J;
-        interp_val_grad<T, Basis, spatial_dim>(element_xloc, &N[offset_n],
-                                               &Nxi[offset_nxi], &xloc, &J);
+        interp_val_grad<T, spatial_dim, max_nnodes_per_element, spatial_dim>(
+            element_xloc, &N[offset_n], &Nxi[offset_nxi], get_ptr(xloc),
+            get_ptr(J));
 
         if constexpr (Quadrature::quad_type == QuadPtType::SURFACE) {
           for (int d = 0; d < spatial_dim; d++) {
@@ -663,10 +684,13 @@ class GalerkinAnalysis final {
         typename Physics::hess_t phess_ref{};           //(∇2_ξ)psiq
 
         // Interpolate the quantities at the quadrature point
-        interp_val_grad<T, Basis>(element_dof, &N[offset_n], &Nxi[offset_nxi],
-                                  &uq, &ugrad_ref);
-        interp_val_grad<T, Basis>(element_psi, &N[offset_n], &Nxi[offset_nxi],
-                                  &psiq, &pgrad_ref);
+        interp_val_grad<T, spatial_dim, max_nnodes_per_element, dof_per_node>(
+            element_dof, &N[offset_n], &Nxi[offset_nxi], get_ptr(uq),
+            get_ptr(ugrad_ref));
+        interp_val_grad<T, spatial_dim, max_nnodes_per_element, dof_per_node>(
+            element_psi, &N[offset_n], &Nxi[offset_nxi], get_ptr(psiq),
+            get_ptr(pgrad_ref));
+
         interp_hess<T, Basis>(element_dof, &Nxixi[offset_nxixi], uhess_ref);
         interp_hess<T, Basis>(element_psi, &Nxixi[offset_nxixi], phess_ref);
 
@@ -740,8 +764,8 @@ class GalerkinAnalysis final {
       for (int j = 0; j < num_quad_pts; j++) {
         int offset_nxi = j * max_nnodes_per_element * spatial_dim;
         A2D::Mat<T, spatial_dim, spatial_dim> J;
-        interp_val_grad<T, Basis, spatial_dim>(element_xloc, nullptr,
-                                               &Nxi[offset_nxi], nullptr, &J);
+        interp_val_grad<T, spatial_dim, max_nnodes_per_element, spatial_dim>(
+            element_xloc, nullptr, &Nxi[offset_nxi], nullptr, get_ptr(J));
 
         T detJ;
         A2D::MatDet(J, detJ);
@@ -817,14 +841,16 @@ class GalerkinAnalysis final {
         A2D::Vec<T, spatial_dim> xloc, nrm_ref;
         A2D::Mat<T, spatial_dim, spatial_dim> J;
 
-        interp_val_grad<T, Basis, spatial_dim>(element_xloc, &N[offset_n],
-                                               &Nxi[offset_nxi], &xloc, &J);
+        interp_val_grad<T, spatial_dim, max_nnodes_per_element, spatial_dim>(
+            element_xloc, &N[offset_n], &Nxi[offset_nxi], get_ptr(xloc),
+            get_ptr(J));
         // Evaluate the derivative of the dof in the computational coordinates
         typename Physics::dof_t uq{};
         typename Physics::grad_t ugrad{}, ugrad_ref{};
         typename Physics::hess_t uhess_ref{};  //(∇2_ξ)uq
-        interp_val_grad<T, Basis>(element_dof, &N[offset_n], &Nxi[offset_nxi],
-                                  &uq, &ugrad_ref);
+        interp_val_grad<T, spatial_dim, max_nnodes_per_element, dof_per_node>(
+            element_dof, &N[offset_n], &Nxi[offset_nxi], get_ptr(uq),
+            get_ptr(ugrad_ref));
         interp_hess<T, Basis>(element_dof, &Nxixi[offset_nxixi], uhess_ref);
 
         // Transform gradient from ref coordinates to physical coordinates
@@ -911,19 +937,14 @@ class GalerkinAnalysis final {
         int offset_nxi = j * max_nnodes_per_element * spatial_dim;
 
         A2D::Vec<T, spatial_dim> xloc;
-        interp_val_grad<T, Basis, spatial_dim>(element_xloc, &N[offset_n],
-                                               nullptr, &xloc, nullptr);
+        interp_val_grad<T, spatial_dim, max_nnodes_per_element, spatial_dim>(
+            element_xloc, &N[offset_n], nullptr, get_ptr(xloc), nullptr);
 
         typename std::conditional<ncomp_per_node == 1, T,
                                   A2D::Vec<T, ncomp_per_node>>::type vq{};
 
-        if constexpr (ncomp_per_node == 1) {
-          interp_val_grad<T, Basis>(element_vals, &N[offset_n], nullptr, &vq,
-                                    nullptr);
-        } else {
-          interp_val_grad<T, Basis, ncomp_per_node>(element_vals, &N[offset_n],
-                                                    nullptr, &vq, nullptr);
-        }
+        interp_val_grad<T, spatial_dim, max_nnodes_per_element, ncomp_per_node>(
+            element_vals, &N[offset_n], nullptr, get_ptr(vq), nullptr);
 
         for (int d = 0; d < spatial_dim; d++) {
           xloc_q.push_back(xloc(d));
@@ -983,13 +1004,15 @@ class GalerkinAnalysis final {
 
         A2D::Vec<T, spatial_dim> xloc, nrm_ref;
         A2D::Mat<T, spatial_dim, spatial_dim> J;
-        interp_val_grad<T, Basis, spatial_dim>(element_xloc, &N[offset_n],
-                                               &Nxi[offset_nxi], &xloc, &J);
+        interp_val_grad<T, spatial_dim, max_nnodes_per_element, spatial_dim>(
+            element_xloc, &N[offset_n], &Nxi[offset_nxi], get_ptr(xloc),
+            get_ptr(J));
 
         typename Physics::dof_t vals{};
         typename Physics::grad_t grad{}, grad_ref{};
-        interp_val_grad<T, Basis>(element_dof, &N[offset_n], &Nxi[offset_nxi],
-                                  &vals, &grad_ref);
+        interp_val_grad<T, spatial_dim, max_nnodes_per_element, dof_per_node>(
+            element_dof, &N[offset_n], &Nxi[offset_nxi], get_ptr(vals),
+            get_ptr(grad_ref));
 
         // Transform gradient from ref coordinates to physical coordinates
         transform(J, grad_ref, grad);
@@ -1058,13 +1081,15 @@ class GalerkinAnalysis final {
 
         A2D::Vec<T, spatial_dim> xloc, nrm_ref;
         A2D::Mat<T, spatial_dim, spatial_dim> J;
-        interp_val_grad<T, Basis, spatial_dim>(element_xloc, &N[offset_n],
-                                               &Nxi[offset_nxi], &xloc, &J);
+        interp_val_grad<T, spatial_dim, max_nnodes_per_element, spatial_dim>(
+            element_xloc, &N[offset_n], &Nxi[offset_nxi], get_ptr(xloc),
+            get_ptr(J));
 
         typename Physics::dof_t vals{};
         typename Physics::grad_t grad{}, grad_ref{};
-        interp_val_grad<T, Basis>(element_dof, &N[offset_n], &Nxi[offset_nxi],
-                                  &vals, &grad_ref);
+        interp_val_grad<T, spatial_dim, max_nnodes_per_element, dof_per_node>(
+            element_dof, &N[offset_n], &Nxi[offset_nxi], get_ptr(vals),
+            get_ptr(grad_ref));
 
         // Transform gradient from ref coordinates to physical coordinates
         transform(J, grad_ref, grad);
