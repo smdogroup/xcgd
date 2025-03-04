@@ -9,6 +9,7 @@
 #include "elements/fe_tetrahedral.h"
 #include "elements/gd_mesh.h"
 #include "elements/gd_vandermonde.h"
+#include "interface_analysis.h"
 #include "physics/linear_elasticity.h"
 #include "physics/poisson.h"
 #include "sparse_utils/sparse_utils.h"
@@ -22,11 +23,32 @@ void test_physics_fd(std::tuple<Mesh *, Quadrature *, Basis *> tuple,
                      Physics &physics, double h = 1e-6, double tol = 1e-14,
                      bool check_res_only = false) {
   Mesh *mesh = std::get<0>(tuple);
+  std::shared_ptr<Mesh> mesh_slave;  // used only for interface physics
   Quadrature *quadrature = std::get<1>(tuple);
   Basis *basis = std::get<2>(tuple);
 
-  int num_nodes = mesh->get_num_nodes();
-  int num_elements = mesh->get_num_elements();
+  constexpr bool is_interface_physics = Physics::is_interface_physics;
+  if constexpr (is_interface_physics) {
+    static_assert(Mesh::is_cut_mesh,
+                  "cut mesh must be used to test interface physics");
+
+    auto &grid = mesh->get_grid();
+    mesh_slave = std::make_shared<Mesh>(grid);
+    for (int i = 0; i < grid.get_num_verts(); i++) {
+      mesh_slave->get_lsf_dof()[i] = -mesh->get_lsf_dof()[i];
+    }
+    mesh_slave->update_mesh();
+  }
+
+  int num_nodes = 0, num_elements = 0;
+
+  if constexpr (is_interface_physics) {
+    num_nodes = mesh->get_num_nodes() + mesh_slave->get_num_nodes();
+    num_elements = mesh->get_grid().get_num_cells();
+  } else {
+    num_nodes = mesh->get_num_nodes();
+    num_elements = mesh->get_num_elements();
+  }
 
   // Set the number of degrees of freeom
   int ndof = Physics::dof_per_node * num_nodes;
@@ -63,15 +85,26 @@ void test_physics_fd(std::tuple<Mesh *, Quadrature *, Basis *> tuple,
   }
 
   // Allocate space for the residual
-  using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
-  Analysis analysis(*mesh, *quadrature, *basis, physics);
+  using Analysis = typename std::conditional<
+      is_interface_physics,
+      InterfaceGalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>,
+      GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>>::type;
 
-  T energy1 = analysis.energy(nullptr, dof1);
-  T energy2 = analysis.energy(nullptr, dof2);
+  std::shared_ptr<Analysis> analysis;
 
-  analysis.residual(nullptr, dof, res);
-  analysis.residual(nullptr, dof1, res1);
-  analysis.residual(nullptr, dof2, res2);
+  if constexpr (is_interface_physics) {
+    analysis = std::make_shared<Analysis>(*mesh, *mesh_slave, *quadrature,
+                                          *basis, physics);
+  } else {
+    analysis = std::make_shared<Analysis>(*mesh, *quadrature, *basis, physics);
+  }
+
+  T energy1 = analysis->energy(nullptr, dof1);
+  T energy2 = analysis->energy(nullptr, dof2);
+
+  analysis->residual(nullptr, dof, res);
+  analysis->residual(nullptr, dof1, res1);
+  analysis->residual(nullptr, dof2, res2);
 
   double dres_fd = (energy2 - energy1) / (2.0 * h);
   double dres_exact = 0.0;
@@ -92,7 +125,7 @@ void test_physics_fd(std::tuple<Mesh *, Quadrature *, Basis *> tuple,
 
   if (check_res_only) return;
 
-  analysis.jacobian_product(nullptr, dof, direction, Jp);
+  analysis->jacobian_product(nullptr, dof, direction, Jp);
   double dJp_fd = 0.0;
   double dJp_exact = 0.0;
   double dJp_relerr = 0.0;
@@ -111,16 +144,51 @@ void test_physics_fd(std::tuple<Mesh *, Quadrature *, Basis *> tuple,
   EXPECT_NEAR(dJp_relerr, 0.0, tol);
 
   int *rowp = nullptr, *cols = nullptr;
-  SparseUtils::CSRFromConnectivityFunctor(
-      num_nodes, num_elements, Basis::max_nnodes_per_element,
-      [mesh](int elem, int *nodes) -> int {
-        return mesh->get_elem_dof_nodes(elem, nodes);
-      },
-      &rowp, &cols);
+
+  if constexpr (is_interface_physics) {
+    auto element_nodes_func = [mesh, mesh_slave](int cell,
+                                                 int *nodes_g) -> int {
+      auto mesh_m = *mesh;
+      auto mesh_s = *mesh_slave;
+
+      const auto &cell_elems_m = mesh_m.get_cell_elems();
+      const auto &cell_elems_s = mesh_s.get_cell_elems();
+      int num_master_nodes = mesh_m.get_num_nodes();
+
+      int nnodes = 0;
+
+      if (cell_elems_m.count(cell)) {
+        nnodes += mesh_m.get_elem_dof_nodes(cell_elems_m.at(cell), nodes_g);
+      }
+
+      if (cell_elems_s.count(cell)) {
+        int nodes_s[Mesh::max_nnodes_per_element];
+        int nnodes_s =
+            mesh_s.get_elem_dof_nodes(cell_elems_s.at(cell), nodes_s);
+        for (int i = 0; i < nnodes_s; i++) {
+          nodes_g[nnodes + i] = nodes_s[i] + num_master_nodes;
+        }
+        nnodes += nnodes_s;
+      }
+
+      return nnodes;
+    };
+    SparseUtils::CSRFromConnectivityFunctor(num_nodes, num_elements,
+                                            Basis::max_nnodes_per_element,
+                                            element_nodes_func, &rowp, &cols);
+  } else {
+    SparseUtils::CSRFromConnectivityFunctor(
+        num_nodes, num_elements, Basis::max_nnodes_per_element,
+        [mesh](int elem, int *nodes) -> int {
+          return mesh->get_elem_dof_nodes(elem, nodes);
+        },
+        &rowp, &cols);
+  }
+
   int nnz = rowp[num_nodes];
   using BSRMat = GalerkinBSRMat<T, Physics::dof_per_node>;
   BSRMat *jac_bsr = new BSRMat(num_nodes, nnz, rowp, cols);
-  analysis.jacobian(nullptr, dof, jac_bsr);
+  analysis->jacobian(nullptr, dof, jac_bsr);
   jac_bsr->axpy(direction, Jp_axpy);
 
   double Jp_l1 = 0.0;
@@ -233,18 +301,17 @@ void test_elasticity_external_load(
   }
 }
 
-template <class Quadrature, class Basis>
+template <int dim, class Quadrature, class Basis>
 void test_linear_elasticity_cut_dirichlet(
     std::tuple<typename Basis::Mesh *, Quadrature *, Basis *> tuple,
     double h = 1e-5, double tol = 1e-10) {
-  constexpr int dim = 4;
   auto bc_fun = [](const A2D::Vec<T, Basis::spatial_dim> &xloc) {
     std::vector<T> data = {xloc(0), xloc(1), xloc(0) * xloc(1),
                            xloc(0) - xloc(1)};
     return A2D::Vec<T, dim>(data.data());
   };
   using Physics =
-      LinearElasticityCutDirichlet<T, Basis::spatial_dim, 4, typeof(bc_fun)>;
+      LinearElasticityCutDirichlet<T, Basis::spatial_dim, dim, typeof(bc_fun)>;
   Physics physics(1.23, bc_fun);
   test_physics_fd(tuple, physics, h, tol);
 }
@@ -254,7 +321,7 @@ void test_linear_elasticity_interface(
     std::tuple<typename Basis::Mesh *, Quadrature *, Basis *> tuple,
     double h = 1e-5, double tol = 1e-10) {
   int constexpr dim = Basis::spatial_dim;
-  using Physics = LinearElasticityInterface<T, Basis::spatial_dim, dim>;
+  using Physics = LinearElasticityInterface<T, Basis::spatial_dim>;
   Physics physics(50.0, 1.2, 0.3, 2.5, 0.2);
   test_physics_fd(tuple, physics, h, tol);
 }
@@ -272,7 +339,9 @@ TEST(physics, PoissonCutDirichletEigM) {
 }
 
 TEST(physics, LinearElasticityCutDirichlet) {
-  test_linear_elasticity_cut_dirichlet(create_gd_lsf_surf_basis());
+  test_linear_elasticity_cut_dirichlet<2>(create_gd_lsf_surf_basis());
+  test_linear_elasticity_cut_dirichlet<3>(create_gd_lsf_surf_basis());
+  test_linear_elasticity_cut_dirichlet<4>(create_gd_lsf_surf_basis());
 }
 
 TEST(physics, ElasticityExternalLoad) {

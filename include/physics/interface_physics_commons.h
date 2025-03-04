@@ -1,5 +1,4 @@
-#ifndef XCGD_PHYSICS_COMMONS_H
-#define XCGD_PHYSICS_COMMONS_H
+#pragma once
 
 #include <type_traits>
 
@@ -7,12 +6,15 @@
 #include "utils/exceptions.h"
 
 template <typename T, int spatial_dim_, int data_per_node_, int dof_per_node_>
-class PhysicsBase {
+class InterfacePhysicsBase {
  public:
   static constexpr int dof_per_node = dof_per_node_;
+  static constexpr int dof_per_vert =
+      2 * dof_per_node;  // because each vert has two nodes from master side and
+                         // slave side
   static constexpr int data_per_node = data_per_node_;
   static constexpr int spatial_dim = spatial_dim_;
-  static constexpr bool is_interface_physics = false;
+  static constexpr bool is_interface_physics = true;
 
   static_assert(data_per_node <= 1,
                 "we only support data_per_node = 0 or 1 now");
@@ -28,15 +30,12 @@ class PhysicsBase {
   using hess_t = typename std::conditional<
       dof_per_node == 1, A2D::Vec<T, spatial_dim * spatial_dim>,
       A2D::Mat<T, dof_per_node, spatial_dim * spatial_dim>>::type;
-  using jac_t =
-      typename std::conditional<dof_per_node == 1, T,
-                                A2D::Mat<T, dof_per_node, dof_per_node>>::type;
-  using jac_mixed_t = typename std::conditional<
-      dof_per_node == 1, A2D::Vec<T, spatial_dim>,
-      A2D::Mat<T, dof_per_node, spatial_dim * dof_per_node>>::type;
 
+  // Note that these types have different shape than PhysicsBase
+  using jac_t = A2D::Mat<T, dof_per_vert, dof_per_vert>;
+  using jac_mixed_t = A2D::Mat<T, dof_per_vert, spatial_dim * dof_per_vert>;
   using jac_grad_t =
-      A2D::Mat<T, dof_per_node * spatial_dim, dof_per_node * spatial_dim>;
+      A2D::Mat<T, dof_per_vert * spatial_dim, dof_per_vert * spatial_dim>;
 
   /**
    * @brief At a quadrature point, evaluate the energy functional
@@ -52,7 +51,8 @@ class PhysicsBase {
    * @return T energy functional scalar
    */
   virtual T energy(T weight, dv_t dv, xloc_t& xloc, nrm_t& nrm_ref, J_t& J,
-                   dof_t& vals, grad_t& grad) const {
+                   dof_t& vals_m, dof_t& vals_s, grad_t& grad_m,
+                   grad_t& grad_s) const {
     throw NotImplemented("energy() for your physics is not implemented");
   }
 
@@ -73,8 +73,9 @@ class PhysicsBase {
    * @param [out] coef_grad ∂e/∂(∇_x)uq
    */
   virtual void residual(T weight, dv_t dv, xloc_t& xloc, nrm_t& nrm_ref, J_t& J,
-                        dof_t& vals, grad_t& grad, dof_t& coef_vals,
-                        grad_t& coef_grad) const {
+                        dof_t& vals_m, dof_t& vals_s, grad_t& grad_m,
+                        grad_t& grad_s, dof_t& coef_vals_m, dof_t& coef_vals_s,
+                        grad_t& coef_grad_m, grad_t& coef_grad_s) const {
     throw NotImplemented("residual() for your physics is not implemented");
   }
 
@@ -96,9 +97,13 @@ class PhysicsBase {
    * @param [out] coef_grad ∂2e/∂(∇_x)uq2 * (∇_x)pq
    */
   virtual void jacobian_product(T weight, dv_t dv, xloc_t& xloc, nrm_t& nrm_ref,
-                                J_t& J, dof_t& vals, grad_t& grad,
-                                dof_t& direct_vals, grad_t& direct_grad,
-                                dof_t& coef_vals, grad_t& coef_grad) const {
+                                J_t& J, dof_t& vals_m, dof_t& vals_s,
+                                grad_t& grad_m, grad_t& grad_s,
+                                dof_t& direct_vals_m, dof_t& direct_vals_s,
+                                grad_t& direct_grad_m, grad_t& direct_grad_s,
+                                dof_t& coef_vals_m, dof_t& coef_vals_s,
+                                grad_t& coef_grad_m,
+                                grad_t& coef_grad_s) const {
     throw NotImplemented(
         "jacobian_product() for your physics is not implemented");
   }
@@ -119,9 +124,12 @@ class PhysicsBase {
    * @param [out] x_coef output, ∂/∂xq(ψ^T * ∂e/∂u)
    */
   virtual void adjoint_jacobian_product(T weight, dv_t dv, xloc_t& xloc,
-                                        nrm_t& nrm_ref, J_t& J, dof_t& vals,
-                                        grad_t& grad, dof_t& psi_vals,
-                                        grad_t& psi_grad, T& x_coef) const {
+                                        nrm_t& nrm_ref, J_t& J, dof_t& vals_m,
+                                        dof_t& vals_s, grad_t& grad_m,
+                                        grad_t& grad_s, dof_t& psi_vals_m,
+                                        dof_t& psi_vals_s, grad_t& psi_grad_m,
+                                        grad_t& psi_grad_s, T& x_coef_m,
+                                        T& x_coef_s) const {
     throw NotImplemented(
         "adjoint_jacobian_product() for your physics is not implemented");
   }
@@ -143,10 +151,9 @@ class PhysicsBase {
    * @param [out] jac_grad ∂2e/∂(∇_x)uq2
    */
   virtual void jacobian(T weight, dv_t dv, xloc_t& xloc, nrm_t& nrm_ref, J_t& J,
-                        dof_t& vals, grad_t& grad, jac_t& jac_vals,
-                        jac_mixed_t& jac_mixed, jac_grad_t& jac_grad) const {
+                        dof_t& vals_m, dof_t& vals_s, grad_t& grad_m,
+                        grad_t& grad_s, jac_t& jac_vals, jac_mixed_t& jac_mixed,
+                        jac_grad_t& jac_grad) const {
     throw NotImplemented("jacobian() for your physics is not implemented");
   }
 };
-
-#endif  //  XCGD_PHYSICS_COMMONS_H

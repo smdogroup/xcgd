@@ -19,11 +19,9 @@
  * etc) and global matrices (Jacobian, etc) are defined on the grid mesh,
  * regardless if the Mesh itself is a cut mesh or not. This is useful for
  * two-sided problems such as the elasticity with ersatz material.
- * @tparam is_interface_physics if true, then this analysis is for the interface
- * physics, such as LinearElasticityInterface
  */
 template <typename T, class Mesh, class Quadrature, class Basis, class Physics,
-          bool from_to_grid_mesh = false, bool is_interface_physics = false>
+          bool from_to_grid_mesh = false>
 class GalerkinAnalysis final {
  public:
   // Static data taken from the element basis
@@ -36,6 +34,8 @@ class GalerkinAnalysis final {
 
   static_assert(data_per_node == 0 or data_per_node == 1,
                 "we only support data_per_node == 0 or 1 for now");
+  static_assert(not Physics::is_interface_physics,
+                "GalerkinAnalysis does not work with interface physics");
 
   // Derived static data
   static constexpr int max_dof_per_element =
@@ -48,27 +48,7 @@ class GalerkinAnalysis final {
         mesh_s(mesh),
         quadrature(quadrature),
         basis(basis),
-        physics(physics) {
-    static_assert(
-        not is_interface_physics,
-        "constructing a regular analysis but is_interface_physics is true");
-  }
-
-  // Constructor for interface regular analysis
-  GalerkinAnalysis(const Mesh& mesh_m, const Mesh& mesh_s,
-                   const Quadrature& quadrature, const Basis& basis,
-                   const Physics& physics)
-      : mesh(mesh_m),
-        mesh_s(mesh_s),
-        quadrature(quadrature),
-        basis(basis),
-        physics(physics) {
-    static_assert(
-        is_interface_physics,
-        "constructing a interface analysis but is_interface_physics is false");
-    static_assert(Quadrature::quad_type == QuadPtType::SURFACE,
-                  "interface analysis only works with surface quadrature");
-  }
+        physics(physics) {}
 
   T energy(const T x[], const T dof[], int dof_offset = 0) const {
     T total_energy = 0.0;

@@ -101,7 +101,6 @@ class NitscheBCsApp final {
 };
 
 // WIP
-#if 0
 /*
  * This class implements an app that solves a two-sided problem (for example,
  * static elastic problem for a two-material structure) that the interface
@@ -116,7 +115,7 @@ class NitscheBCsApp final {
  *
  * As a result, we have:
  *   num_nodes = num_master_nodes + num_slave_nodes
- *   num_elements = num_master_elements + num_slave_elements
+ *   num_elements = num_cells
  *   master_node = global_node
  *   slave_node + num_master_nodes = global_node
  * */
@@ -177,7 +176,7 @@ class NitscheTwoSidedApp final {
 
   BSRMat* jacobian() {
     int num_nodes = mesh_m.get_num_nodes() + mesh_s.get_num_nodes();
-    int num_elements = mesh_m.get_num_elements() + mesh_s.get_num_elements();
+    int num_elements = grid.get_num_cells();
     int dof_offset = dof_per_node * mesh_m.get_num_nodes();
 
     // Set up Jacobian matrix
@@ -332,4 +331,3 @@ class NitscheTwoSidedApp final {
   AnalysisBulk analysis_bulk_s;
   AnalysisBCs analysis_interface;
 };
-#endif

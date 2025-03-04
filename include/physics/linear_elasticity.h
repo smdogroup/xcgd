@@ -1,6 +1,7 @@
 #ifndef XCGD_LINEAR_ELASTICITY_H
 #define XCGD_LINEAR_ELASTICITY_H
 
+#include "interface_physics_commons.h"
 #include "physics_commons.h"
 
 // IntFunc: type of the internal (body) force functor
@@ -507,16 +508,17 @@ class LinearElasticityEnergyNormError final
   const StressFun& stress_fun;
 };
 
-template <typename T, int spatial_dim_, int dim>
+template <typename T, int spatial_dim_>
 class LinearElasticityInterface final
-    : public PhysicsBase<T, spatial_dim_, 0, 2 * dim> {
+    : public InterfacePhysicsBase<T, spatial_dim_, 0, spatial_dim_> {
  private:
-  using PhysicsBase_s = PhysicsBase<T, spatial_dim_, 0, 2 * spatial_dim_>;
+  using PhysicsBase_s = InterfacePhysicsBase<T, spatial_dim_, 0, spatial_dim_>;
   static_assert(spatial_dim_ == 2,
                 "LinearElasticityInterface is only implemented for 2D");
 
  public:
   using PhysicsBase_s::dof_per_node;
+  using PhysicsBase_s::dof_per_vert;
   using PhysicsBase_s::spatial_dim;
 
   LinearElasticityInterface(double eta, T E_master, T nu_master, T E_slave,
@@ -532,8 +534,10 @@ class LinearElasticityInterface final
   T energy(T weight, T _, A2D::Vec<T, spatial_dim>& xloc,
            A2D::Vec<T, spatial_dim>& nrm_ref,
            A2D::Mat<T, spatial_dim, spatial_dim>& J,
-           A2D::Vec<T, dof_per_node>& u,
-           A2D::Mat<T, dof_per_node, spatial_dim>& grad) const {
+           A2D::Vec<T, dof_per_node>& u_master,
+           A2D::Vec<T, dof_per_node>& u_slave,
+           A2D::Mat<T, dof_per_node, spatial_dim>& grad_master,
+           A2D::Mat<T, dof_per_node, spatial_dim>& grad_slave) const {
     // Prepare passive quantities: Evaluate the Jacobian
     T detJ;
     A2D::MatDet(J, detJ);
@@ -559,17 +563,9 @@ class LinearElasticityInterface final
     A2D::MatVecMult(J, nrm_ref, nrm);
     A2D::VecNormalize(nrm, nrm);
 
-    // Split u to u_master and u_slave
-    A2D::Vec<T, dim> u_master(u.get_data()), u_slave(u.get_data() + dim);
-
-    // Split grad to grad_master and grad_slave
-    A2D::Mat<T, dim, spatial_dim> grad_master(grad.get_data());
-    A2D::Mat<T, dim, spatial_dim> grad_slave(grad.get_data() +
-                                             dim * spatial_dim);
-
     // Evaluate stress tensors from two sides
-    A2D::SymMat<T, dim> E_master, S_master;
-    A2D::SymMat<T, dim> E_slave, S_slave;
+    A2D::SymMat<T, dof_per_node> E_master, S_master;
+    A2D::SymMat<T, dof_per_node> E_slave, S_slave;
 
     A2D::MatGreenStrain<A2D::GreenStrainType::LINEAR>(grad_master, E_master);
     A2D::SymIsotropic(mu_master, lambda_master, E_master, S_master);
@@ -577,7 +573,7 @@ class LinearElasticityInterface final
     A2D::SymIsotropic(mu_slave, lambda_slave, E_slave, S_slave);
 
     // Evaluate the functional
-    A2D::Vec<T, dim> u_diff, Sn_master, Sn_slave;
+    A2D::Vec<T, dof_per_node> u_diff, Sn_master, Sn_slave;
     A2D::VecSum(1.0, u_master, -1.0, u_slave,
                 u_diff);  // u_diff = u_master - u_slave
     A2D::MatVecMult(S_master, nrm, Sn_master);
@@ -598,10 +594,14 @@ class LinearElasticityInterface final
   void residual(T weight, T _, A2D::Vec<T, spatial_dim>& xloc,
                 A2D::Vec<T, spatial_dim>& nrm_ref,
                 A2D::Mat<T, spatial_dim, spatial_dim>& J,
-                A2D::Vec<T, dof_per_node>& u,
-                A2D::Mat<T, dof_per_node, spatial_dim>& grad,
-                A2D::Vec<T, dof_per_node>& coef_u,
-                A2D::Mat<T, dof_per_node, spatial_dim>& coef_grad) const {
+                A2D::Vec<T, dof_per_node>& u_master,
+                A2D::Vec<T, dof_per_node>& u_slave,
+                A2D::Mat<T, dof_per_node, spatial_dim>& grad_master,
+                A2D::Mat<T, dof_per_node, spatial_dim>& grad_slave,
+                A2D::Vec<T, dof_per_node>& coef_u_master,
+                A2D::Vec<T, dof_per_node>& coef_u_slave,
+                A2D::Mat<T, dof_per_node, spatial_dim>& coef_grad_master,
+                A2D::Mat<T, dof_per_node, spatial_dim>& coef_grad_slave) const {
     // Prepare passive quantities: Evaluate the Jacobian
     T detJ;
     A2D::MatDet(J, detJ);
@@ -627,27 +627,19 @@ class LinearElasticityInterface final
     A2D::MatVecMult(J, nrm_ref, nrm);
     A2D::VecNormalize(nrm, nrm);
 
-    // Split u to u_master and u_slave
-    A2D::Vec<T, dim> u_master(u.get_data()), u_slave(u.get_data() + dim);
-    A2D::Vec<T, dim> coef_u_master, coef_u_slave;
-
-    // Split grad to grad_master and grad_slave
-    A2D::Mat<T, dim, spatial_dim> grad_master(grad.get_data());
-    A2D::Mat<T, dim, spatial_dim> grad_slave(grad.get_data() +
-                                             dim * spatial_dim);
-    A2D::Mat<T, dim, spatial_dim> coef_grad_master, coef_grad_slave;
-
     // Create AD objects
-    A2D::ADObj<A2D::Vec<T, dim>&> u_master_obj(u_master, coef_u_master);
-    A2D::ADObj<A2D::Vec<T, dim>&> u_slave_obj(u_slave, coef_u_slave);
-    A2D::ADObj<A2D::Mat<T, dim, spatial_dim>&> grad_master_obj(
+    A2D::ADObj<A2D::Vec<T, dof_per_node>&> u_master_obj(u_master,
+                                                        coef_u_master);
+    A2D::ADObj<A2D::Vec<T, dof_per_node>&> u_slave_obj(u_slave, coef_u_slave);
+    A2D::ADObj<A2D::Mat<T, dof_per_node, spatial_dim>&> grad_master_obj(
         grad_master, coef_grad_master);
-    A2D::ADObj<A2D::Mat<T, dim, spatial_dim>&> grad_slave_obj(grad_slave,
-                                                              coef_grad_slave);
+    A2D::ADObj<A2D::Mat<T, dof_per_node, spatial_dim>&> grad_slave_obj(
+        grad_slave, coef_grad_slave);
 
-    A2D::ADObj<A2D::SymMat<T, dim>> E_master_obj, S_master_obj;
-    A2D::ADObj<A2D::SymMat<T, dim>> E_slave_obj, S_slave_obj;
-    A2D::ADObj<A2D::Vec<T, dim>> u_diff_obj, Sn_master_obj, Sn_slave_obj;
+    A2D::ADObj<A2D::SymMat<T, dof_per_node>> E_master_obj, S_master_obj;
+    A2D::ADObj<A2D::SymMat<T, dof_per_node>> E_slave_obj, S_slave_obj;
+    A2D::ADObj<A2D::Vec<T, dof_per_node>> u_diff_obj, Sn_master_obj,
+        Sn_slave_obj;
     A2D::ADObj<T> uTSn_master_obj, uTSn_slave_obj, dot_obj, output_obj;
 
     auto stack = A2D::MakeStack(
@@ -673,26 +665,32 @@ class LinearElasticityInterface final
     output_obj.bvalue() = 1.0;
     stack.reverse();
 
-    // Copy values from temporary objects to output
-    for (int i = 0; i < dim; i++) {
-      coef_u(i) = coef_u_master(i);
-      coef_u(i + dim) = coef_u_slave(i);
-      for (int j = 0; j < spatial_dim; j++) {
-        coef_grad(i, j) = coef_grad_master(i, j);
-        coef_grad(i + dim, j) = coef_grad_slave(i, j);
-      }
-    }
+    // // Copy values from temporary objects to output
+    // for (int i = 0; i < dof_per_node; i++) {
+    //   coef_u(i) = coef_u_master(i);
+    //   coef_u(i + dof_per_node) = coef_u_slave(i);
+    //   for (int j = 0; j < spatial_dim; j++) {
+    //     coef_grad(i, j) = coef_grad_master(i, j);
+    //     coef_grad(i + dof_per_node, j) = coef_grad_slave(i, j);
+    //   }
+    // }
   }
 
   void jacobian_product(
       T weight, T _, A2D::Vec<T, spatial_dim>& xloc,
       A2D::Vec<T, spatial_dim>& nrm_ref,
-      A2D::Mat<T, spatial_dim, spatial_dim>& J, A2D::Vec<T, dof_per_node>& u,
-      A2D::Mat<T, dof_per_node, spatial_dim>& grad,
-      A2D::Vec<T, dof_per_node>& direct_u,
-      A2D::Mat<T, dof_per_node, spatial_dim>& direct_grad,
-      A2D::Vec<T, dof_per_node>& coef_u,
-      A2D::Mat<T, dof_per_node, spatial_dim>& coef_grad) const {
+      A2D::Mat<T, spatial_dim, spatial_dim>& J,
+      A2D::Vec<T, dof_per_node>& u_master, A2D::Vec<T, dof_per_node>& u_slave,
+      A2D::Mat<T, dof_per_node, spatial_dim>& grad_master,
+      A2D::Mat<T, dof_per_node, spatial_dim>& grad_slave,
+      A2D::Vec<T, dof_per_node>& direct_u_master,
+      A2D::Vec<T, dof_per_node>& direct_u_slave,
+      A2D::Mat<T, dof_per_node, spatial_dim>& direct_grad_master,
+      A2D::Mat<T, dof_per_node, spatial_dim>& direct_grad_slave,
+      A2D::Vec<T, dof_per_node>& coef_u_master,
+      A2D::Vec<T, dof_per_node>& coef_u_slave,
+      A2D::Mat<T, dof_per_node, spatial_dim>& coef_grad_master,
+      A2D::Mat<T, dof_per_node, spatial_dim>& coef_grad_slave) const {
     // Prepare passive quantities: Evaluate the Jacobian
     T detJ;
     A2D::MatDet(J, detJ);
@@ -718,50 +716,25 @@ class LinearElasticityInterface final
     A2D::MatVecMult(J, nrm_ref, nrm);
     A2D::VecNormalize(nrm, nrm);
 
-    // Split u to u_master and u_slave
-    A2D::Vec<T, dim> u_master(u.get_data()), u_slave(u.get_data() + dim);
-
-    // Split grad to grad_master and grad_slave
-    A2D::Mat<T, dim, spatial_dim> grad_master(grad.get_data());
-    A2D::Mat<T, dim, spatial_dim> grad_slave(grad.get_data() +
-                                             dim * spatial_dim);
-
-    // Split direct_u
-    A2D::Vec<T, dim> direct_u_master(direct_u.get_data()),
-        direct_u_slave(direct_u.get_data() + dim);
-
-    // Split direct_grad
-    A2D::Mat<T, dim, spatial_dim> direct_grad_master(direct_grad.get_data());
-    A2D::Mat<T, dim, spatial_dim> direct_grad_slave(direct_grad.get_data() +
-                                                    dim * spatial_dim);
-
-    // Split coef_u
-    A2D::Vec<T, dim> coef_u_master(coef_u.get_data()),
-        coef_u_slave(coef_u.get_data() + dim);
-
-    // Split coef_grad
-    A2D::Mat<T, dim, spatial_dim> coef_grad_master(coef_grad.get_data());
-    A2D::Mat<T, dim, spatial_dim> coef_grad_slave(coef_grad.get_data() +
-                                                  dim * spatial_dim);
-
     // Temporary ouotputs
-    A2D::Vec<T, dim> ub_master, ub_slave;
-    A2D::Mat<T, dim, spatial_dim> bgrad_master, bgrad_slave;
+    A2D::Vec<T, dof_per_node> ub_master, ub_slave;
+    A2D::Mat<T, dof_per_node, spatial_dim> bgrad_master, bgrad_slave;
 
     // Create AD objects
-    A2D::A2DObj<A2D::Vec<T, dim>&> u_master_obj(u_master, ub_master,
-                                                direct_u_master, coef_u_master);
-    A2D::A2DObj<A2D::Vec<T, dim>&> u_slave_obj(u_slave, ub_slave,
-                                               direct_u_slave, coef_u_slave);
+    A2D::A2DObj<A2D::Vec<T, dof_per_node>&> u_master_obj(
+        u_master, ub_master, direct_u_master, coef_u_master);
+    A2D::A2DObj<A2D::Vec<T, dof_per_node>&> u_slave_obj(
+        u_slave, ub_slave, direct_u_slave, coef_u_slave);
 
-    A2D::A2DObj<A2D::Mat<T, dim, spatial_dim>&> grad_master_obj(
+    A2D::A2DObj<A2D::Mat<T, dof_per_node, spatial_dim>&> grad_master_obj(
         grad_master, bgrad_master, direct_grad_master, coef_grad_master);
-    A2D::A2DObj<A2D::Mat<T, dim, spatial_dim>&> grad_slave_obj(
+    A2D::A2DObj<A2D::Mat<T, dof_per_node, spatial_dim>&> grad_slave_obj(
         grad_slave, bgrad_slave, direct_grad_slave, coef_grad_slave);
 
-    A2D::A2DObj<A2D::SymMat<T, dim>> E_master_obj, S_master_obj;
-    A2D::A2DObj<A2D::SymMat<T, dim>> E_slave_obj, S_slave_obj;
-    A2D::A2DObj<A2D::Vec<T, dim>> u_diff_obj, Sn_master_obj, Sn_slave_obj;
+    A2D::A2DObj<A2D::SymMat<T, dof_per_node>> E_master_obj, S_master_obj;
+    A2D::A2DObj<A2D::SymMat<T, dof_per_node>> E_slave_obj, S_slave_obj;
+    A2D::A2DObj<A2D::Vec<T, dof_per_node>> u_diff_obj, Sn_master_obj,
+        Sn_slave_obj;
     A2D::A2DObj<T> uTSn_master_obj, uTSn_slave_obj, dot_obj, output_obj;
 
     auto stack = A2D::MakeStack(
@@ -786,25 +759,27 @@ class LinearElasticityInterface final
     output_obj.bvalue() = 1.0;
     stack.hproduct();
 
-    // Copy values from temporary objects to output
-    for (int i = 0; i < dim; i++) {
-      coef_u(i) = coef_u_master(i);
-      coef_u(i + dim) = coef_u_slave(i);
-      for (int j = 0; j < spatial_dim; j++) {
-        coef_grad(i, j) = coef_grad_master(i, j);
-        coef_grad(i + dim, j) = coef_grad_slave(i, j);
-      }
-    }
+    // // Copy values from temporary objects to output
+    // for (int i = 0; i < dof_per_node; i++) {
+    //   coef_u(i) = coef_u_master(i);
+    //   coef_u(i + dof_per_node) = coef_u_slave(i);
+    //   for (int j = 0; j < spatial_dim; j++) {
+    //     coef_grad(i, j) = coef_grad_master(i, j);
+    //     coef_grad(i + dof_per_node, j) = coef_grad_slave(i, j);
+    //   }
+    // }
   }
 
   void jacobian(
       T weight, T _, A2D::Vec<T, spatial_dim>& xloc,
       A2D::Vec<T, spatial_dim>& nrm_ref,
-      A2D::Mat<T, spatial_dim, spatial_dim>& J, A2D::Vec<T, dof_per_node>& u,
-      A2D::Mat<T, dof_per_node, spatial_dim>& grad,
-      A2D::Mat<T, dof_per_node, dof_per_node>& jac_u,
-      A2D::Mat<T, dof_per_node, dof_per_node * spatial_dim>& jac_mixed,
-      A2D::Mat<T, dof_per_node * spatial_dim, dof_per_node * spatial_dim>&
+      A2D::Mat<T, spatial_dim, spatial_dim>& J,
+      A2D::Vec<T, dof_per_node>& u_master, A2D::Vec<T, dof_per_node>& u_slave,
+      A2D::Mat<T, dof_per_node, spatial_dim>& grad_master,
+      A2D::Mat<T, dof_per_node, spatial_dim>& grad_slave,
+      A2D::Mat<T, dof_per_vert, dof_per_vert>& jac_u,
+      A2D::Mat<T, dof_per_vert, dof_per_vert * spatial_dim>& jac_mixed,
+      A2D::Mat<T, dof_per_vert * spatial_dim, dof_per_vert * spatial_dim>&
           jac_grad) const {
     // Prepare passive quantities: Evaluate the Jacobian
     T detJ;
@@ -831,35 +806,30 @@ class LinearElasticityInterface final
     A2D::MatVecMult(J, nrm_ref, nrm);
     A2D::VecNormalize(nrm, nrm);
 
-    // Split u to u_master and u_slave
-    A2D::Vec<T, dim> u_master(u.get_data()), u_slave(u.get_data() + dim);
-
-    // Split grad to grad_master and grad_slave
-    A2D::Mat<T, dim, spatial_dim> grad_master(grad.get_data());
-    A2D::Mat<T, dim, spatial_dim> grad_slave(grad.get_data() +
-                                             dim * spatial_dim);
-
     // Temporary ouotputs
-    A2D::Vec<T, dim> ub_master, up_master, uh_master;
-    A2D::Vec<T, dim> ub_slave, up_slave, uh_slave;
+    A2D::Vec<T, dof_per_node> ub_master, up_master, uh_master;
+    A2D::Vec<T, dof_per_node> ub_slave, up_slave, uh_slave;
 
-    A2D::Mat<T, dim, spatial_dim> bgrad_master, pgrad_master, hgrad_master;
-    A2D::Mat<T, dim, spatial_dim> bgrad_slave, pgrad_slave, hgrad_slave;
+    A2D::Mat<T, dof_per_node, spatial_dim> bgrad_master, pgrad_master,
+        hgrad_master;
+    A2D::Mat<T, dof_per_node, spatial_dim> bgrad_slave, pgrad_slave,
+        hgrad_slave;
 
     // Create AD objects
-    A2D::A2DObj<A2D::Vec<T, dim>&> u_master_obj(u_master, ub_master, up_master,
-                                                uh_master);
-    A2D::A2DObj<A2D::Vec<T, dim>&> u_slave_obj(u_slave, ub_slave, up_slave,
-                                               uh_slave);
+    A2D::A2DObj<A2D::Vec<T, dof_per_node>&> u_master_obj(u_master, ub_master,
+                                                         up_master, uh_master);
+    A2D::A2DObj<A2D::Vec<T, dof_per_node>&> u_slave_obj(u_slave, ub_slave,
+                                                        up_slave, uh_slave);
 
-    A2D::A2DObj<A2D::Mat<T, dim, spatial_dim>&> grad_master_obj(
+    A2D::A2DObj<A2D::Mat<T, dof_per_node, spatial_dim>&> grad_master_obj(
         grad_master, bgrad_master, pgrad_master, hgrad_master);
-    A2D::A2DObj<A2D::Mat<T, dim, spatial_dim>&> grad_slave_obj(
+    A2D::A2DObj<A2D::Mat<T, dof_per_node, spatial_dim>&> grad_slave_obj(
         grad_slave, bgrad_slave, pgrad_slave, hgrad_slave);
 
-    A2D::A2DObj<A2D::SymMat<T, dim>> E_master_obj, S_master_obj;
-    A2D::A2DObj<A2D::SymMat<T, dim>> E_slave_obj, S_slave_obj;
-    A2D::A2DObj<A2D::Vec<T, dim>> u_diff_obj, Sn_master_obj, Sn_slave_obj;
+    A2D::A2DObj<A2D::SymMat<T, dof_per_node>> E_master_obj, S_master_obj;
+    A2D::A2DObj<A2D::SymMat<T, dof_per_node>> E_slave_obj, S_slave_obj;
+    A2D::A2DObj<A2D::Vec<T, dof_per_node>> u_diff_obj, Sn_master_obj,
+        Sn_slave_obj;
     A2D::A2DObj<T> uTSn_master_obj, uTSn_slave_obj, dot_obj, output_obj;
 
     auto stack = A2D::MakeStack(
@@ -900,16 +870,16 @@ class LinearElasticityInterface final
 
       stack.hzero();
 
-      if (i < dim) {
+      if (i < dof_per_node) {
         up_master[i] = 1.0;
       } else {
-        up_slave[i - dim] = 1.0;
+        up_slave[i - dof_per_node] = 1.0;
       }
 
       stack.hforward();
       stack.hreverse();
 
-      for (int j = 0; j < dim; j++) {
+      for (int j = 0; j < dof_per_node; j++) {
         // Extract the Hessian w.r.t. u
         jac_u(j, i) = uh_master[j];
 
@@ -918,8 +888,8 @@ class LinearElasticityInterface final
           jac_mixed(i, j * spatial_dim + k) = hgrad_master(j, k);
         }
       }
-      for (int j = dim; j < dof_per_node; j++) {
-        int jj = j - dim;
+      for (int j = dof_per_node; j < dof_per_node; j++) {
+        int jj = j - dof_per_node;
         // Extract the Hessian w.r.t. u
         jac_u(j, i) = uh_slave[jj];
 
