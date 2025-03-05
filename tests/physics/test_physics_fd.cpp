@@ -174,7 +174,7 @@ void test_physics_fd(std::tuple<Mesh *, Quadrature *, Basis *> tuple,
       return nnodes;
     };
     SparseUtils::CSRFromConnectivityFunctor(num_nodes, num_elements,
-                                            Basis::max_nnodes_per_element,
+                                            2 * Basis::max_nnodes_per_element,
                                             element_nodes_func, &rowp, &cols);
   } else {
     SparseUtils::CSRFromConnectivityFunctor(
@@ -208,14 +208,12 @@ void test_physics_fd(std::tuple<Mesh *, Quadrature *, Basis *> tuple,
 }
 
 template <int Np_1d = 4>
-std::tuple<CutMesh<T, Np_1d> *,
-           GDLSFQuadrature2D<T, Np_1d, QuadPtType::SURFACE> *,
-           GDBasis2D<T, CutMesh<T, Np_1d>> *>
-create_gd_lsf_surf_basis() {
+auto create_gd_lsf_surf_basis() {
   int constexpr nx = 8, ny = 8;
   using Grid = StructuredGrid2D<T>;
-  using Quadrature = GDLSFQuadrature2D<T, Np_1d, QuadPtType::SURFACE>;
-  using Mesh = CutMesh<T, Np_1d>;
+  using Mesh = FiniteCellMesh<T, Np_1d>;
+  using Quadrature =
+      GDLSFQuadrature2D<T, Np_1d, QuadPtType::SURFACE, Grid, Np_1d, Mesh>;
   using Basis = GDBasis2D<T, Mesh>;
 
   int nxy[2] = {nx, ny};
@@ -228,10 +226,10 @@ create_gd_lsf_surf_basis() {
            (x[1] - pt0[1]) * (x[1] - pt0[1]) - r0 * r0;
   });
 
-  // ToVTK<T, Mesh> vtk(*mesh, "lsf_surf.vtk");
+  // ToVTK<T, Mesh> vtk(*mesh, "debug.vtk");
   // vtk.write_mesh();
   // vtk.write_sol("lsf", mesh->get_lsf_nodes().data());
-  return {mesh, new Quadrature(*mesh), new Basis(*mesh)};
+  return std::make_tuple(mesh, new Quadrature(*mesh), new Basis(*mesh));
 }
 
 template <class Quadrature, class Basis>

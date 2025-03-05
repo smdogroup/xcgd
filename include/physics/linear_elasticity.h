@@ -855,11 +855,11 @@ class LinearElasticityInterface final
 
     stack.reverse();
 
-    for (int i = 0; i < dof_per_node; i++) {
+    for (int i = 0; i < dof_per_vert; i++) {
       up_master.zero();
-      uh_master.zero();
-
       up_slave.zero();
+
+      uh_master.zero();
       uh_slave.zero();
 
       pgrad_master.zero();
@@ -879,23 +879,22 @@ class LinearElasticityInterface final
       stack.hforward();
       stack.hreverse();
 
-      for (int j = 0; j < dof_per_node; j++) {
-        // Extract the Hessian w.r.t. u
-        jac_u(j, i) = uh_master[j];
-
-        for (int k = 0; k < spatial_dim; k++) {
-          // Extract the mixed Hessian w.r.t. u and ∇u:
-          jac_mixed(i, j * spatial_dim + k) = hgrad_master(j, k);
-        }
-      }
-      for (int j = dof_per_node; j < dof_per_node; j++) {
+      for (int j = 0; j < dof_per_vert; j++) {
         int jj = j - dof_per_node;
         // Extract the Hessian w.r.t. u
-        jac_u(j, i) = uh_slave[jj];
+        if (j < dof_per_node) {
+          jac_u(j, i) = uh_master[j];
+        } else {
+          jac_u(j, i) = uh_slave[jj];
+        }
 
         for (int k = 0; k < spatial_dim; k++) {
           // Extract the mixed Hessian w.r.t. u and ∇u:
-          jac_mixed(i, j * spatial_dim + k) = hgrad_slave(jj, k);
+          if (j < dof_per_node) {
+            jac_mixed(i, j * spatial_dim + k) = hgrad_master(j, k);
+          } else {
+            jac_mixed(i, j * spatial_dim + k) = hgrad_slave(jj, k);
+          }
         }
       }
     }

@@ -1080,6 +1080,7 @@ class FiniteCellMesh final : public GDMeshBase<T, Np_1d, Grid_> {
   using MeshBase::spatial_dim;
   using typename MeshBase::Grid;
   static constexpr bool is_cut_mesh = true;
+  static constexpr bool is_finite_cell_mesh = true;
 
   /**
    * @brief Construct GD Mesh given grid and LSF function

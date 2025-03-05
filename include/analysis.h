@@ -562,9 +562,9 @@ class GalerkinAnalysis final {
         mtransform(J, jac_mixed, jac_mixed_ref);
 
         // Add the contributions to the element Jacobian
-        add_matrix<T, Basis>(&N[offset_n], &Nxi[offset_nxi], jac_vals,
-                             jac_mixed_ref, jac_grad_ref,
-                             element_jac.data() + element_jac_offset);
+        add_matrix<T, spatial_dim, max_nnodes_per_element>(
+            &N[offset_n], &Nxi[offset_nxi], jac_vals, jac_mixed_ref,
+            jac_grad_ref, element_jac.data() + element_jac_offset);
       }
     }
 

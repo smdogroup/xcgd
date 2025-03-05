@@ -530,16 +530,12 @@ void add_grad(const T N[], const T Nxi[], const T &coef_val,
  * @param coef_hess ∂^2e/∂((∇_ξ)uq)^2
  * @param elem_jac d^2e/du^2
  */
-template <typename T, class Basis, int dim>
-void add_matrix(const T N[], const T Nxi[],
-                const A2D::Mat<T, dim, dim> &coef_vals,
-                const A2D::Mat<T, dim, Basis::spatial_dim * dim> &coef_mixed,
-                const A2D::Mat<T, dim * Basis::spatial_dim,
-                               dim * Basis::spatial_dim> &coef_hess,
-                T elem_jac[]) {
-  static constexpr int spatial_dim = Basis::spatial_dim;
-  static constexpr int max_nnodes_per_element = Basis::max_nnodes_per_element;
-
+template <typename T, int spatial_dim, int max_nnodes_per_element, int dim>
+void add_matrix(
+    const T N[], const T Nxi[], const A2D::Mat<T, dim, dim> &coef_vals,
+    const A2D::Mat<T, dim, spatial_dim * dim> &coef_mixed,
+    const A2D::Mat<T, dim * spatial_dim, dim * spatial_dim> &coef_hess,
+    T elem_jac[]) {
   constexpr int max_dof_per_element = dim * max_nnodes_per_element;
 
   for (int i = 0; i < max_nnodes_per_element; i++) {
@@ -579,15 +575,11 @@ void add_matrix(const T N[], const T Nxi[],
 }
 
 // dim == 1
-template <typename T, class Basis>
-void add_matrix(
-    const T N[], const T Nxi[], const T &coef_val,
-    const A2D::Vec<T, Basis::spatial_dim> &coef_mixed,
-    const A2D::Mat<T, Basis::spatial_dim, Basis::spatial_dim> &coef_hess,
-    T elem_jac[]) {
-  static constexpr int spatial_dim = Basis::spatial_dim;
-  static constexpr int max_nnodes_per_element = Basis::max_nnodes_per_element;
-
+template <typename T, int spatial_dim, int max_nnodes_per_element>
+void add_matrix(const T N[], const T Nxi[], const T &coef_val,
+                const A2D::Vec<T, spatial_dim> &coef_mixed,
+                const A2D::Mat<T, spatial_dim, spatial_dim> &coef_hess,
+                T elem_jac[]) {
   constexpr int max_dof_per_element = max_nnodes_per_element;
 
   for (int i = 0; i < max_nnodes_per_element; i++) {

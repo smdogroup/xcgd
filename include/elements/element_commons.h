@@ -51,6 +51,7 @@ class GDMeshBase : public MeshBase<T, 2, Np_1d_ * Np_1d_, 4> {
   using MeshBase_::spatial_dim;
   static constexpr bool is_gd_mesh = true;
   static constexpr bool is_cut_mesh = false;
+  static constexpr bool is_finite_cell_mesh = false;
   static constexpr int Np_1d = Np_1d_;
 
   GDMeshBase(const Grid& grid) : grid(grid) {

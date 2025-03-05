@@ -14,6 +14,14 @@ void print_vec(const VecType& vec) {
   std::cout << std::endl;
 }
 
+template <class VecType>
+void print_vec(const VecType& vec, int n) {
+  for (int j = 0; j < n; j++) {
+    std::cout << std::setw(5) << vec[j];
+  }
+  std::cout << std::endl;
+}
+
 template <int m, int n, class MatType>
 void print_mat(const MatType& mat) {
   for (int i = 0; i < m; i++) {

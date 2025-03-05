@@ -24,6 +24,8 @@ class InterfaceGalerkinAnalysis final {
   static constexpr int dof_per_vert = Physics::dof_per_vert;
   static constexpr int data_per_node = Physics::data_per_node;
 
+  static_assert(Mesh::is_finite_cell_mesh,
+                "InterfaceProblem only works with FiniteCellMesh");
   static_assert(data_per_node == 0 or data_per_node == 1,
                 "we only support data_per_node == 0 or 1 for now");
   static_assert(Quadrature::quad_type == QuadPtType::SURFACE,
@@ -324,8 +326,8 @@ class InterfaceGalerkinAnalysis final {
             element_dof_slave, element_x, wts, ns] =
           interpolate_for_element(cell, x, dof);
 
-      std::vector<T> element_jac(max_dof_per_element * max_dof_per_element,
-                                 T(0.0));
+      std::vector<T> element_jac(
+          2 * 2 * max_dof_per_element * max_dof_per_element, T(0.0));
 
       for (int j = 0; j < num_quad_pts; j++) {
         int offset_n = j * max_nnodes_per_element;
@@ -383,14 +385,25 @@ class InterfaceGalerkinAnalysis final {
         mtransform(J, jac_mixed, jac_mixed_ref);
 
         // Add the contributions to the element Jacobian
-        add_matrix<T, Basis>(&N[offset_n], &Nxi[offset_nxi], jac_vals,
-                             jac_mixed_ref, jac_grad_ref, element_jac.data());
+        add_matrix<T, spatial_dim, max_nnodes_per_element>(
+            &N[offset_n], &Nxi[offset_nxi], jac_vals, jac_mixed_ref,
+            jac_grad_ref, element_jac.data());
       }
 
+      xcgd_assert(nnodes_master == nnodes_slave,
+                  "number of master dof nodes (" +
+                      std::to_string(nnodes_master) +
+                      ") should be equal to number of "
+                      "slave dof nodes(" +
+                      std::to_string(nnodes_slave) + ")");
       int nnodes_all = nnodes_master + nnodes_slave;
-      std::vector<int> nodes_all = nodes_master;
-      nodes_all.insert(nodes_all.end(), nodes_slave.begin(), nodes_slave.end());
+      std::vector<int> nodes_all(nnodes_all, 0);
+      for (int t = 0; t < nnodes_master; t++) {
+        nodes_all[2 * t] = nodes_master[t];
+        nodes_all[2 * t + 1] = nodes_slave[t];
+      }
 
+      // I really don't like this quite devil hard-coded 2 here, but it works
       mat->template add_block_values<2 * max_nnodes_per_element>(
           nnodes_all, nodes_all.data(), element_jac.data());
     }
