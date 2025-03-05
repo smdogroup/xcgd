@@ -50,7 +50,7 @@ class GalerkinAnalysis final {
         basis(basis),
         physics(physics) {}
 
-  T energy(const T x[], const T dof[], int dof_offset = 0) const {
+  T energy(const T x[], const T dof[], int node_offset = 0) const {
     T total_energy = 0.0;
     T xq = 0.0;
     std::vector<T> element_x = std::vector<T>(max_nnodes_per_element);
@@ -65,9 +65,9 @@ class GalerkinAnalysis final {
         nnodes = mesh.get_elem_dof_nodes(i, nodes);
       }
 
-      if (dof_offset != 0) {
+      if (node_offset != 0) {
         for (int ii = 0; ii < nnodes; ii++) {
-          nodes[ii] += dof_offset;
+          nodes[ii] += node_offset;
         }
       }
 
@@ -133,7 +133,8 @@ class GalerkinAnalysis final {
     return total_energy;
   }
 
-  void residual(const T x[], const T dof[], T res[], int dof_offset = 0) const {
+  void residual(const T x[], const T dof[], T res[],
+                int node_offset = 0) const {
     T xq = 0.0;
     std::vector<T> element_x = std::vector<T>(max_nnodes_per_element);
 
@@ -147,9 +148,9 @@ class GalerkinAnalysis final {
         nnodes = mesh.get_elem_dof_nodes(i, nodes);
       }
 
-      if (dof_offset != 0) {
+      if (node_offset != 0) {
         for (int ii = 0; ii < nnodes; ii++) {
-          nodes[ii] += dof_offset;
+          nodes[ii] += node_offset;
         }
       }
 
@@ -230,7 +231,7 @@ class GalerkinAnalysis final {
   }
 
   void jacobian_product(const T x[], const T dof[], const T direct[], T res[],
-                        int dof_offset = 0) const {
+                        int node_offset = 0) const {
     T xq = 0.0;
     std::vector<T> element_x = std::vector<T>(max_nnodes_per_element);
 
@@ -244,9 +245,9 @@ class GalerkinAnalysis final {
         nnodes = mesh.get_elem_dof_nodes(i, nodes);
       }
 
-      if (dof_offset != 0) {
+      if (node_offset != 0) {
         for (int ii = 0; ii < nnodes; ii++) {
-          nodes[ii] += dof_offset;
+          nodes[ii] += node_offset;
         }
       }
 
@@ -349,7 +350,7 @@ class GalerkinAnalysis final {
     psi are the adjoint variables
   */
   void jacobian_adjoint_product(const T x[], const T dof[], const T psi[],
-                                T dfdx[], int dof_offset = 0) const {
+                                T dfdx[], int node_offset = 0) const {
     T xq = 0.0;
     std::vector<T> element_x = std::vector<T>(max_nnodes_per_element);
 
@@ -363,9 +364,9 @@ class GalerkinAnalysis final {
         nnodes = mesh.get_elem_dof_nodes(i, nodes);
       }
 
-      if (dof_offset != 0) {
+      if (node_offset != 0) {
         for (int ii = 0; ii < nnodes; ii++) {
-          nodes[ii] += dof_offset;
+          nodes[ii] += node_offset;
         }
       }
 
@@ -457,7 +458,7 @@ class GalerkinAnalysis final {
 
   void jacobian(const T x[], const T dof[],
                 GalerkinBSRMat<T, dof_per_node>* mat, bool zero_jac = true,
-                int dof_offset = 0) const {
+                int node_offset = 0) const {
     if (zero_jac) {
       mat->zero();
     }
@@ -480,9 +481,9 @@ class GalerkinAnalysis final {
         nnodes = mesh.get_elem_dof_nodes(i, nodes);
       }
 
-      if (dof_offset != 0) {
+      if (node_offset != 0) {
         for (int ii = 0; ii < nnodes; ii++) {
-          nodes[ii] += dof_offset;
+          nodes[ii] += node_offset;
         }
       }
 
@@ -578,9 +579,9 @@ class GalerkinAnalysis final {
         nnodes = mesh.get_elem_dof_nodes(i, nodes);
       }
 
-      if (dof_offset != 0) {
+      if (node_offset != 0) {
         for (int ii = 0; ii < nnodes; ii++) {
-          nodes[ii] += dof_offset;
+          nodes[ii] += node_offset;
         }
       }
 
@@ -598,7 +599,7 @@ class GalerkinAnalysis final {
     level-set mesh
   */
   void LSF_jacobian_adjoint_product(const T dof[], const T psi[], T dfdphi[],
-                                    int dof_offset = 0) const {
+                                    int node_offset = 0) const {
     static_assert(Basis::is_gd_basis, "This method only works with GD Basis");
     static_assert(Mesh::is_cut_mesh,
                   "This method requires a level-set-cut mesh");
@@ -613,9 +614,9 @@ class GalerkinAnalysis final {
         nnodes = mesh.get_elem_dof_nodes(i, nodes);
       }
 
-      if (dof_offset != 0) {
+      if (node_offset != 0) {
         for (int ii = 0; ii < nnodes; ii++) {
-          nodes[ii] += dof_offset;
+          nodes[ii] += node_offset;
         }
       }
 
@@ -721,7 +722,7 @@ class GalerkinAnalysis final {
    * Note: This only works for Galerkin Difference method combined with the
    * level-set mesh
   */
-  void LSF_volume_derivatives(T dfdphi[], int dof_offset = 0) const {
+  void LSF_volume_derivatives(T dfdphi[], int node_offset = 0) const {
     static_assert(Basis::is_gd_basis, "This method only works with GD Basis");
     static_assert(Mesh::is_cut_mesh,
                   "This method requires a level-set-cut mesh");
@@ -773,7 +774,7 @@ class GalerkinAnalysis final {
    */
   void LSF_energy_derivatives(const T dof[], T dfdphi[],
                               bool unity_quad_wts = false,
-                              int dof_offset = 0) const {
+                              int node_offset = 0) const {
     static_assert(Basis::is_gd_basis, "This method only works with GD Basis");
     static_assert(Mesh::is_cut_mesh,
                   "This method requires a level-set-cut mesh");
@@ -788,9 +789,9 @@ class GalerkinAnalysis final {
         nnodes = mesh.get_elem_dof_nodes(i, nodes);
       }
 
-      if (dof_offset != 0) {
+      if (node_offset != 0) {
         for (int ii = 0; ii < nnodes; ii++) {
-          nodes[ii] += dof_offset;
+          nodes[ii] += node_offset;
         }
       }
 
@@ -878,7 +879,7 @@ class GalerkinAnalysis final {
   // debug or post-process
   template <int ncomp_per_node = Physics::dof_per_node>
   std::pair<std::vector<T>, std::vector<T>> interpolate(
-      const T vals[], int dof_offset = 0) const {
+      const T vals[], int node_offset = 0) const {
     std::vector<T> xloc_q, vals_q;
 
     for (int i = 0; i < mesh.get_num_elements(); i++) {
@@ -891,9 +892,9 @@ class GalerkinAnalysis final {
         nnodes = mesh.get_elem_dof_nodes(i, nodes);
       }
 
-      if (dof_offset != 0) {
+      if (node_offset != 0) {
         for (int ii = 0; ii < nnodes; ii++) {
-          nodes[ii] += dof_offset;
+          nodes[ii] += node_offset;
         }
       }
 
@@ -945,7 +946,7 @@ class GalerkinAnalysis final {
   // Evaluate the energy on quadrature points, intended to be used for
   // debug or post-process
   std::pair<std::vector<T>, std::vector<T>> interpolate_energy(
-      const T dof[], int dof_offset = 0) const {
+      const T dof[], int node_offset = 0) const {
     std::vector<T> xloc_q, energy_q;
 
     for (int i = 0; i < mesh.get_num_elements(); i++) {
@@ -958,9 +959,9 @@ class GalerkinAnalysis final {
         nnodes = mesh.get_elem_dof_nodes(i, nodes);
       }
 
-      if (dof_offset != 0) {
+      if (node_offset != 0) {
         for (int ii = 0; ii < nnodes; ii++) {
-          nodes[ii] += dof_offset;
+          nodes[ii] += node_offset;
         }
       }
 
@@ -1022,7 +1023,7 @@ class GalerkinAnalysis final {
   // ret.second: map: element -> quad values
   //
   std::pair<std::map<int, std::vector<T>>, std::map<int, std::vector<T>>>
-  interpolate_energy_map(const T dof[], int dof_offset = 0) const {
+  interpolate_energy_map(const T dof[], int node_offset = 0) const {
     std::map<int, std::vector<T>> xloc_q_map, energy_q_map;
 
     for (int i = 0; i < mesh.get_num_elements(); i++) {
@@ -1035,9 +1036,9 @@ class GalerkinAnalysis final {
         nnodes = mesh.get_elem_dof_nodes(i, nodes);
       }
 
-      if (dof_offset != 0) {
+      if (node_offset != 0) {
         for (int ii = 0; ii < nnodes; ii++) {
-          nodes[ii] += dof_offset;
+          nodes[ii] += node_offset;
         }
       }
 

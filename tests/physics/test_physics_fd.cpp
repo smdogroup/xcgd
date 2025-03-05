@@ -320,7 +320,7 @@ void test_linear_elasticity_interface(
     double h = 1e-5, double tol = 1e-10) {
   int constexpr dim = Basis::spatial_dim;
   using Physics = LinearElasticityInterface<T, Basis::spatial_dim>;
-  Physics physics(50.0, 1.2, 0.3, 2.5, 0.2);
+  Physics physics(5.67, 1.2, 0.3, 2.5, 0.2);
   test_physics_fd(tuple, physics, h, tol);
 }
 
@@ -347,5 +347,6 @@ TEST(physics, ElasticityExternalLoad) {
 }
 
 TEST(physics, LinearElasticityInterface) {
-  test_linear_elasticity_interface(create_gd_lsf_surf_basis());
+  test_linear_elasticity_interface(create_gd_lsf_surf_basis<2>());
+  test_linear_elasticity_interface(create_gd_lsf_surf_basis<4>());
 }

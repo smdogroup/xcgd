@@ -52,6 +52,11 @@ class StaticElastic final {
     std::vector<T> zeros(ndof, 0.0);
     analysis.jacobian(nullptr, zeros.data(), jac_bsr);
 
+#ifdef XCGD_DEBUG_MODE
+    // Write Jacobian matrix to a file
+    jac_bsr->write_mtx("StaticElastic_K.mtx");
+#endif
+
     if (rowp) delete rowp;
     if (cols) delete cols;
 
@@ -108,7 +113,7 @@ class StaticElastic final {
 
 #ifdef XCGD_DEBUG_MODE
     // Write Jacobian matrix to a file
-    jac_csc->write_mtx("K_bcs.mtx");
+    jac_csc->write_mtx("StaticElastic_K_bcs.mtx");
 
     // Check error
     // res = Ku - rhs
@@ -146,6 +151,7 @@ class StaticElastic final {
     std::vector<T> t1(ndof, 0.0), t2(ndof, 0.0);
 
     // Add external load contributions to the right-hand size
+    // FIXME: call analysis.residual() here??
     std::apply(
         [&t1, this](auto&&... load_analysis) mutable {
           (load_analysis.residual(nullptr, t1.data(), this->rhs.data()), ...);

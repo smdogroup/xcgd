@@ -508,14 +508,13 @@ void execute_bulk_elasticity(std::string prefix, int nxy, double ersatz_ratio) {
   }
 }
 
-template <int Np_1d, bool use_finite_cell_mesh>
-void execute_interface_elasticity(std::string prefix, int nxy) {
+template <int Np_1d>
+void execute_interface_elasticity(std::string prefix, int nxy,
+                                  double nitsche_eta) {
   using T = double;
   using Grid = StructuredGrid2D<T>;
 
-  using Mesh =
-      typename std::conditional<use_finite_cell_mesh, FiniteCellMesh<T, Np_1d>,
-                                CutMesh<T, Np_1d>>::type;
+  using Mesh = FiniteCellMesh<T, Np_1d>;
   using Quadrature =
       GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER, Grid, Np_1d, Mesh>;
   using Basis = GDBasis2D<T, Mesh>;
@@ -626,15 +625,19 @@ void execute_interface_elasticity(std::string prefix, int nxy) {
     return intf;
   };
 
-  T R = 0.489;
-  auto lsf_fun = [R](const T* x) { return R * R - x[0] * x[0] - x[1] * x[1]; };
-  auto lsf_grad_fun = [](const T* x) {
-    std::vector<T> ret = {-2.0 * x[0], -2.0 * x[1]};
+  T L = 1.0;
+  T R = 0.31;
+  auto lsf_fun = [R, L](const T* x) {
+    return R * R - (x[0] - 0.5 * L) * (x[0] - 0.5 * L) -
+           (x[1] - 0.5 * L) * (x[1] - 0.5 * L);
+  };
+  auto lsf_grad_fun = [L](const T* x) {
+    std::vector<T> ret = {-2.0 * (x[0] - 0.5 * L), -2.0 * (x[1] - 0.5 * L)};
     return ret;
   };
 
-  T E1 = 100, nu1 = 0.3;
-  T E2 = 40, nu2 = 0.4;
+  T E1 = 100.0, nu1 = 0.3;
+  T E2 = 10.0, nu2 = 0.4;
   auto elasticity_intf_fun = [E1, nu1, E2, nu2, lsf_fun, intf_general_fun](
                                  const A2D::Vec<T, Basis::spatial_dim>& xloc) {
     if (lsf_fun(xloc.get_data()) < 0.0) {
@@ -664,36 +667,45 @@ void execute_interface_elasticity(std::string prefix, int nxy) {
     return stress_general_fun(E2, nu2, xloc);
   };
 
-  using PhysicsApp = StaticElasticErsatz<T, Mesh, Quadrature, Basis,
-                                         typeof(elasticity_intf_fun), Grid>;
+  using PhysicsBulk =
+      LinearElasticity<T, spatial_dim, typeof(elasticity_intf_fun)>;
+  using PhysicsInterface = LinearElasticityInterface<T, spatial_dim>;
+
+  constexpr int dof_per_node = PhysicsBulk::dof_per_node;
+
+  using PhysicsApp = NitscheTwoSidedApp<T, Mesh, Quadrature, Basis, PhysicsBulk,
+                                        PhysicsInterface>;
 
   int nx_ny[2] = {nxy, nxy};
-  T L = 1.0;
   T dh = L / nxy;
   T lxy[2] = {L, L};
   Grid grid(nx_ny, lxy);
 
-  Mesh mesh(grid, lsf_fun);
+  Mesh mesh_master(grid, lsf_fun);
 
-  Quadrature quadrature(mesh);
-  Basis basis(mesh);
+  Quadrature quadrature(mesh_master);
+  Basis basis(mesh_master);
 
   std::shared_ptr<PhysicsApp> physics_app;
-  physics_app = std::make_shared<PhysicsApp>(E1, nu1, E2, nu2, mesh, quadrature,
-                                             basis, elasticity_intf_fun);
+  PhysicsBulk physics_bulk_master(E1, nu1, elasticity_intf_fun);
+  PhysicsBulk physics_bulk_slave(E2, nu2, elasticity_intf_fun);
+  PhysicsInterface physics_interface(nitsche_eta, E1, nu1, E2, nu2);
+
+  physics_app = std::make_shared<PhysicsApp>(
+      mesh_master, quadrature, basis, physics_bulk_master, physics_bulk_slave,
+      physics_interface);
 
   // Set bcs
   std::vector<int> dof_bcs;
   std::vector<T> dof_vals;
 
-  using GMesh = GridMesh<T, Np_1d, Grid>;
-  GMesh gmesh(grid);
-  for (auto nodes :
-       {gmesh.get_left_boundary_nodes(), gmesh.get_right_boundary_nodes(),
-        gmesh.get_upper_boundary_nodes(), gmesh.get_lower_boundary_nodes()}) {
+  for (auto nodes : {mesh_master.get_left_boundary_nodes(),
+                     mesh_master.get_right_boundary_nodes(),
+                     mesh_master.get_upper_boundary_nodes(),
+                     mesh_master.get_lower_boundary_nodes()}) {
     for (int node : nodes) {
       T xloc[Basis::spatial_dim];
-      gmesh.get_node_xloc(node, xloc);
+      mesh_master.get_node_xloc(node, xloc);
       auto vals = elasticity_exact_fun(A2D::Vec<T, Basis::spatial_dim>(xloc));
       for (int d = 0; d < Basis::spatial_dim; d++) {
         dof_bcs.push_back(Basis::spatial_dim * node + d);
@@ -704,22 +716,72 @@ void execute_interface_elasticity(std::string prefix, int nxy) {
 
   std::vector<T> sol = physics_app->solve(dof_bcs, dof_vals);
 
+  // Cut mesh
+  {
+    const auto& mesh_master = physics_app->get_master_mesh();
+    const auto& mesh_slave = physics_app->get_slave_mesh();
+
+    std::vector<T> sol_master(
+        sol.begin(), sol.begin() + dof_per_node * mesh_master.get_num_nodes());
+    std::vector<T> sol_slave(
+        sol.begin() + dof_per_node * mesh_master.get_num_nodes(), sol.end());
+    xcgd_assert(sol_slave.size() == dof_per_node * mesh_slave.get_num_nodes(),
+                "dimension of slave sol does not match number of slave nodes");
+
+    ToVTK<T, typeof(mesh_master)> master_cut_vtk(
+        mesh_master, std::filesystem::path(prefix) /
+                         std::filesystem::path("cut_master.vtk"));
+    ToVTK<T, typeof(mesh_slave)> slave_cut_vtk(
+        mesh_slave,
+        std::filesystem::path(prefix) / std::filesystem::path("cut_slave.vtk"));
+
+    std::vector<T> sol_exact_master;
+    for (int i = 0; i < mesh_master.get_num_nodes(); i++) {
+      T xloc[Basis::spatial_dim];
+      mesh_master.get_node_xloc(i, xloc);
+      auto vals = elasticity_exact_fun(A2D::Vec<T, Basis::spatial_dim>(xloc));
+      for (int d = 0; d < Basis::spatial_dim; d++) {
+        sol_exact_master.push_back(vals(d));
+      }
+    }
+
+    master_cut_vtk.write_mesh();
+    master_cut_vtk.write_sol("lsf", mesh_master.get_lsf_nodes().data());
+    master_cut_vtk.write_vec("sol", sol_master.data());
+    master_cut_vtk.write_vec("sol_exact", sol_exact_master.data());
+
+    std::vector<T> sol_exact_slave;
+    for (int i = 0; i < mesh_slave.get_num_nodes(); i++) {
+      T xloc[Basis::spatial_dim];
+      mesh_slave.get_node_xloc(i, xloc);
+      auto vals = elasticity_exact_fun(A2D::Vec<T, Basis::spatial_dim>(xloc));
+      for (int d = 0; d < Basis::spatial_dim; d++) {
+        sol_exact_slave.push_back(vals(d));
+      }
+    }
+
+    slave_cut_vtk.write_mesh();
+    slave_cut_vtk.write_sol("lsf", mesh_slave.get_lsf_nodes().data());
+    slave_cut_vtk.write_vec("sol", sol_slave.data());
+    slave_cut_vtk.write_vec("sol_exact", sol_exact_slave.data());
+  }
+
   // Evaluate norm errors
   using EnergyNormPhysics =
       LinearElasticityEnergyNormError<T, spatial_dim,
                                       typeof(elasticity_stress_fun)>;
-  constexpr bool from_to_grid_mesh = true;
   using EnergyNormAnalysis =
-      GalerkinAnalysis<T, Mesh, Quadrature, Basis, EnergyNormPhysics,
-                       from_to_grid_mesh>;
+      GalerkinAnalysis<T, Mesh, Quadrature, Basis, EnergyNormPhysics>;
 
   EnergyNormPhysics stress_norm_physics_l(E1, nu1, elasticity_stress_fun);
   EnergyNormPhysics stress_norm_physics_r(E2, nu2, elasticity_stress_fun);
 
-  EnergyNormAnalysis stress_norm_analysis_l(mesh, quadrature, basis,
-                                            stress_norm_physics_l);
-  EnergyNormAnalysis stress_norm_analysis_r(mesh, quadrature, basis,
-                                            stress_norm_physics_r);
+  EnergyNormAnalysis stress_norm_analysis_l(
+      physics_app->get_interface_analysis().get_master_mesh(), quadrature,
+      basis, stress_norm_physics_l);
+  EnergyNormAnalysis stress_norm_analysis_r(
+      physics_app->get_interface_analysis().get_slave_mesh(), quadrature, basis,
+      stress_norm_physics_r);
 
   json j = {{"stress_norm",
              sqrt(stress_norm_analysis_l.energy(nullptr, sol.data()) +
@@ -727,82 +789,51 @@ void execute_interface_elasticity(std::string prefix, int nxy) {
   write_json(std::filesystem::path(prefix) / std::filesystem::path("sol.json"),
              j);
 
-  // Grid vtk
-  {
-    using GMesh = GridMesh<T, Np_1d, Grid>;
-    GMesh gmesh(grid);
-    ToVTK<T, GMesh> grid_vtk((gmesh), std::filesystem::path(prefix) /
-                                          std::filesystem::path("grid.vtk"));
-    grid_vtk.write_mesh();
-    grid_vtk.write_sol("lsf", mesh.get_lsf_dof().data());
-    grid_vtk.write_vec("sol", sol.data());
-
-    // Compute exact sol
-    int nnodes = gmesh.get_num_nodes();
-    int ndof = nnodes * PhysicsApp::Physics::dof_per_node;
-    std::vector<T> sol_exact(ndof, 0.0);
-    for (int i = 0; i < nnodes; i++) {
-      T xloc[Basis::spatial_dim];
-      gmesh.get_node_xloc(i, xloc);
-      auto disp = elasticity_exact_fun(A2D::Vec<T, Basis::spatial_dim>(xloc));
-      for (int d = 0; d < Basis::spatial_dim; d++) {
-        sol_exact[i * Basis::spatial_dim + d] = disp(d);
-      }
-    }
-
-    grid_vtk.write_vec("sol_exact", sol_exact.data());
-  }
-
   // Evaluate stress at quadratures
   {
+    const auto& mesh_master = physics_app->get_master_mesh();
+    const auto& mesh_slave = physics_app->get_slave_mesh();
+
+    std::vector<T> sol_master(
+        sol.begin(), sol.begin() + dof_per_node * mesh_master.get_num_nodes());
+    std::vector<T> sol_slave(
+        sol.begin() + dof_per_node * mesh_master.get_num_nodes(), sol.end());
+    xcgd_assert(sol_slave.size() == dof_per_node * mesh_slave.get_num_nodes(),
+                "dimension of slave sol does not match number of slave nodes");
+
     // left mesh
-    eval_bulk_stress(
-        std::filesystem::path(prefix) / std::filesystem::path("quad_left.vtk"),
-        E1, nu1, physics_app->get_mesh(), physics_app->get_quadrature(),
-        physics_app->get_basis(),
-        grid_dof_to_cut_dof<T, spatial_dim>(physics_app->get_mesh(), sol),
-        stress_fun_l);
+    eval_bulk_stress(std::filesystem::path(prefix) /
+                         std::filesystem::path("quad_master.vtk"),
+                     E1, nu1, mesh_master,
+                     physics_app->get_master_bulk_quadrature(),
+                     physics_app->get_master_basis(), sol_master, stress_fun_l);
 
     // right mesh
     eval_bulk_stress(
-        std::filesystem::path(prefix) / std::filesystem::path("quad_right.vtk"),
-        E2, nu2, physics_app->get_mesh_ersatz(),
-        physics_app->get_quadrature_ersatz(), physics_app->get_basis_ersatz(),
-        grid_dof_to_cut_dof<T, spatial_dim>(physics_app->get_mesh_ersatz(),
-                                            sol),
-        stress_fun_r);
-
-    // // Grid mesh
-    // using GQuadrature = GDGaussQuadrature2D<T, Np_1d, QuadPtType::INNER,
-    //                                         SurfQuad::NA, GMesh, Np_1d>;
-    // using GBasis = GDBasis2D<T, GMesh>;
-    // GQuadrature gquadrature(gmesh);
-    // GBasis gbasis(gmesh);
-    // eval_bulk_stress(std::filesystem::path(prefix) /
-    //                                std::filesystem::path("quad_global.vtk"),
-    //                            E, nu, gmesh, gquadrature, gbasis, sol,
-    //                            elasticity_stress_fun);
+        std::filesystem::path(prefix) / std::filesystem::path("quad_slave.vtk"),
+        E2, nu2, mesh_slave, physics_app->get_slave_bulk_quadrature(),
+        physics_app->get_slave_basis(), sol_slave, stress_fun_r);
   }
 
   // Evaluate stress at interface
-  {
-    eval_interface_stress(
-        std::filesystem::path(prefix) /
-            std::filesystem::path("interface_left.vtk"),
-        E1, nu1, physics_app->get_mesh(), physics_app->get_quadrature(),
-        physics_app->get_basis(),
-        grid_dof_to_cut_dof<T, spatial_dim>(physics_app->get_mesh(), sol),
-        stress_fun_l, lsf_grad_fun);
-
-    eval_interface_stress(std::filesystem::path(prefix) /
-                              std::filesystem::path("interface_right.vtk"),
-                          E2, nu2, physics_app->get_mesh_ersatz(),
-                          physics_app->get_quadrature_ersatz(),
-                          physics_app->get_basis_ersatz(),
-                          grid_dof_to_cut_dof<T, spatial_dim>(
-                              physics_app->get_mesh_ersatz(), sol),
-                          stress_fun_r, lsf_grad_fun);
-  }
+  // {
+  //   eval_interface_stress(
+  //       std::filesystem::path(prefix) /
+  //           std::filesystem::path("interface_left.vtk"),
+  //       E1, nu1, physics_app->get_mesh(), physics_app->get_quadrature(),
+  //       physics_app->get_basis(),
+  //       grid_dof_to_cut_dof<T, spatial_dim>(physics_app->get_mesh(), sol),
+  //       stress_fun_l, lsf_grad_fun);
+  //
+  //   eval_interface_stress(std::filesystem::path(prefix) /
+  //                             std::filesystem::path("interface_right.vtk"),
+  //                         E2, nu2, physics_app->get_mesh_ersatz(),
+  //                         physics_app->get_quadrature_ersatz(),
+  //                         physics_app->get_basis_ersatz(),
+  //                         grid_dof_to_cut_dof<T, spatial_dim>(
+  //                             physics_app->get_mesh_ersatz(), sol),
+  //                         stress_fun_r, lsf_grad_fun);
+  // }
 }
 
 template <int Np_1d, bool use_finite_cell_mesh>
@@ -1135,7 +1166,7 @@ void execute(std::string physics, std::string prefix, int nxy,
                                                                   0.0);
     }
   } else {  // physics == "elasticity-interface"
-    execute_interface_elasticity<Np_1d, use_finite_cell_mesh>(prefix, nxy);
+    execute_interface_elasticity<Np_1d>(prefix, nxy, nitsche_eta);
   }
 }
 

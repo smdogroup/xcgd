@@ -5,6 +5,7 @@
 #pragma once
 
 #include "analysis.h"
+#include "interface_analysis.h"
 #include "sparse_utils/sparse_utils.h"
 #include "utils/linalg.h"
 
@@ -100,7 +101,6 @@ class NitscheBCsApp final {
   AnalysisBCs analysis_bcs;
 };
 
-// WIP
 /*
  * This class implements an app that solves a two-sided problem (for example,
  * static elastic problem for a two-material structure) that the interface
@@ -125,15 +125,17 @@ class NitscheTwoSidedApp final {
  private:
   using Grid = typename Mesh::Grid;
   using QuadratureBulk = Quadrature;
-  using QuadratureBCs = typename Quadrature::InterfaceQuad;
+  using QuadratureInterface = typename Quadrature::InterfaceQuad;
 
   using AnalysisBulk =
       GalerkinAnalysis<T, Mesh, QuadratureBulk, Basis, PhysicsBulk>;
-  using AnalysisBCs =
-      GalerkinAnalysis<T, Mesh, QuadratureBCs, Basis, PhysicsInterface>;
+  using AnalysisInterface =
+      InterfaceGalerkinAnalysis<T, Mesh, QuadratureInterface, Basis,
+                                PhysicsInterface>;
 
-  static_assert(PhysicsBulk::dof_per_node == PhysicsInterface::dof_per_node,
-                "dof_per_node mismatch between bulk physics and bcs physics");
+  static_assert(
+      PhysicsBulk::dof_per_node == PhysicsInterface::dof_per_node,
+      "dof_per_node mismatch between bulk physics and interface physics");
 
   static constexpr int dof_per_node = PhysicsBulk::dof_per_node;
   static int constexpr max_nnodes_per_element =
@@ -160,7 +162,7 @@ class NitscheTwoSidedApp final {
         physics_interface(physics_interface),
         analysis_bulk_m(mesh_m, quadrature_bulk_m, basis_m, physics_bulk_m),
         analysis_bulk_s(mesh_s, quadrature_bulk_s, basis_s, physics_bulk_s),
-        analysis_interface(mesh, quadrature_interface, basis,
+        analysis_interface(mesh_m, mesh_s, quadrature_interface, basis,
                            physics_interface) {
     update_mesh();
   }
@@ -177,7 +179,7 @@ class NitscheTwoSidedApp final {
   BSRMat* jacobian() {
     int num_nodes = mesh_m.get_num_nodes() + mesh_s.get_num_nodes();
     int num_elements = grid.get_num_cells();
-    int dof_offset = dof_per_node * mesh_m.get_num_nodes();
+    int node_offset = mesh_m.get_num_nodes();
 
     // Set up Jacobian matrix
     int *rowp = nullptr, *cols = nullptr;
@@ -197,12 +199,13 @@ class NitscheTwoSidedApp final {
       int nnodes = 0;
 
       if (cell_elems_m.count(cell)) {
-        nnodes += mesh_m.get_elem_dof_nodes(cell_elems_m[cell], nodes_g);
+        nnodes += mesh_m.get_elem_dof_nodes(cell_elems_m.at(cell), nodes_g);
       }
 
       if (cell_elems_s.count(cell)) {
         int nodes_s[max_nnodes_per_element];
-        int nnodes_s = mesh_s.get_elem_dof_nodes(cell_elems_s[cell], nodes_s);
+        int nnodes_s =
+            mesh_s.get_elem_dof_nodes(cell_elems_s.at(cell), nodes_s);
         for (int i = 0; i < nnodes_s; i++) {
           nodes_g[nnodes + i] = nodes_s[i] + num_master_nodes;
         }
@@ -221,10 +224,17 @@ class NitscheTwoSidedApp final {
 
     // Compute Jacobian matrix
     std::vector<T> zeros(num_nodes * dof_per_node, 0.0);
-    analysis_bulk_m.jacobian(nullptr, zeros.data(), jac_bsr, true);
-    analysis_bulk_s.jacobian(nullptr, zeros.data(), jac_bsr, false, dof_offset);
 
-    analysis_interface.jacobian(nullptr, zeros.data(), jac_bsr, false);
+    bool dont_zero_jac = false;
+    analysis_bulk_m.jacobian(nullptr, zeros.data(), jac_bsr);
+    analysis_bulk_s.jacobian(nullptr, zeros.data(), jac_bsr, dont_zero_jac,
+                             node_offset);
+    analysis_interface.jacobian(nullptr, zeros.data(), jac_bsr, dont_zero_jac);
+
+#ifdef XCGD_DEBUG_MODE
+    // Write Jacobian matrix to a file
+    jac_bsr->write_mtx("NitscheTwoSidedApp_K.mtx");
+#endif
 
     if (rowp) delete rowp;
     if (cols) delete cols;
@@ -232,11 +242,12 @@ class NitscheTwoSidedApp final {
     return jac_bsr;
   }
 
-  template <class... LoadAnalyses>
-  std::vector<T> solve(const std::vector<int>& bc_dof,
-                       const std::vector<T>& bc_vals,
-                       const std::tuple<LoadAnalyses...>& load_analyses) {
-    //
+  std::vector<T> solve(
+      const std::vector<int>& bc_dof, const std::vector<T>& bc_vals,
+      std::shared_ptr<SparseUtils::SparseCholesky<T>>* chol_out = nullptr) {
+    int ndof = dof_per_node * (mesh_m.get_num_nodes() + mesh_s.get_num_nodes());
+    int node_offset = mesh_m.get_num_nodes();
+
     // Compute Jacobian matrix
     BSRMat* jac_bsr = jacobian();
     jac_bsr->zero_rows(bc_dof.size(), bc_dof.data());
@@ -248,6 +259,87 @@ class NitscheTwoSidedApp final {
     std::vector<T> t1(ndof, 0.0), t2(ndof, 0.0);
 
     // Add external load contributions to the right-hand size
+    analysis_bulk_m.residual(nullptr, t1.data(), rhs.data());
+    analysis_bulk_s.residual(nullptr, t1.data(), rhs.data(), node_offset);
+    analysis_interface.residual(nullptr, t1.data(), rhs.data());
+    for (int i = 0; i < rhs.size(); i++) {
+      rhs[i] *= -1.0;
+    }
+
+    for (int i = 0; i < bc_dof.size(); i++) {
+      rhs[bc_dof[i]] = bc_vals[i];
+    }
+
+    for (int i = 0; i < bc_dof.size(); i++) {
+      t1[bc_dof[i]] = bc_vals[i];
+    }
+
+    jac_bsr->axpy(t1.data(), t2.data());
+    for (int i = 0; i < bc_dof.size(); i++) {
+      t2[bc_dof[i]] = 0.0;
+    }
+
+    for (int i = 0; i < rhs.size(); i++) {
+      t2[i] = rhs[i] - t2[i];
+    }
+
+    // Factorize Jacobian matrix
+    SparseUtils::CholOrderingType order = SparseUtils::CholOrderingType::ND;
+    std::shared_ptr<SparseUtils::SparseCholesky<T>> chol =
+        std::make_shared<SparseUtils::SparseCholesky<T>>(jac_csc);
+    chol->factor();
+    std::vector<T> sol = t2;
+
+    chol->solve(sol.data());
+
+    if (chol_out) {
+      *chol_out = chol;
+    }
+
+#ifdef XCGD_DEBUG_MODE
+    // Write Jacobian matrix to a file
+    jac_csc->write_mtx("NitscheTwoSidedApp_K_bcs.mtx");
+
+    // Check error
+    // res = Ku - rhs
+    std::vector<T> Ku(sol.size());
+    jac_bsr->axpy(sol.data(), Ku.data());
+    T err = 0.0;
+    for (int i = 0; i < Ku.size(); i++) {
+      err += (Ku[i] - rhs[i]) * (Ku[i] - rhs[i]);
+    }
+    std::printf("[Debug] Linear elasticity residual:\n");
+    std::printf("||Ku - f||_2: %25.15e\n", sqrt(err));
+#endif
+
+    if (jac_bsr) delete jac_bsr;
+    if (jac_csc) delete jac_csc;
+
+    return sol;
+  }
+
+  template <class... LoadAnalyses>
+  std::vector<T> solve(
+      const std::vector<int>& bc_dof, const std::vector<T>& bc_vals,
+      const std::tuple<LoadAnalyses...>& load_analyses,
+      std::shared_ptr<SparseUtils::SparseCholesky<T>>* chol_out = nullptr) {
+    int ndof = dof_per_node * (mesh_m.get_num_nodes() + mesh_s.get_num_nodes());
+    int node_offset = mesh_m.get_num_nodes();
+
+    // Compute Jacobian matrix
+    BSRMat* jac_bsr = jacobian();
+    jac_bsr->zero_rows(bc_dof.size(), bc_dof.data());
+    CSCMat* jac_csc = SparseUtils::bsr_to_csc(jac_bsr);
+    jac_csc->zero_columns(bc_dof.size(), bc_dof.data());
+
+    // Set right hand side (Dirichlet bcs and load)
+    rhs = std::vector<T>(ndof, 0.0);
+    std::vector<T> t1(ndof, 0.0), t2(ndof, 0.0);
+
+    // Add external load contributions to the right-hand size
+    analysis_bulk_m.residual(nullptr, t1.data(), rhs.data());
+    analysis_bulk_s.residual(nullptr, t1.data(), rhs.data(), node_offset);
+    analysis_interface.residual(nullptr, t1.data(), rhs.data());
     std::apply(
         [&t1, this](auto&&... load_analysis) mutable {
           (load_analysis.residual(nullptr, t1.data(), this->rhs.data()), ...);
@@ -309,16 +401,31 @@ class NitscheTwoSidedApp final {
     return sol;
   }
 
+  Mesh& get_master_mesh() { return mesh_m; }
+  Mesh& get_slave_mesh() { return mesh_s; }
+
+  QuadratureBulk& get_master_bulk_quadrature() { return quadrature_bulk_m; }
+  QuadratureBulk& get_slave_bulk_quadrature() { return quadrature_bulk_s; }
+  QuadratureInterface& get_interface_quadrature() {
+    return quadrature_interface;
+  }
+
+  Basis& get_master_basis() { return basis_m; }
+  Basis& get_slave_basis() { return basis_s; }
+
+  AnalysisInterface& get_interface_analysis() { return analysis_interface; }
+
  private:
   // essential assets for analyses
-  Grid& grid;
+  const Grid& grid;
 
   Mesh& mesh_m;  // master mesh (the main mesh)
   Mesh mesh_s;   // slave mesh (the complement mesh)
 
-  QuadratureBulk& quadrature_bulk_m;   // master quadratuer
-  QuadratureBulk quadrature_bulk_s;    // slave quadratuer
-  QuadratureBCs quadrature_interface;  // Note that this is not a reference
+  QuadratureBulk& quadrature_bulk_m;  // master quadratuer
+  QuadratureBulk quadrature_bulk_s;   // slave quadratuer
+  QuadratureInterface
+      quadrature_interface;  // Note that this is not a reference
 
   Basis& basis_m;
   Basis basis_s;
@@ -329,5 +436,7 @@ class NitscheTwoSidedApp final {
 
   AnalysisBulk analysis_bulk_m;
   AnalysisBulk analysis_bulk_s;
-  AnalysisBCs analysis_interface;
+  AnalysisInterface analysis_interface;
+
+  std::vector<T> rhs;
 };

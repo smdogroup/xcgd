@@ -586,9 +586,10 @@ class LinearElasticityInterface final
     T dot;
     A2D::VecDot(u_diff, u_diff, dot);
 
-    return weight * sqrt(scale2) * 0.5 *
-           (-uTSn_master + uTSn_slave +
-            (lambda_master + mu_master + lambda_slave + mu_slave) * dot);
+    return weight * sqrt(scale2) *
+           (-0.5 * (uTSn_master + uTSn_slave) +
+            0.25 * eta * (lambda_master + mu_master + lambda_slave + mu_slave) *
+                dot);
   }
 
   void residual(T weight, T _, A2D::Vec<T, spatial_dim>& xloc,
@@ -656,11 +657,13 @@ class LinearElasticityInterface final
         A2D::VecDot(u_diff_obj, Sn_master_obj, uTSn_master_obj),
         A2D::VecDot(u_diff_obj, Sn_slave_obj, uTSn_slave_obj),
         A2D::VecDot(u_diff_obj, u_diff_obj, dot_obj),
-        A2D::Eval(weight * sqrt(scale2) * 0.5 *
-                      (-uTSn_master_obj + uTSn_slave_obj +
-                       (lambda_master + mu_master + lambda_slave + mu_slave) *
-                           dot_obj),
-                  output_obj));
+        A2D::Eval(
+            weight * sqrt(scale2) *
+                (-0.5 * (uTSn_master_obj + uTSn_slave_obj) +
+                 0.25 * eta *
+                     (lambda_master + mu_master + lambda_slave + mu_slave) *
+                     dot_obj),
+            output_obj));
 
     output_obj.bvalue() = 1.0;
     stack.reverse();
@@ -751,11 +754,13 @@ class LinearElasticityInterface final
         A2D::VecDot(u_diff_obj, Sn_master_obj, uTSn_master_obj),
         A2D::VecDot(u_diff_obj, Sn_slave_obj, uTSn_slave_obj),
         A2D::VecDot(u_diff_obj, u_diff_obj, dot_obj),
-        A2D::Eval(weight * sqrt(scale2) * 0.5 *
-                      (-uTSn_master_obj + uTSn_slave_obj +
-                       (lambda_master + mu_master + lambda_slave + mu_slave) *
-                           dot_obj),
-                  output_obj));
+        A2D::Eval(
+            weight * sqrt(scale2) *
+                (-0.5 * (uTSn_master_obj + uTSn_slave_obj) +
+                 0.25 * eta *
+                     (lambda_master + mu_master + lambda_slave + mu_slave) *
+                     dot_obj),
+            output_obj));
     output_obj.bvalue() = 1.0;
     stack.hproduct();
 
@@ -846,11 +851,13 @@ class LinearElasticityInterface final
         A2D::VecDot(u_diff_obj, Sn_master_obj, uTSn_master_obj),
         A2D::VecDot(u_diff_obj, Sn_slave_obj, uTSn_slave_obj),
         A2D::VecDot(u_diff_obj, u_diff_obj, dot_obj),
-        A2D::Eval(weight * sqrt(scale2) * 0.5 *
-                      (-uTSn_master_obj + uTSn_slave_obj +
-                       (lambda_master + mu_master + lambda_slave + mu_slave) *
-                           dot_obj),
-                  output_obj));
+        A2D::Eval(
+            weight * sqrt(scale2) *
+                (-0.5 * (uTSn_master_obj + uTSn_slave_obj) +
+                 0.25 * eta *
+                     (lambda_master + mu_master + lambda_slave + mu_slave) *
+                     dot_obj),
+            output_obj));
     output_obj.bvalue() = 1.0;
 
     stack.reverse();
