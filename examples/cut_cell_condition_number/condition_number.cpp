@@ -8,14 +8,17 @@
 #include "utils/argparser.h"
 #include "utils/vtk.h"
 
-template <int Np_1d>
+template <int Np_1d, bool use_finite_cell_mesh = false>
 void generate_stiffness_matrix(int n, int l, double x0, double y0, double r,
                                std::string prefix) {
   using T = double;
   using Grid = StructuredGrid2D<T>;
-  using Mesh = CutMesh<T, Np_1d>;
+  using Mesh = typename std::conditional<use_finite_cell_mesh,
+                                         FiniteCellMesh<T, Np_1d, Grid>,
+                                         CutMesh<T, Np_1d, Grid>>::type;
+  using Quadrature =
+      GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER, Grid, Np_1d, Mesh>;
   using Basis = GDBasis2D<T, Mesh>;
-  using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
   auto int_func = [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
     return A2D::Vec<T, Basis::spatial_dim>{};
   };
@@ -40,6 +43,24 @@ void generate_stiffness_matrix(int n, int l, double x0, double y0, double r,
 
   Quadrature quadrature(mesh);
   Basis basis(mesh);
+
+  // Write mesh information
+  std::map<int, std::vector<T>> cell_verts;
+  auto& elem_nodes = mesh.get_elem_nodes();
+  for (const auto& [elem, nodes] : elem_nodes) {
+    int c = mesh.get_elem_cell(elem);
+    for (int n : nodes) {
+      int v = mesh.get_node_vert(n);
+      cell_verts[c].push_back(v);
+    }
+  }
+  json j = {{"nxy", n},
+            {"L", l},
+            {"lsf_dof", mesh.get_lsf_dof()},
+            {"cell_verts", cell_verts}};
+
+  write_json(std::filesystem::path(prefix) / std::filesystem::path("mesh.json"),
+             j);
 
   T E = 1.0, nu = 0.3;
   Elastic elastic(E, nu, mesh, quadrature, basis, int_func);
@@ -75,6 +96,32 @@ void generate_stiffness_matrix(int n, int l, double x0, double y0, double r,
   if (csc_mat) delete csc_mat;
 }
 
+template <bool use_finite_cell_mesh>
+void execute(int Np_1d, int n, int l, double x0, double y0, double r,
+             std::string prefix) {
+  switch (Np_1d) {
+    case 2:
+      generate_stiffness_matrix<2, use_finite_cell_mesh>(n, l, x0, y0, r,
+                                                         prefix);
+      break;
+    case 4:
+      generate_stiffness_matrix<4, use_finite_cell_mesh>(n, l, x0, y0, r,
+                                                         prefix);
+      break;
+    case 6:
+      generate_stiffness_matrix<6, use_finite_cell_mesh>(n, l, x0, y0, r,
+                                                         prefix);
+      break;
+    case 8:
+      generate_stiffness_matrix<8, use_finite_cell_mesh>(n, l, x0, y0, r,
+                                                         prefix);
+      break;
+    default:
+      printf("Unsupported Np_1d (%d), exiting...\n", Np_1d);
+      exit(-1);
+  }
+}
+
 int main(int argc, char* argv[]) {
   ArgParser p;
   p.add_argument<int>("--Np_1d", 2);
@@ -83,6 +130,7 @@ int main(int argc, char* argv[]) {
   p.add_argument<double>("--x0", 0.45);
   p.add_argument<double>("--y0", 0.42);
   p.add_argument<double>("--r", 0.35);
+  p.add_argument<int>("--use-finite-cell-mesh", 0, {0, 1});
   p.add_argument<std::string>("--prefix", {});
   p.parse_args(argc, argv);
 
@@ -100,23 +148,12 @@ int main(int argc, char* argv[]) {
   double x0 = p.get<double>("x0");
   double y0 = p.get<double>("y0");
   double r = p.get<double>("r");
+  bool use_finite_cell_mesh = p.get<int>("use-finite-cell-mesh");
 
-  switch (Np_1d) {
-    case 2:
-      generate_stiffness_matrix<2>(n, l, x0, y0, r, prefix);
-      break;
-    case 4:
-      generate_stiffness_matrix<4>(n, l, x0, y0, r, prefix);
-      break;
-    case 6:
-      generate_stiffness_matrix<6>(n, l, x0, y0, r, prefix);
-      break;
-    case 8:
-      generate_stiffness_matrix<8>(n, l, x0, y0, r, prefix);
-      break;
-    default:
-      printf("Unsupported Np_1d (%d), exiting...\n", Np_1d);
-      exit(-1);
+  if (use_finite_cell_mesh) {
+    execute<true>(Np_1d, n, l, x0, y0, r, prefix);
+  } else {
+    execute<false>(Np_1d, n, l, x0, y0, r, prefix);
   }
 
   return 0;

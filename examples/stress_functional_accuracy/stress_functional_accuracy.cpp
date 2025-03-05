@@ -716,18 +716,18 @@ void execute_interface_elasticity(std::string prefix, int nxy,
 
   std::vector<T> sol = physics_app->solve(dof_bcs, dof_vals);
 
+  // Split sol
+  auto& mesh_slave = physics_app->get_slave_mesh();
+
+  std::vector<T> sol_master(
+      sol.begin(), sol.begin() + dof_per_node * mesh_master.get_num_nodes());
+  std::vector<T> sol_slave(
+      sol.begin() + dof_per_node * mesh_master.get_num_nodes(), sol.end());
+  xcgd_assert(sol_slave.size() == dof_per_node * mesh_slave.get_num_nodes(),
+              "dimension of slave sol does not match number of slave nodes");
+
   // Cut mesh
   {
-    const auto& mesh_master = physics_app->get_master_mesh();
-    const auto& mesh_slave = physics_app->get_slave_mesh();
-
-    std::vector<T> sol_master(
-        sol.begin(), sol.begin() + dof_per_node * mesh_master.get_num_nodes());
-    std::vector<T> sol_slave(
-        sol.begin() + dof_per_node * mesh_master.get_num_nodes(), sol.end());
-    xcgd_assert(sol_slave.size() == dof_per_node * mesh_slave.get_num_nodes(),
-                "dimension of slave sol does not match number of slave nodes");
-
     ToVTK<T, typeof(mesh_master)> master_cut_vtk(
         mesh_master, std::filesystem::path(prefix) /
                          std::filesystem::path("cut_master.vtk"));
@@ -791,16 +791,6 @@ void execute_interface_elasticity(std::string prefix, int nxy,
 
   // Evaluate stress at quadratures
   {
-    const auto& mesh_master = physics_app->get_master_mesh();
-    const auto& mesh_slave = physics_app->get_slave_mesh();
-
-    std::vector<T> sol_master(
-        sol.begin(), sol.begin() + dof_per_node * mesh_master.get_num_nodes());
-    std::vector<T> sol_slave(
-        sol.begin() + dof_per_node * mesh_master.get_num_nodes(), sol.end());
-    xcgd_assert(sol_slave.size() == dof_per_node * mesh_slave.get_num_nodes(),
-                "dimension of slave sol does not match number of slave nodes");
-
     // left mesh
     eval_bulk_stress(std::filesystem::path(prefix) /
                          std::filesystem::path("quad_master.vtk"),
@@ -816,24 +806,20 @@ void execute_interface_elasticity(std::string prefix, int nxy,
   }
 
   // Evaluate stress at interface
-  // {
-  //   eval_interface_stress(
-  //       std::filesystem::path(prefix) /
-  //           std::filesystem::path("interface_left.vtk"),
-  //       E1, nu1, physics_app->get_mesh(), physics_app->get_quadrature(),
-  //       physics_app->get_basis(),
-  //       grid_dof_to_cut_dof<T, spatial_dim>(physics_app->get_mesh(), sol),
-  //       stress_fun_l, lsf_grad_fun);
-  //
-  //   eval_interface_stress(std::filesystem::path(prefix) /
-  //                             std::filesystem::path("interface_right.vtk"),
-  //                         E2, nu2, physics_app->get_mesh_ersatz(),
-  //                         physics_app->get_quadrature_ersatz(),
-  //                         physics_app->get_basis_ersatz(),
-  //                         grid_dof_to_cut_dof<T, spatial_dim>(
-  //                             physics_app->get_mesh_ersatz(), sol),
-  //                         stress_fun_r, lsf_grad_fun);
-  // }
+  {
+    eval_interface_stress(std::filesystem::path(prefix) /
+                              std::filesystem::path("interface_master.vtk"),
+                          E1, nu1, mesh_master,
+                          physics_app->get_interface_quadrature(),
+                          physics_app->get_master_basis(), sol_master,
+                          stress_fun_l, lsf_grad_fun);
+
+    eval_interface_stress(
+        std::filesystem::path(prefix) /
+            std::filesystem::path("interface_right.vtk"),
+        E2, nu2, mesh_slave, physics_app->get_interface_quadrature(),
+        physics_app->get_master_basis(), sol_slave, stress_fun_r, lsf_grad_fun);
+  }
 }
 
 template <int Np_1d, bool use_finite_cell_mesh>
