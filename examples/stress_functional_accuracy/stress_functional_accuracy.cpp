@@ -128,8 +128,29 @@ void eval_interface_stress(std::string vtk_path, T E, T nu, Mesh& mesh,
 
   std::vector<T> xloc_surf_q =
       surf_stress_analysis.interpolate_energy(sol.data()).first;
+
+  // Debug
+  // auto [pt_map, val_map] =
+  //     surf_stress_analysis.interpolate_energy_map(sol.data());
+  // std::vector<T> xloc_surf_q, xloc_elem_q;
+  // for (int i = 0; i < mesh.get_num_elements(); i++) {
+  //   if (not pt_map.count(i)) {
+  //     continue;
+  //   }
+  //   for (T v : pt_map.at(i)) {
+  //     xloc_surf_q.push_back(v);
+  //   }
+  //   for (T v : val_map.at(i)) {
+  //     xloc_elem_q.push_back(T(i));
+  //   }
+  // }
+
   surf_quad_vtk.add_mesh(xloc_surf_q);
   surf_quad_vtk.write_mesh();
+
+  // Debug
+  // surf_quad_vtk.add_sol("qelem", xloc_elem_q);
+  // surf_quad_vtk.write_sol("qelem");
 
   // Get exact boundary Stress
   int num_quads = xloc_surf_q.size() / spatial_dim;
@@ -636,8 +657,8 @@ void execute_interface_elasticity(std::string prefix, int nxy,
     return ret;
   };
 
-  T E1 = 100.0, nu1 = 0.3;
-  T E2 = 10.0, nu2 = 0.4;
+  T E1 = 10.0, nu1 = 0.3;
+  T E2 = 10.0, nu2 = 0.3;
   auto elasticity_intf_fun = [E1, nu1, E2, nu2, lsf_fun, intf_general_fun](
                                  const A2D::Vec<T, Basis::spatial_dim>& xloc) {
     if (lsf_fun(xloc.get_data()) < 0.0) {
@@ -773,6 +794,10 @@ void execute_interface_elasticity(std::string prefix, int nxy,
   using EnergyNormAnalysis =
       GalerkinAnalysis<T, Mesh, Quadrature, Basis, EnergyNormPhysics>;
 
+  using InterfaceEnergyNormAnalysis =
+      GalerkinAnalysis<T, Mesh, typeof(physics_app->get_interface_quadrature()),
+                       Basis, EnergyNormPhysics>;
+
   EnergyNormPhysics stress_norm_physics_l(E1, nu1, elasticity_stress_fun);
   EnergyNormPhysics stress_norm_physics_r(E2, nu2, elasticity_stress_fun);
 
@@ -782,10 +807,24 @@ void execute_interface_elasticity(std::string prefix, int nxy,
   EnergyNormAnalysis stress_norm_analysis_r(
       physics_app->get_interface_analysis().get_slave_mesh(), quadrature, basis,
       stress_norm_physics_r);
+  InterfaceEnergyNormAnalysis stress_norm_analysis_l_interface(
+      physics_app->get_interface_analysis().get_master_mesh(),
+      physics_app->get_interface_quadrature(), basis, stress_norm_physics_l);
+  InterfaceEnergyNormAnalysis stress_norm_analysis_r_interface(
+      physics_app->get_interface_analysis().get_slave_mesh(),
+      physics_app->get_interface_quadrature(), basis, stress_norm_physics_r);
 
-  json j = {{"stress_norm",
-             sqrt(stress_norm_analysis_l.energy(nullptr, sol.data()) +
-                  stress_norm_analysis_r.energy(nullptr, sol.data()))}};
+  json j = {{"stress_norm_master",
+             sqrt(stress_norm_analysis_l.energy(nullptr, sol_master.data()))},
+            {"stress_norm_slave",
+             sqrt(stress_norm_analysis_r.energy(nullptr, sol_slave.data()))},
+            {"stress_norm_master_interface",
+             sqrt(stress_norm_analysis_l_interface.energy(nullptr,
+                                                          sol_master.data()))},
+
+            {"stress_norm_slave_interface",
+             sqrt(stress_norm_analysis_r_interface.energy(nullptr,
+                                                          sol_slave.data()))}};
   write_json(std::filesystem::path(prefix) / std::filesystem::path("sol.json"),
              j);
 
@@ -816,9 +855,9 @@ void execute_interface_elasticity(std::string prefix, int nxy,
 
     eval_interface_stress(
         std::filesystem::path(prefix) /
-            std::filesystem::path("interface_right.vtk"),
+            std::filesystem::path("interface_slave.vtk"),
         E2, nu2, mesh_slave, physics_app->get_interface_quadrature(),
-        physics_app->get_master_basis(), sol_slave, stress_fun_r, lsf_grad_fun);
+        physics_app->get_slave_basis(), sol_slave, stress_fun_r, lsf_grad_fun);
   }
 }
 

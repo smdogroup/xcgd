@@ -118,12 +118,19 @@ def run_experiments(
     df_data = {
         "Np_1d": [],
         "h": [],
-        "stress_norm": [],
     }
 
     if physics == "poisson":
         df_data["val_norm"] = []
         df_data["energy_norm"] = []
+
+    elif physics == "elasticity-interface":
+        df_data["stress_norm_master"] = []
+        df_data["stress_norm_slave"] = []
+        df_data["stress_norm_master_interface"] = []
+        df_data["stress_norm_slave_interface"] = []
+    else:
+        df_data["stress_norm"] = []
 
     Np_1d_list = [2, 4, 6]
     nxy_list = list(map(int, np.logspace(3, 7, 20, base=2)))
@@ -163,11 +170,21 @@ def run_experiments(
 
             df_data["Np_1d"].append(Np_1d)
             df_data["h"].append(1.0 / nxy)
-            df_data["stress_norm"].append(j["stress_norm"])
 
             if physics == "poisson":
                 df_data["val_norm"].append(j["val_norm"])
                 df_data["energy_norm"].append(j["energy_norm"])
+            elif physics == "elasticity-interface":
+                df_data["stress_norm_master"].append(j["stress_norm_master"])
+                df_data["stress_norm_slave"].append(j["stress_norm_slave"])
+                df_data["stress_norm_master_interface"].append(
+                    j["stress_norm_master_interface"]
+                )
+                df_data["stress_norm_slave_interface"].append(
+                    j["stress_norm_slave_interface"]
+                )
+            else:
+                df_data["stress_norm"].append(j["stress_norm"])
 
     df = pd.DataFrame(df_data)
     df.to_csv(os.path.join(run_name, f"{run_name}.csv"), index=False)
@@ -208,6 +225,62 @@ def plot_poisson(df, voffset, voffset_text):
         ax.legend()
         ax.set_xlabel(r"$h$")
         ax.set_ylabel(ylabel)
+
+    return fig, axs
+
+
+def plot_elasticity_interface(df, voffset, voffset_text):
+    fig, axs = plt.subplots(
+        ncols=2,
+        nrows=2,
+        figsize=(12.8, 9.6),
+        constrained_layout=True,
+    )
+
+    axs = axs.flatten()
+
+    for Np_1d, sub_df in df.groupby("Np_1d"):
+        for key, ax in zip(
+            [
+                "stress_norm_master",
+                "stress_norm_slave",
+                "stress_norm_master_interface",
+                "stress_norm_slave_interface",
+            ],
+            axs,
+        ):
+            # Get averaged slope
+            x = sub_df["h"]
+            y = sub_df[key]
+            slope, _ = np.polyfit(np.log10(x), np.log10(y), deg=1)
+            label = f"$p={Np_1d - 1}, \Delta:{slope:.2f}$"
+            ax.loglog(x, y, "-o", label=label)
+            x0, x1 = x.iloc[-2:]
+            y0, y1 = y.iloc[-2:]
+            annotate_slope(
+                ax, (x0, y0), (x1, y1), voffset=voffset, voffset_text=voffset_text
+            )
+
+    for ylabel, title, ax in zip(
+        [
+            r"$\left[\int_{\text{master mesh},h}  \text{tr}((\mathbf{S} - \mathbf{S}_h)^T(\mathbf{S} - \mathbf{S}_h)) d\Omega\right]^{1/2}$",
+            r"$\left[\int_{\text{slave mesh},h}  \text{tr}((\mathbf{S} - \mathbf{S}_h)^T(\mathbf{S} - \mathbf{S}_h)) d\Omega\right]^{1/2}$",
+            r"$\left[\int_{\text{master mesh}, h}  \text{tr}((\mathbf{S} - \mathbf{S}_h)^T(\mathbf{S} - \mathbf{S}_h)) d\Gamma\right]^{1/2}$",
+            r"$\left[\int_{\text{slave mesh}h}  \text{tr}((\mathbf{S} - \mathbf{S}_h)^T(\mathbf{S} - \mathbf{S}_h)) d\Gamma\right]^{1/2}$",
+        ],
+        [
+            "Stress Error On the Master Mesh",
+            "Stress Error On the Slave Mesh",
+            "Stress Error On Interface from the Master Mesh",
+            "Stress Error On Interface from the Slave Mesh",
+        ],
+        axs,
+    ):
+        ax.grid(which="both")
+        ax.legend()
+        ax.set_xlabel(r"$h$")
+        ax.set_ylabel(ylabel)
+        ax.set_title(title)
 
     return fig, axs
 
@@ -288,7 +361,8 @@ if __name__ == "__main__":
         run_name = f"{args.physics}_energy_precision_{args.mesh}_{args.instance}"
         if args.instance == "circle":
             run_name += f"_nitscheeta_{args.nitsche_eta:.0e}"
-
+    elif args.physics == "elasticity-interface":
+        run_name = f"{args.physics}_energy_precision_nitscheeta_{args.nitsche_eta:.0e}"
     else:
         run_name = f"{args.physics}_energy_precision_{args.mesh}"
 
@@ -319,6 +393,8 @@ if __name__ == "__main__":
 
     if args.physics == "poisson":
         fig, _ = plot_poisson(df, args.voffset, args.voffset_text)
+    elif args.physics == "elasticity-interface":
+        fig, _ = plot_elasticity_interface(df, args.voffset, args.voffset_text)
     else:
         fig, _ = plot_elasticity(df, args.voffset, args.voffset_text)
 
