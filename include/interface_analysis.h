@@ -41,12 +41,12 @@ class InterfaceGalerkinAnalysis final {
   // Constructor for interface regular analysis
   InterfaceGalerkinAnalysis(const Mesh& mesh_master, const Mesh& mesh_slave,
                             const Quadrature& quadrature_interface,
-                            const Basis& basis_interface,
+                            const Basis& basis_master,
                             const Physics& physics_interface)
       : mesh_master(mesh_master),
         mesh_slave(mesh_slave),
         quadrature(quadrature_interface),
-        basis(basis_interface),
+        basis(basis_master),
         physics(physics_interface),
         cell_master_elems(mesh_master.get_cell_elems()),
         cell_slave_elems(mesh_slave.get_cell_elems()),
