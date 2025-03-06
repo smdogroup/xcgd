@@ -10,8 +10,8 @@ class InterfacePhysicsBase {
  public:
   static constexpr int dof_per_node = dof_per_node_;
   static constexpr int dof_per_vert =
-      2 * dof_per_node;  // because each vert has two nodes from master side and
-                         // slave side
+      2 * dof_per_node;  // because each vert has two nodes from primary side
+                         // and secondary side
   static constexpr int data_per_node = data_per_node_;
   static constexpr int spatial_dim = spatial_dim_;
   static constexpr bool is_interface_physics = true;

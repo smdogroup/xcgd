@@ -106,18 +106,18 @@ class NitscheBCsApp final {
  * static elastic problem for a two-material structure) that the interface
  * condition is enforced weakly via Nitsche's method.
  *
- * Note: Two mesh instances are contained: the master mesh, and the slave mesh,
- * which is the complement mesh with respect to the grid. However, different
- * from StaticElasticErsatz, the two meshes do not share DOFs on overlapping
- * verts. As a result, this class maintains mappings from mesh-local dof
- * indexing to the global dof indexing, which is different from the grid vertex
- * indexing.
+ * Note: Two mesh instances are contained: the primary mesh, and the secondary
+ * mesh, which is the complement mesh with respect to the grid. However,
+ * different from StaticElasticErsatz, the two meshes do not share DOFs on
+ * overlapping verts. As a result, this class maintains mappings from mesh-local
+ * dof indexing to the global dof indexing, which is different from the grid
+ * vertex indexing.
  *
  * As a result, we have:
- *   num_nodes = num_master_nodes + num_slave_nodes
+ *   num_nodes = num_primary_nodes + num_secondary_nodes
  *   num_elements = num_cells
- *   master_node = global_node
- *   slave_node + num_master_nodes = global_node
+ *   primary_node = global_node
+ *   secondary_node + num_primary_nodes = global_node
  * */
 template <typename T, class Mesh, class Quadrature, class Basis,
           class PhysicsBulk, class PhysicsInterface>
@@ -146,8 +146,8 @@ class NitscheTwoSidedApp final {
 
  public:
   NitscheTwoSidedApp(Mesh& mesh, Quadrature& quadrature, Basis& basis,
-                     PhysicsBulk& physics_bulk_master,
-                     PhysicsBulk& physics_bulk_slave,
+                     PhysicsBulk& physics_bulk_primary,
+                     PhysicsBulk& physics_bulk_secondary,
                      PhysicsInterface& physics_interface)
       : grid(mesh.get_grid()),
         mesh_m(mesh),
@@ -157,8 +157,8 @@ class NitscheTwoSidedApp final {
         quadrature_interface(mesh),
         basis_m(basis),
         basis_s(mesh_s),
-        physics_bulk_m(physics_bulk_master),
-        physics_bulk_s(physics_bulk_slave),
+        physics_bulk_m(physics_bulk_primary),
+        physics_bulk_s(physics_bulk_secondary),
         physics_interface(physics_interface),
         analysis_bulk_m(mesh_m, quadrature_bulk_m, basis_m, physics_bulk_m),
         analysis_bulk_s(mesh_s, quadrature_bulk_s, basis_s, physics_bulk_s),
@@ -167,9 +167,9 @@ class NitscheTwoSidedApp final {
     update_mesh();
   }
 
-  // Update master mesh, slave mesh and the dof mappings
+  // Update primary mesh, secondary mesh and the dof mappings
   void update_mesh() {
-    // Update level-set function for the slave mesh
+    // Update level-set function for the secondary mesh
     for (int i = 0; i < grid.get_num_verts(); i++) {
       mesh_s.get_lsf_dof()[i] = -mesh_m.get_lsf_dof()[i];
     }
@@ -188,13 +188,13 @@ class NitscheTwoSidedApp final {
 
     // Functor that obtain global nodes for each global element
     // Note: as explained in the class-level description, overlapping vertices
-    // of the master mesh and the slave mesh do not share the same global dof
-    // node indexing. But overlapping elements do, and we use the global cell
-    // indexing for the global element indexing.
+    // of the primary mesh and the secondary mesh do not share the same global
+    // dof node indexing. But overlapping elements do, and we use the global
+    // cell indexing for the global element indexing.
     auto element_nodes_func = [mesh_m, mesh_s](int cell, int* nodes_g) -> int {
       const auto& cell_elems_m = mesh_m.get_cell_elems();
       const auto& cell_elems_s = mesh_s.get_cell_elems();
-      int num_master_nodes = mesh_m.get_num_nodes();
+      int num_primary_nodes = mesh_m.get_num_nodes();
 
       int nnodes = 0;
 
@@ -207,7 +207,7 @@ class NitscheTwoSidedApp final {
         int nnodes_s =
             mesh_s.get_elem_dof_nodes(cell_elems_s.at(cell), nodes_s);
         for (int i = 0; i < nnodes_s; i++) {
-          nodes_g[nnodes + i] = nodes_s[i] + num_master_nodes;
+          nodes_g[nnodes + i] = nodes_s[i] + num_primary_nodes;
         }
         nnodes += nnodes_s;
       }
@@ -401,17 +401,17 @@ class NitscheTwoSidedApp final {
     return sol;
   }
 
-  Mesh& get_master_mesh() { return mesh_m; }
-  Mesh& get_slave_mesh() { return mesh_s; }
+  Mesh& get_primary_mesh() { return mesh_m; }
+  Mesh& get_secondary_mesh() { return mesh_s; }
 
-  QuadratureBulk& get_master_bulk_quadrature() { return quadrature_bulk_m; }
-  QuadratureBulk& get_slave_bulk_quadrature() { return quadrature_bulk_s; }
+  QuadratureBulk& get_primary_bulk_quadrature() { return quadrature_bulk_m; }
+  QuadratureBulk& get_secondary_bulk_quadrature() { return quadrature_bulk_s; }
   QuadratureInterface& get_interface_quadrature() {
     return quadrature_interface;
   }
 
-  Basis& get_master_basis() { return basis_m; }
-  Basis& get_slave_basis() { return basis_s; }
+  Basis& get_primary_basis() { return basis_m; }
+  Basis& get_secondary_basis() { return basis_s; }
 
   AnalysisInterface& get_interface_analysis() { return analysis_interface; }
 
@@ -419,11 +419,11 @@ class NitscheTwoSidedApp final {
   // essential assets for analyses
   const Grid& grid;
 
-  Mesh& mesh_m;  // master mesh (the main mesh)
-  Mesh mesh_s;   // slave mesh (the complement mesh)
+  Mesh& mesh_m;  // primary mesh (the main mesh)
+  Mesh mesh_s;   // secondary mesh (the complement mesh)
 
-  QuadratureBulk& quadrature_bulk_m;  // master quadratuer
-  QuadratureBulk quadrature_bulk_s;   // slave quadratuer
+  QuadratureBulk& quadrature_bulk_m;  // primary quadratuer
+  QuadratureBulk quadrature_bulk_s;   // secondary quadratuer
   QuadratureInterface
       quadrature_interface;  // Note that this is not a reference
 

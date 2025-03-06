@@ -23,7 +23,7 @@ void test_physics_fd(std::tuple<Mesh *, Quadrature *, Basis *> tuple,
                      Physics &physics, double h = 1e-6, double tol = 1e-14,
                      bool check_res_only = false) {
   Mesh *mesh = std::get<0>(tuple);
-  std::shared_ptr<Mesh> mesh_slave;  // used only for interface physics
+  std::shared_ptr<Mesh> mesh_secondary;  // used only for interface physics
   Quadrature *quadrature = std::get<1>(tuple);
   Basis *basis = std::get<2>(tuple);
 
@@ -33,17 +33,17 @@ void test_physics_fd(std::tuple<Mesh *, Quadrature *, Basis *> tuple,
                   "cut mesh must be used to test interface physics");
 
     auto &grid = mesh->get_grid();
-    mesh_slave = std::make_shared<Mesh>(grid);
+    mesh_secondary = std::make_shared<Mesh>(grid);
     for (int i = 0; i < grid.get_num_verts(); i++) {
-      mesh_slave->get_lsf_dof()[i] = -mesh->get_lsf_dof()[i];
+      mesh_secondary->get_lsf_dof()[i] = -mesh->get_lsf_dof()[i];
     }
-    mesh_slave->update_mesh();
+    mesh_secondary->update_mesh();
   }
 
   int num_nodes = 0, num_elements = 0;
 
   if constexpr (is_interface_physics) {
-    num_nodes = mesh->get_num_nodes() + mesh_slave->get_num_nodes();
+    num_nodes = mesh->get_num_nodes() + mesh_secondary->get_num_nodes();
     num_elements = mesh->get_grid().get_num_cells();
   } else {
     num_nodes = mesh->get_num_nodes();
@@ -93,7 +93,7 @@ void test_physics_fd(std::tuple<Mesh *, Quadrature *, Basis *> tuple,
   std::shared_ptr<Analysis> analysis;
 
   if constexpr (is_interface_physics) {
-    analysis = std::make_shared<Analysis>(*mesh, *mesh_slave, *quadrature,
+    analysis = std::make_shared<Analysis>(*mesh, *mesh_secondary, *quadrature,
                                           *basis, physics);
   } else {
     analysis = std::make_shared<Analysis>(*mesh, *quadrature, *basis, physics);
@@ -146,14 +146,14 @@ void test_physics_fd(std::tuple<Mesh *, Quadrature *, Basis *> tuple,
   int *rowp = nullptr, *cols = nullptr;
 
   if constexpr (is_interface_physics) {
-    auto element_nodes_func = [mesh, mesh_slave](int cell,
-                                                 int *nodes_g) -> int {
+    auto element_nodes_func = [mesh, mesh_secondary](int cell,
+                                                     int *nodes_g) -> int {
       auto mesh_m = *mesh;
-      auto mesh_s = *mesh_slave;
+      auto mesh_s = *mesh_secondary;
 
       const auto &cell_elems_m = mesh_m.get_cell_elems();
       const auto &cell_elems_s = mesh_s.get_cell_elems();
-      int num_master_nodes = mesh_m.get_num_nodes();
+      int num_primary_nodes = mesh_m.get_num_nodes();
 
       int nnodes = 0;
 
@@ -166,7 +166,7 @@ void test_physics_fd(std::tuple<Mesh *, Quadrature *, Basis *> tuple,
         int nnodes_s =
             mesh_s.get_elem_dof_nodes(cell_elems_s.at(cell), nodes_s);
         for (int i = 0; i < nnodes_s; i++) {
-          nodes_g[nnodes + i] = nodes_s[i] + num_master_nodes;
+          nodes_g[nnodes + i] = nodes_s[i] + num_primary_nodes;
         }
         nnodes += nnodes_s;
       }

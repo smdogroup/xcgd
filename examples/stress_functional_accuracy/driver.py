@@ -125,10 +125,10 @@ def run_experiments(
         df_data["energy_norm"] = []
 
     elif physics == "elasticity-interface":
-        df_data["stress_norm_master"] = []
-        df_data["stress_norm_slave"] = []
-        df_data["stress_norm_master_interface"] = []
-        df_data["stress_norm_slave_interface"] = []
+        df_data["stress_norm_primary"] = []
+        df_data["stress_norm_secondary"] = []
+        df_data["stress_norm_primary_interface"] = []
+        df_data["stress_norm_secondary_interface"] = []
     else:
         df_data["stress_norm"] = []
 
@@ -175,13 +175,13 @@ def run_experiments(
                 df_data["val_norm"].append(j["val_norm"])
                 df_data["energy_norm"].append(j["energy_norm"])
             elif physics == "elasticity-interface":
-                df_data["stress_norm_master"].append(j["stress_norm_master"])
-                df_data["stress_norm_slave"].append(j["stress_norm_slave"])
-                df_data["stress_norm_master_interface"].append(
-                    j["stress_norm_master_interface"]
+                df_data["stress_norm_primary"].append(j["stress_norm_primary"])
+                df_data["stress_norm_secondary"].append(j["stress_norm_secondary"])
+                df_data["stress_norm_primary_interface"].append(
+                    j["stress_norm_primary_interface"]
                 )
-                df_data["stress_norm_slave_interface"].append(
-                    j["stress_norm_slave_interface"]
+                df_data["stress_norm_secondary_interface"].append(
+                    j["stress_norm_secondary_interface"]
                 )
             else:
                 df_data["stress_norm"].append(j["stress_norm"])
@@ -242,10 +242,10 @@ def plot_elasticity_interface(df, voffset, voffset_text):
     for Np_1d, sub_df in df.groupby("Np_1d"):
         for key, ax in zip(
             [
-                "stress_norm_master",
-                "stress_norm_slave",
-                "stress_norm_master_interface",
-                "stress_norm_slave_interface",
+                "stress_norm_primary",
+                "stress_norm_secondary",
+                "stress_norm_primary_interface",
+                "stress_norm_secondary_interface",
             ],
             axs,
         ):
@@ -263,16 +263,16 @@ def plot_elasticity_interface(df, voffset, voffset_text):
 
     for ylabel, title, ax in zip(
         [
-            r"$\left[\int_{\text{master mesh},h}  \text{tr}((\mathbf{S} - \mathbf{S}_h)^T(\mathbf{S} - \mathbf{S}_h)) d\Omega\right]^{1/2}$",
-            r"$\left[\int_{\text{slave mesh},h}  \text{tr}((\mathbf{S} - \mathbf{S}_h)^T(\mathbf{S} - \mathbf{S}_h)) d\Omega\right]^{1/2}$",
-            r"$\left[\int_{\text{master mesh}, h}  \text{tr}((\mathbf{S} - \mathbf{S}_h)^T(\mathbf{S} - \mathbf{S}_h)) d\Gamma\right]^{1/2}$",
-            r"$\left[\int_{\text{slave mesh}h}  \text{tr}((\mathbf{S} - \mathbf{S}_h)^T(\mathbf{S} - \mathbf{S}_h)) d\Gamma\right]^{1/2}$",
+            r"$\left[\int_{\text{primary mesh},h}  \text{tr}((\mathbf{S} - \mathbf{S}_h)^T(\mathbf{S} - \mathbf{S}_h)) d\Omega\right]^{1/2}$",
+            r"$\left[\int_{\text{secondary mesh},h}  \text{tr}((\mathbf{S} - \mathbf{S}_h)^T(\mathbf{S} - \mathbf{S}_h)) d\Omega\right]^{1/2}$",
+            r"$\left[\int_{\text{primary mesh}, h}  \text{tr}((\mathbf{S} - \mathbf{S}_h)^T(\mathbf{S} - \mathbf{S}_h)) d\Gamma\right]^{1/2}$",
+            r"$\left[\int_{\text{secondary mesh}h}  \text{tr}((\mathbf{S} - \mathbf{S}_h)^T(\mathbf{S} - \mathbf{S}_h)) d\Gamma\right]^{1/2}$",
         ],
         [
-            "Stress Error On the Master Mesh",
-            "Stress Error On the Slave Mesh",
-            "Stress Error On Interface from the Master Mesh",
-            "Stress Error On Interface from the Slave Mesh",
+            "Stress Error On the Primary Mesh",
+            "Stress Error On the Secondary Mesh",
+            "Stress Error On Interface from the Primary Mesh",
+            "Stress Error On Interface from the Secondary Mesh",
         ],
         axs,
     ):

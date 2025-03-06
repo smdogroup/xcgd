@@ -112,7 +112,7 @@ T LSF_jacobian_adjoint_product_fd_check(Physics& physics, double dh = 1e-6) {
 
 template <int Np_1d, class PhysicsBulk, class PhysicsInterface>
 T two_sided_LSF_jacobian_adjoint_product_fd_check(
-    PhysicsBulk& physics_bulk_master, PhysicsBulk& physics_bulk_slave,
+    PhysicsBulk& physics_bulk_primary, PhysicsBulk& physics_bulk_secondary,
     PhysicsInterface& physics_interface, double dh = 1e-6) {
   static_assert(PhysicsBulk::dof_per_node == PhysicsInterface::dof_per_node,
                 "");
@@ -139,34 +139,34 @@ T two_sided_LSF_jacobian_adjoint_product_fd_check(
   T pt0[2] = {3.2, -0.5};
   Grid grid(nxy, lxy);
 
-  auto lsf_master = [pt0](T x[]) {
+  auto lsf_primary = [pt0](T x[]) {
     return 1.0 - (x[0] - pt0[0]) * (x[0] - pt0[0]) / 3.5 / 3.5 -
            (x[1] - pt0[1]) * (x[1] - pt0[1]) / 2.0 / 2.0;  // <= 0
   };
-  auto lsf_slave = [lsf_master](T x[]) { return -lsf_master(x); };
+  auto lsf_secondary = [lsf_primary](T x[]) { return -lsf_primary(x); };
 
-  Mesh mesh_master(grid, lsf_master);
-  Mesh mesh_slave(grid, lsf_slave);
+  Mesh mesh_primary(grid, lsf_primary);
+  Mesh mesh_secondary(grid, lsf_secondary);
 
-  Basis basis_master(mesh_master);
-  Basis basis_slave(mesh_slave);
+  Basis basis_primary(mesh_primary);
+  Basis basis_secondary(mesh_secondary);
 
-  BulkQuadrature quadrature_master(mesh_master);
-  BulkQuadrature quadrature_slave(mesh_slave);
+  BulkQuadrature quadrature_primary(mesh_primary);
+  BulkQuadrature quadrature_secondary(mesh_secondary);
   InterfaceQuadrature quadrature_interface(
-      mesh_master);  // Note, we use master mesh here
+      mesh_primary);  // Note, we use primary mesh here
 
-  BulkAnalysis analysis_master(mesh_master, quadrature_master, basis_master,
-                               physics_bulk_master);
-  BulkAnalysis analysis_slave(mesh_slave, quadrature_slave, basis_slave,
-                              physics_bulk_slave);
+  BulkAnalysis analysis_primary(mesh_primary, quadrature_primary, basis_primary,
+                                physics_bulk_primary);
+  BulkAnalysis analysis_secondary(mesh_secondary, quadrature_secondary,
+                                  basis_secondary, physics_bulk_secondary);
   InterfaceAnalysis analysis_interface(
-      mesh_master, mesh_slave, quadrature_interface,
-      basis_master /*NOTE: we use basis_master here*/, physics_interface);
+      mesh_primary, mesh_secondary, quadrature_interface,
+      basis_primary /*NOTE: we use basis_primary here*/, physics_interface);
 
-  int ndof =
-      dof_per_node * (mesh_master.get_num_nodes() + mesh_slave.get_num_nodes());
-  int node_offset = mesh_master.get_num_nodes();
+  int ndof = dof_per_node *
+             (mesh_primary.get_num_nodes() + mesh_secondary.get_num_nodes());
+  int node_offset = mesh_primary.get_num_nodes();
   int ndv = grid.get_num_verts();
 
   std::vector<T> dof(ndof, T(0.0)), psi(ndof, T(0.0)), psi_neg(ndof, T(0.0)),
@@ -184,43 +184,46 @@ T two_sided_LSF_jacobian_adjoint_product_fd_check(
     psi_neg[i] = -psi[i];
   }
 
-  analysis_master.LSF_jacobian_adjoint_product(dof.data(), psi.data(),
-                                               dfdphi.data());
-  analysis_slave.LSF_jacobian_adjoint_product(dof.data(), psi_neg.data(),
-                                              dfdphi.data(), node_offset);
+  analysis_primary.LSF_jacobian_adjoint_product(dof.data(), psi.data(),
+                                                dfdphi.data());
+  analysis_secondary.LSF_jacobian_adjoint_product(dof.data(), psi_neg.data(),
+                                                  dfdphi.data(), node_offset);
 
-  analysis_master.residual(nullptr, dof.data(), res1.data());
-  analysis_slave.residual(nullptr, dof.data(), res1.data(), node_offset);
+  analysis_primary.residual(nullptr, dof.data(), res1.data());
+  analysis_secondary.residual(nullptr, dof.data(), res1.data(), node_offset);
 
-  save_mesh(mesh_master,
-            "two_sided_master_LSF_jacobian_adjoint_product_fd_check_fd1_Np_" +
+  save_mesh(mesh_primary,
+            "two_sided_primary_LSF_jacobian_adjoint_product_fd_check_fd1_Np_" +
                 std::to_string(Np_1d) + "_h_" + std::to_string(dh) + ".vtk");
-  save_mesh(mesh_slave,
-            "two_sided_slave_LSF_jacobian_adjoint_product_fd_check_fd1_Np_" +
-                std::to_string(Np_1d) + "_h_" + std::to_string(dh) + ".vtk");
+  save_mesh(
+      mesh_secondary,
+      "two_sided_secondary_LSF_jacobian_adjoint_product_fd_check_fd1_Np_" +
+          std::to_string(Np_1d) + "_h_" + std::to_string(dh) + ".vtk");
 
-  auto& phi_master = mesh_master.get_lsf_dof();
-  auto& phi_slave = mesh_slave.get_lsf_dof();
+  auto& phi_primary = mesh_primary.get_lsf_dof();
+  auto& phi_secondary = mesh_secondary.get_lsf_dof();
 
-  if (phi_master.size() != ndv) throw std::runtime_error("dimension mismatch");
-  if (phi_slave.size() != ndv) throw std::runtime_error("dimension mismatch");
+  if (phi_primary.size() != ndv) throw std::runtime_error("dimension mismatch");
+  if (phi_secondary.size() != ndv)
+    throw std::runtime_error("dimension mismatch");
 
   for (int i = 0; i < ndv; i++) {
-    phi_master[i] += dh * p[i];
-    phi_slave[i] -= dh * p[i];
+    phi_primary[i] += dh * p[i];
+    phi_secondary[i] -= dh * p[i];
   }
-  mesh_master.update_mesh();
-  mesh_slave.update_mesh();
+  mesh_primary.update_mesh();
+  mesh_secondary.update_mesh();
 
-  save_mesh(mesh_master,
-            "two_sided_master_LSF_jacobian_adjoint_product_fd_check_fd2_Np_" +
+  save_mesh(mesh_primary,
+            "two_sided_primary_LSF_jacobian_adjoint_product_fd_check_fd2_Np_" +
                 std::to_string(Np_1d) + "_h_" + std::to_string(dh) + ".vtk");
-  save_mesh(mesh_slave,
-            "two_sided_slave_LSF_jacobian_adjoint_product_fd_check_fd2_Np_" +
-                std::to_string(Np_1d) + "_h_" + std::to_string(dh) + ".vtk");
+  save_mesh(
+      mesh_secondary,
+      "two_sided_secondary_LSF_jacobian_adjoint_product_fd_check_fd2_Np_" +
+          std::to_string(Np_1d) + "_h_" + std::to_string(dh) + ".vtk");
 
-  analysis_master.residual(nullptr, dof.data(), res2.data());
-  analysis_slave.residual(nullptr, dof.data(), res2.data(), node_offset);
+  analysis_primary.residual(nullptr, dof.data(), res2.data());
+  analysis_secondary.residual(nullptr, dof.data(), res2.data(), node_offset);
 
   T fd = 0.0, exact = 0.0;
   for (int i = 0; i < ndv; i++) {
@@ -343,7 +346,7 @@ void test_LSF_jacobian_adjoint_product(Physics& physics, double tol = 1e-6) {
 
 template <int Np_1d, class PhysicsBulk, class PhysicsInterface>
 void test_two_sided_LSF_jacobian_adjoint_product(
-    PhysicsBulk& physics_master, PhysicsBulk& physics_slave,
+    PhysicsBulk& physics_primary, PhysicsBulk& physics_secondary,
     PhysicsInterface& physics_interface, double tol = 1e-6) {
   T relerr_min = 1.0;
   for (double dh :
@@ -351,7 +354,7 @@ void test_two_sided_LSF_jacobian_adjoint_product(
                            1e-10, 1e-11, 1e-12, 1e-13, 1e-14, 1e-15}) {
     T ret = two_sided_LSF_jacobian_adjoint_product_fd_check<Np_1d, PhysicsBulk,
                                                             PhysicsInterface>(
-        physics_master, physics_slave, physics_interface, dh);
+        physics_primary, physics_secondary, physics_interface, dh);
     if (ret < relerr_min) relerr_min = ret;
   }
 
@@ -408,14 +411,14 @@ TEST(analysis, AdjJacProductElasticityInterface) {
 
   T E1 = 20.0, nu1 = 0.3;
   T E2 = 12.0, nu2 = 0.4;
-  PhysicsBulk physics_master(E1, nu1, int_func);
-  PhysicsBulk physics_slave(E2, nu2, int_func);
+  PhysicsBulk physics_primary(E1, nu1, int_func);
+  PhysicsBulk physics_secondary(E2, nu2, int_func);
 
   double eta = 12.345;
   PhysicsInterface physics_interface(eta, E1, nu1, E2, nu2);
 
-  test_two_sided_LSF_jacobian_adjoint_product<2>(physics_master, physics_slave,
-                                                 physics_interface, 1e-5);
+  test_two_sided_LSF_jacobian_adjoint_product<2>(
+      physics_primary, physics_secondary, physics_interface, 1e-5);
 }
 
 TEST(analysis, EnergyPartialStressKS) {

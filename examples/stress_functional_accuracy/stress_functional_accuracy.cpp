@@ -702,31 +702,31 @@ void execute_interface_elasticity(std::string prefix, int nxy,
   T lxy[2] = {L, L};
   Grid grid(nx_ny, lxy);
 
-  Mesh mesh_master(grid, lsf_fun);
+  Mesh mesh_primary(grid, lsf_fun);
 
-  Quadrature quadrature(mesh_master);
-  Basis basis(mesh_master);
+  Quadrature quadrature(mesh_primary);
+  Basis basis(mesh_primary);
 
   std::shared_ptr<PhysicsApp> physics_app;
-  PhysicsBulk physics_bulk_master(E1, nu1, elasticity_intf_fun);
-  PhysicsBulk physics_bulk_slave(E2, nu2, elasticity_intf_fun);
+  PhysicsBulk physics_bulk_primary(E1, nu1, elasticity_intf_fun);
+  PhysicsBulk physics_bulk_secondary(E2, nu2, elasticity_intf_fun);
   PhysicsInterface physics_interface(nitsche_eta, E1, nu1, E2, nu2);
 
   physics_app = std::make_shared<PhysicsApp>(
-      mesh_master, quadrature, basis, physics_bulk_master, physics_bulk_slave,
-      physics_interface);
+      mesh_primary, quadrature, basis, physics_bulk_primary,
+      physics_bulk_secondary, physics_interface);
 
   // Set bcs
   std::vector<int> dof_bcs;
   std::vector<T> dof_vals;
 
-  for (auto nodes : {mesh_master.get_left_boundary_nodes(),
-                     mesh_master.get_right_boundary_nodes(),
-                     mesh_master.get_upper_boundary_nodes(),
-                     mesh_master.get_lower_boundary_nodes()}) {
+  for (auto nodes : {mesh_primary.get_left_boundary_nodes(),
+                     mesh_primary.get_right_boundary_nodes(),
+                     mesh_primary.get_upper_boundary_nodes(),
+                     mesh_primary.get_lower_boundary_nodes()}) {
     for (int node : nodes) {
       T xloc[Basis::spatial_dim];
-      mesh_master.get_node_xloc(node, xloc);
+      mesh_primary.get_node_xloc(node, xloc);
       auto vals = elasticity_exact_fun(A2D::Vec<T, Basis::spatial_dim>(xloc));
       for (int d = 0; d < Basis::spatial_dim; d++) {
         dof_bcs.push_back(Basis::spatial_dim * node + d);
@@ -738,53 +738,54 @@ void execute_interface_elasticity(std::string prefix, int nxy,
   std::vector<T> sol = physics_app->solve(dof_bcs, dof_vals);
 
   // Split sol
-  auto& mesh_slave = physics_app->get_slave_mesh();
+  auto& mesh_secondary = physics_app->get_secondary_mesh();
 
-  std::vector<T> sol_master(
-      sol.begin(), sol.begin() + dof_per_node * mesh_master.get_num_nodes());
-  std::vector<T> sol_slave(
-      sol.begin() + dof_per_node * mesh_master.get_num_nodes(), sol.end());
-  xcgd_assert(sol_slave.size() == dof_per_node * mesh_slave.get_num_nodes(),
-              "dimension of slave sol does not match number of slave nodes");
+  std::vector<T> sol_primary(
+      sol.begin(), sol.begin() + dof_per_node * mesh_primary.get_num_nodes());
+  std::vector<T> sol_secondary(
+      sol.begin() + dof_per_node * mesh_primary.get_num_nodes(), sol.end());
+  xcgd_assert(
+      sol_secondary.size() == dof_per_node * mesh_secondary.get_num_nodes(),
+      "dimension of secondary sol does not match number of secondary nodes");
 
   // Cut mesh
   {
-    ToVTK<T, typeof(mesh_master)> master_cut_vtk(
-        mesh_master, std::filesystem::path(prefix) /
-                         std::filesystem::path("cut_master.vtk"));
-    ToVTK<T, typeof(mesh_slave)> slave_cut_vtk(
-        mesh_slave,
-        std::filesystem::path(prefix) / std::filesystem::path("cut_slave.vtk"));
+    ToVTK<T, typeof(mesh_primary)> primary_cut_vtk(
+        mesh_primary, std::filesystem::path(prefix) /
+                          std::filesystem::path("cut_primary.vtk"));
+    ToVTK<T, typeof(mesh_secondary)> secondary_cut_vtk(
+        mesh_secondary, std::filesystem::path(prefix) /
+                            std::filesystem::path("cut_secondary.vtk"));
 
-    std::vector<T> sol_exact_master;
-    for (int i = 0; i < mesh_master.get_num_nodes(); i++) {
+    std::vector<T> sol_exact_primary;
+    for (int i = 0; i < mesh_primary.get_num_nodes(); i++) {
       T xloc[Basis::spatial_dim];
-      mesh_master.get_node_xloc(i, xloc);
+      mesh_primary.get_node_xloc(i, xloc);
       auto vals = elasticity_exact_fun(A2D::Vec<T, Basis::spatial_dim>(xloc));
       for (int d = 0; d < Basis::spatial_dim; d++) {
-        sol_exact_master.push_back(vals(d));
+        sol_exact_primary.push_back(vals(d));
       }
     }
 
-    master_cut_vtk.write_mesh();
-    master_cut_vtk.write_sol("lsf", mesh_master.get_lsf_nodes().data());
-    master_cut_vtk.write_vec("sol", sol_master.data());
-    master_cut_vtk.write_vec("sol_exact", sol_exact_master.data());
+    primary_cut_vtk.write_mesh();
+    primary_cut_vtk.write_sol("lsf", mesh_primary.get_lsf_nodes().data());
+    primary_cut_vtk.write_vec("sol", sol_primary.data());
+    primary_cut_vtk.write_vec("sol_exact", sol_exact_primary.data());
 
-    std::vector<T> sol_exact_slave;
-    for (int i = 0; i < mesh_slave.get_num_nodes(); i++) {
+    std::vector<T> sol_exact_secondary;
+    for (int i = 0; i < mesh_secondary.get_num_nodes(); i++) {
       T xloc[Basis::spatial_dim];
-      mesh_slave.get_node_xloc(i, xloc);
+      mesh_secondary.get_node_xloc(i, xloc);
       auto vals = elasticity_exact_fun(A2D::Vec<T, Basis::spatial_dim>(xloc));
       for (int d = 0; d < Basis::spatial_dim; d++) {
-        sol_exact_slave.push_back(vals(d));
+        sol_exact_secondary.push_back(vals(d));
       }
     }
 
-    slave_cut_vtk.write_mesh();
-    slave_cut_vtk.write_sol("lsf", mesh_slave.get_lsf_nodes().data());
-    slave_cut_vtk.write_vec("sol", sol_slave.data());
-    slave_cut_vtk.write_vec("sol_exact", sol_exact_slave.data());
+    secondary_cut_vtk.write_mesh();
+    secondary_cut_vtk.write_sol("lsf", mesh_secondary.get_lsf_nodes().data());
+    secondary_cut_vtk.write_vec("sol", sol_secondary.data());
+    secondary_cut_vtk.write_vec("sol_exact", sol_exact_secondary.data());
   }
 
   // Evaluate norm errors
@@ -802,62 +803,64 @@ void execute_interface_elasticity(std::string prefix, int nxy,
   EnergyNormPhysics stress_norm_physics_r(E2, nu2, elasticity_stress_fun);
 
   EnergyNormAnalysis stress_norm_analysis_l(
-      physics_app->get_interface_analysis().get_master_mesh(), quadrature,
+      physics_app->get_interface_analysis().get_primary_mesh(), quadrature,
       basis, stress_norm_physics_l);
   EnergyNormAnalysis stress_norm_analysis_r(
-      physics_app->get_interface_analysis().get_slave_mesh(), quadrature, basis,
-      stress_norm_physics_r);
+      physics_app->get_interface_analysis().get_secondary_mesh(), quadrature,
+      basis, stress_norm_physics_r);
   InterfaceEnergyNormAnalysis stress_norm_analysis_l_interface(
-      physics_app->get_interface_analysis().get_master_mesh(),
+      physics_app->get_interface_analysis().get_primary_mesh(),
       physics_app->get_interface_quadrature(), basis, stress_norm_physics_l);
   InterfaceEnergyNormAnalysis stress_norm_analysis_r_interface(
-      physics_app->get_interface_analysis().get_slave_mesh(),
+      physics_app->get_interface_analysis().get_secondary_mesh(),
       physics_app->get_interface_quadrature(), basis, stress_norm_physics_r);
 
-  json j = {{"stress_norm_master",
-             sqrt(stress_norm_analysis_l.energy(nullptr, sol_master.data()))},
-            {"stress_norm_slave",
-             sqrt(stress_norm_analysis_r.energy(nullptr, sol_slave.data()))},
-            {"stress_norm_master_interface",
+  json j = {{"stress_norm_primary",
+             sqrt(stress_norm_analysis_l.energy(nullptr, sol_primary.data()))},
+            {"stress_norm_secondary", sqrt(stress_norm_analysis_r.energy(
+                                          nullptr, sol_secondary.data()))},
+            {"stress_norm_primary_interface",
              sqrt(stress_norm_analysis_l_interface.energy(nullptr,
-                                                          sol_master.data()))},
+                                                          sol_primary.data()))},
 
-            {"stress_norm_slave_interface",
-             sqrt(stress_norm_analysis_r_interface.energy(nullptr,
-                                                          sol_slave.data()))}};
+            {"stress_norm_secondary_interface",
+             sqrt(stress_norm_analysis_r_interface.energy(
+                 nullptr, sol_secondary.data()))}};
   write_json(std::filesystem::path(prefix) / std::filesystem::path("sol.json"),
              j);
 
   // Evaluate stress at quadratures
   {
     // left mesh
-    eval_bulk_stress(std::filesystem::path(prefix) /
-                         std::filesystem::path("quad_master.vtk"),
-                     E1, nu1, mesh_master,
-                     physics_app->get_master_bulk_quadrature(),
-                     physics_app->get_master_basis(), sol_master, stress_fun_l);
+    eval_bulk_stress(
+        std::filesystem::path(prefix) /
+            std::filesystem::path("quad_primary.vtk"),
+        E1, nu1, mesh_primary, physics_app->get_primary_bulk_quadrature(),
+        physics_app->get_primary_basis(), sol_primary, stress_fun_l);
 
     // right mesh
     eval_bulk_stress(
-        std::filesystem::path(prefix) / std::filesystem::path("quad_slave.vtk"),
-        E2, nu2, mesh_slave, physics_app->get_slave_bulk_quadrature(),
-        physics_app->get_slave_basis(), sol_slave, stress_fun_r);
+        std::filesystem::path(prefix) /
+            std::filesystem::path("quad_secondary.vtk"),
+        E2, nu2, mesh_secondary, physics_app->get_secondary_bulk_quadrature(),
+        physics_app->get_secondary_basis(), sol_secondary, stress_fun_r);
   }
 
   // Evaluate stress at interface
   {
     eval_interface_stress(std::filesystem::path(prefix) /
-                              std::filesystem::path("interface_master.vtk"),
-                          E1, nu1, mesh_master,
+                              std::filesystem::path("interface_primary.vtk"),
+                          E1, nu1, mesh_primary,
                           physics_app->get_interface_quadrature(),
-                          physics_app->get_master_basis(), sol_master,
+                          physics_app->get_primary_basis(), sol_primary,
                           stress_fun_l, lsf_grad_fun);
 
-    eval_interface_stress(
-        std::filesystem::path(prefix) /
-            std::filesystem::path("interface_slave.vtk"),
-        E2, nu2, mesh_slave, physics_app->get_interface_quadrature(),
-        physics_app->get_slave_basis(), sol_slave, stress_fun_r, lsf_grad_fun);
+    eval_interface_stress(std::filesystem::path(prefix) /
+                              std::filesystem::path("interface_secondary.vtk"),
+                          E2, nu2, mesh_secondary,
+                          physics_app->get_interface_quadrature(),
+                          physics_app->get_secondary_basis(), sol_secondary,
+                          stress_fun_r, lsf_grad_fun);
   }
 }
 
