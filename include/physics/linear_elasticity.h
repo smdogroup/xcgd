@@ -538,10 +538,6 @@ class LinearElasticityInterface final
            A2D::Vec<T, dof_per_node>& u_secondary,
            A2D::Mat<T, dof_per_node, spatial_dim>& grad_primary,
            A2D::Mat<T, dof_per_node, spatial_dim>& grad_secondary) const {
-    // Prepare passive quantities: Evaluate the Jacobian
-    T detJ;
-    A2D::MatDet(J, detJ);
-
     // Prepare passive quantities: Evaluate dt
     A2D::Vec<T, spatial_dim> tan_ref;
     A2D::Mat<T, spatial_dim, spatial_dim> rot;
@@ -607,10 +603,6 @@ class LinearElasticityInterface final
       A2D::Vec<T, dof_per_node>& coef_u_secondary,
       A2D::Mat<T, dof_per_node, spatial_dim>& coef_grad_primary,
       A2D::Mat<T, dof_per_node, spatial_dim>& coef_grad_secondary) const {
-    // Prepare passive quantities: Evaluate the Jacobian
-    T detJ;
-    A2D::MatDet(J, detJ);
-
     // Prepare passive quantities: Evaluate dt
     A2D::Vec<T, spatial_dim> tan_ref;
     A2D::Mat<T, spatial_dim, spatial_dim> rot;
@@ -631,6 +623,10 @@ class LinearElasticityInterface final
     A2D::Vec<T, spatial_dim> nrm;
     A2D::MatVecMult(J, nrm_ref, nrm);
     A2D::VecNormalize(nrm, nrm);
+
+    // // TODO: delete
+    // nrm(0) = 1.0;
+    // nrm(1) = 1.0;
 
     // Create AD objects
     A2D::ADObj<A2D::Vec<T, dof_per_node>&> u_primary_obj(u_primary,
@@ -702,10 +698,6 @@ class LinearElasticityInterface final
       A2D::Vec<T, dof_per_node>& coef_u_secondary,
       A2D::Mat<T, dof_per_node, spatial_dim>& coef_grad_primary,
       A2D::Mat<T, dof_per_node, spatial_dim>& coef_grad_secondary) const {
-    // Prepare passive quantities: Evaluate the Jacobian
-    T detJ;
-    A2D::MatDet(J, detJ);
-
     // Prepare passive quantities: Evaluate dt
     A2D::Vec<T, spatial_dim> tan_ref;
     A2D::Mat<T, spatial_dim, spatial_dim> rot;
@@ -726,6 +718,10 @@ class LinearElasticityInterface final
     A2D::Vec<T, spatial_dim> nrm;
     A2D::MatVecMult(J, nrm_ref, nrm);
     A2D::VecNormalize(nrm, nrm);
+
+    // // TODO: delete
+    // nrm(0) = 1.0;
+    // nrm(1) = 1.0;
 
     // Temporary ouotputs
     A2D::Vec<T, dof_per_node> ub_primary, ub_secondary;
@@ -798,10 +794,6 @@ class LinearElasticityInterface final
       A2D::Mat<T, dof_per_vert, dof_per_vert * spatial_dim>& jac_mixed,
       A2D::Mat<T, dof_per_vert * spatial_dim, dof_per_vert * spatial_dim>&
           jac_grad) const {
-    // Prepare passive quantities: Evaluate the Jacobian
-    T detJ;
-    A2D::MatDet(J, detJ);
-
     // Prepare passive quantities: Evaluate dt
     A2D::Vec<T, spatial_dim> tan_ref;
     A2D::Mat<T, spatial_dim, spatial_dim> rot;
@@ -876,6 +868,9 @@ class LinearElasticityInterface final
 
     stack.reverse();
 
+    // Extract the Hessian w.r.t. u and mixed Hessian (w.r.t. u and ugrad)
+    // Note that we omit the Hessian w.r.t. ugrad because ∂2e/∂(∇_x)uq2 is zero
+    // by construction
     for (int i = 0; i < dof_per_vert; i++) {
       up_primary.zero();
       up_secondary.zero();

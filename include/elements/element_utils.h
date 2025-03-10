@@ -252,6 +252,14 @@ void add_element_dfdphi(const Mesh &lsf_mesh, int c, const T element_dfdphi[],
   }
 }
 
+template <typename T>
+void add_element_dfdphi(int nnodes, int *nodes, const T element_dfdphi[],
+                        T dfdphi[]) {
+  for (int j = 0; j < nnodes; j++) {
+    dfdphi[nodes[j]] += element_dfdphi[j];
+  }
+}
+
 // Helper functions
 inline double *get_ptr(double &val) { return &val; }
 inline std::complex<double> *get_ptr(std::complex<double> &val) { return &val; }
@@ -403,6 +411,39 @@ inline void interp_val_grad_deprecated(const T *dof, const T *N, const T *Nxi,
  * the shape function and shape gradient evaluations N and Nxi at this
  * quadrature point.
  *
+ * Note: this is a unified element interpolation function regardless different
+ * types of hess given dim = 1 or dim > 1
+ *
+ * @tparam T numeric type
+ * @tparam Basis Basis type
+ * @tparam dim number of dof components at each dof node
+ * @param dof node dof values of size max_nnodes_per_element * dim
+ * @param Nxixi shape function Hessians, concatenation of (∂2/∂ξξ, ∂2/∂ξη,
+ * ∂2/∂ηξ, ∂2/∂ηη) N_q
+ * @param hess[dim * spatial_dim * spatial_dim] ∇2u, hess(i, :) = (∂2u[i]/∂ξξ,
+ * ∂2u[i]/∂ξη, ∂2u[i]/∂ηξ, ∂2u[i]/∂ηη)
+ */
+template <typename T, int spatial_dim, int max_nnodes_per_element, int dim>
+void interp_hess(const T *dof, const T *Nxixi, T *hess) {
+  constexpr int s2 = spatial_dim * spatial_dim;
+  for (int j = 0; j < dim; j++) {
+    for (int i = 0; i < max_nnodes_per_element; i++) {
+      int offset = s2 * i;
+      for (int d1 = 0; d1 < spatial_dim; d1++) {
+        for (int d2 = 0; d2 < spatial_dim; d2++) {
+          int index = d1 * spatial_dim + d2;
+          hess[s2 * j + index] += Nxixi[offset + index] * dof[dim * i + j];
+        }
+      }
+    }
+  }
+}
+
+/**
+ * The following two functions evaluate u and ∇2u at a quadrature point given
+ * the shape function and shape gradient evaluations N and Nxi at this
+ * quadrature point.
+ *
  * @tparam T numeric type
  * @tparam Basis Basis type
  * @tparam dim number of dof components at each dof node
@@ -413,7 +454,7 @@ inline void interp_val_grad_deprecated(const T *dof, const T *N, const T *Nxi,
  * ∂2u[i]/∂ηη)
  */
 template <typename T, class Basis, int dim>
-void interp_hess(
+void interp_hess_deprecated(
     const T *dof, const T *Nxixi,
     A2D::Mat<T, dim, Basis::spatial_dim * Basis::spatial_dim> &hess) {
   static constexpr int spatial_dim = Basis::spatial_dim;
@@ -436,8 +477,9 @@ void interp_hess(
 
 // dim == 1
 template <typename T, class Basis>
-void interp_hess(const T *dof, const T *Nxixi,
-                 A2D::Vec<T, Basis::spatial_dim * Basis::spatial_dim> &hess) {
+void interp_hess_deprecated(
+    const T *dof, const T *Nxixi,
+    A2D::Vec<T, Basis::spatial_dim * Basis::spatial_dim> &hess) {
   static constexpr int spatial_dim = Basis::spatial_dim;
   static constexpr int max_nnodes_per_element = Basis::max_nnodes_per_element;
 

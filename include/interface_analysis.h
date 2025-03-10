@@ -52,6 +52,11 @@ class InterfaceGalerkinAnalysis final {
         cell_primary_elems(mesh_primary.get_cell_elems()),
         cell_secondary_elems(mesh_secondary.get_cell_elems()),
         secondary_node_offset(mesh_primary.get_num_nodes()) {
+    update_mesh();
+  }
+
+  void update_mesh() {
+    interface_cells.clear();
     const auto& cut_elems = mesh_primary.get_cut_elems();
     for (int elem_primary = 0; elem_primary < mesh_primary.get_num_elements();
          elem_primary++) {
@@ -113,6 +118,10 @@ class InterfaceGalerkinAnalysis final {
           }
         }
 
+        // // TODO: delete
+        // nrm_ref(0) = 0.2;
+        // nrm_ref(1) = 0.7;
+
         total_energy +=
             physics.energy(wts[j], xq, xloc, nrm_ref, J, vals_primary,
                            vals_secondary, grad_primary, grad_secondary);
@@ -169,6 +178,10 @@ class InterfaceGalerkinAnalysis final {
             nrm_ref[d] = ns[spatial_dim * j + d];
           }
         }
+
+        // // TODO: delete
+        // nrm_ref(0) = 0.2;
+        // nrm_ref(1) = 0.7;
 
         // Transform gradient from ref coordinates to physical coordinates
         transform(J, grad_ref_primary, grad_primary);
@@ -381,6 +394,10 @@ class InterfaceGalerkinAnalysis final {
           }
         }
 
+        // // TODO: delete
+        // nrm_ref(0) = 0.2;
+        // nrm_ref(1) = 0.7;
+
         // Transform gradient from ref coordinates to physical coordinates
         transform(J, grad_ref_primary, grad_primary);
         transform(J, grad_ref_secondary, grad_secondary);
@@ -423,6 +440,201 @@ class InterfaceGalerkinAnalysis final {
     }
   }
 
+  void LSF_jacobian_adjoint_product(const T dof[], const T psi[],
+                                    T dfdphi[]) const {
+    static_assert(Basis::is_gd_basis, "This method only works with GD Basis");
+    static_assert(Mesh::is_cut_mesh,
+                  "This method requires a level-set-cut mesh");
+
+    for (int cell : interface_cells) {
+      constexpr bool need_Nxixi_and_quad_grads = true;
+      auto [nnodes_primary, nnodes_secondary, num_quad_pts, nodes_primary,
+            nodes_secondary, element_xloc, N, Nxi, Nxixi, element_dof_primary,
+            element_dof_secondary, element_x, wts, ns, pts_grad, wts_grad,
+            wns_grad] =
+          interpolate_for_element<need_Nxixi_and_quad_grads>(cell, nullptr,
+                                                             dof);
+
+      std::vector<T> element_psi_primary(max_dof_per_element, T(0.0));
+      get_element_vars<T, dof_per_node, Basis>(nnodes_primary,
+                                               nodes_primary.data(), psi,
+                                               element_psi_primary.data());
+      std::vector<T> element_psi_secondary(max_dof_per_element, T(0.0));
+      get_element_vars<T, dof_per_node, Basis>(nnodes_secondary,
+                                               nodes_secondary.data(), psi,
+                                               element_psi_secondary.data());
+
+      // Create the element dfdphi
+      std::vector<T> element_dfdphi(max_nnodes_per_element, 0.0);
+
+      for (int j = 0; j < num_quad_pts; j++) {
+        int offset_n = j * max_nnodes_per_element;
+        int offset_nxi = j * max_nnodes_per_element * spatial_dim;
+        int offset_nxixi =
+            j * max_nnodes_per_element * spatial_dim * spatial_dim;
+
+        A2D::Vec<T, spatial_dim> xloc, nrm_ref;
+        A2D::Mat<T, spatial_dim, spatial_dim> J;
+        interp_val_grad<T, spatial_dim, max_nnodes_per_element, spatial_dim>(
+            element_xloc.data(), &N[offset_n], &Nxi[offset_nxi], get_ptr(xloc),
+            get_ptr(J));
+
+        if constexpr (Quadrature::quad_type == QuadPtType::SURFACE) {
+          for (int d = 0; d < spatial_dim; d++) {
+            nrm_ref[d] = ns[spatial_dim * j + d];
+          }
+        }
+
+        // Evaluate the derivative of the dof in the computational coordinates
+        typename Physics::dof_t uq_primary{}, psiq_primary{};  // uq, psiq
+        typename Physics::grad_t ugrad_primary{},
+            ugrad_ref_primary{};  // (∇_x)uq, (∇_ξ)uq
+        typename Physics::grad_t pgrad_primary{},
+            pgrad_ref_primary{};                       // (∇_x)psiq, (∇_ξ)psiq
+        typename Physics::hess_t uhess_ref_primary{};  //(∇2_ξ)uq
+        typename Physics::hess_t phess_ref_primary{};  //(∇2_ξ)psiq
+
+        typename Physics::dof_t uq_secondary{}, psiq_secondary{};  // uq, psiq
+        typename Physics::grad_t ugrad_secondary{},
+            ugrad_ref_secondary{};  // (∇_x)uq, (∇_ξ)uq
+        typename Physics::grad_t pgrad_secondary{},
+            pgrad_ref_secondary{};                       // (∇_x)psiq, (∇_ξ)psiq
+        typename Physics::hess_t uhess_ref_secondary{};  //(∇2_ξ)uq
+        typename Physics::hess_t phess_ref_secondary{};  //(∇2_ξ)psiq
+
+        // Interpolate the quantities at the quadrature point
+        interp_val_grad<T, spatial_dim, max_nnodes_per_element, dof_per_node>(
+            element_dof_primary.data(), &N[offset_n], &Nxi[offset_nxi],
+            get_ptr(uq_primary), get_ptr(ugrad_ref_primary));
+        interp_val_grad<T, spatial_dim, max_nnodes_per_element, dof_per_node>(
+            element_dof_secondary.data(), &N[offset_n], &Nxi[offset_nxi],
+            get_ptr(uq_secondary), get_ptr(ugrad_ref_secondary));
+
+        interp_val_grad<T, spatial_dim, max_nnodes_per_element, dof_per_node>(
+            element_psi_primary.data(), &N[offset_n], &Nxi[offset_nxi],
+            get_ptr(psiq_primary), get_ptr(pgrad_ref_primary));
+        interp_val_grad<T, spatial_dim, max_nnodes_per_element, dof_per_node>(
+            element_psi_secondary.data(), &N[offset_n], &Nxi[offset_nxi],
+            get_ptr(psiq_secondary), get_ptr(pgrad_ref_secondary));
+
+        interp_hess<T, spatial_dim, max_nnodes_per_element, dof_per_node>(
+            element_dof_primary.data(), &Nxixi[offset_nxixi],
+            get_ptr(uhess_ref_primary));
+        interp_hess<T, spatial_dim, max_nnodes_per_element, dof_per_node>(
+            element_dof_secondary.data(), &Nxixi[offset_nxixi],
+            get_ptr(uhess_ref_secondary));
+
+        interp_hess<T, spatial_dim, max_nnodes_per_element, dof_per_node>(
+            element_psi_primary.data(), &Nxixi[offset_nxixi],
+            get_ptr(phess_ref_primary));
+        interp_hess<T, spatial_dim, max_nnodes_per_element, dof_per_node>(
+            element_psi_secondary.data(), &Nxixi[offset_nxixi],
+            get_ptr(phess_ref_secondary));
+
+        transform(J, ugrad_ref_primary, ugrad_primary);
+        transform(J, ugrad_ref_secondary, ugrad_secondary);
+
+        transform(J, pgrad_ref_primary, pgrad_primary);
+        transform(J, pgrad_ref_secondary, pgrad_secondary);
+
+        typename Physics::dof_t coef_uq_primary{};      // ∂e/∂uq
+        typename Physics::grad_t coef_ugrad_primary{};  // ∂e/∂(∇_x)uq
+        typename Physics::dof_t jp_uq_primary{};        // ∂2e/∂uq2 * psiq
+        typename Physics::grad_t
+            jp_ugrad_primary{};  // ∂2e/∂(∇_x)uq2 * (∇_x)psiq
+                                 //
+        typename Physics::dof_t coef_uq_secondary{};      // ∂e/∂uq
+        typename Physics::grad_t coef_ugrad_secondary{};  // ∂e/∂(∇_x)uq
+        typename Physics::dof_t jp_uq_secondary{};        // ∂2e/∂uq2 * psiq
+        typename Physics::grad_t
+            jp_ugrad_secondary{};  // ∂2e/∂(∇_x)uq2 * (∇_x)psiq
+
+        T dummy_x = 0.0;
+
+        T frame_transform_scaling;
+        if constexpr (Quadrature::quad_type == QuadPtType::INNER) {
+          T detJ;
+          A2D::MatDet(J, detJ);
+          frame_transform_scaling = detJ;
+        } else if constexpr (Quadrature::quad_type == QuadPtType::SURFACE) {
+          // // TODO: delete
+          // nrm_ref(0) = 0.2;
+          // nrm_ref(1) = 0.7;
+
+          static_assert(spatial_dim == 2,
+                        "InterfaceGalerkinAnalysis is only implemented for 2D");
+          // Prepare passive quantities: Evaluate dt
+          A2D::Vec<T, spatial_dim> tan_ref;
+          A2D::Mat<T, spatial_dim, spatial_dim> rot;
+          rot(0, 1) = -1.0;
+          rot(1, 0) = 1.0;
+          A2D::MatVecMult(rot, nrm_ref, tan_ref);
+
+          // Prepare passive quantities: Compute the scaling from ref frame to
+          // physical frame
+          T scale2;
+          A2D::Mat<T, spatial_dim, spatial_dim> JTJ;
+          A2D::Vec<T, spatial_dim> JTJdt;
+          A2D::MatMatMult<A2D::MatOp::TRANSPOSE, A2D::MatOp::NORMAL>(J, J, JTJ);
+          A2D::MatVecMult(JTJ, tan_ref, JTJdt);
+          A2D::VecDot(tan_ref, JTJdt, scale2);
+          frame_transform_scaling = sqrt(scale2);
+
+        } else {
+          static_assert(false, "unknown quad_type");
+        }
+
+        physics.residual(1.0 / frame_transform_scaling, dummy_x, xloc, nrm_ref,
+                         J, uq_primary, uq_secondary, ugrad_primary,
+                         ugrad_secondary, coef_uq_primary, coef_uq_secondary,
+                         coef_ugrad_primary, coef_ugrad_secondary);
+        physics.jacobian_product(1.0 / frame_transform_scaling, dummy_x, xloc,
+                                 nrm_ref, J, uq_primary, uq_secondary,
+                                 ugrad_primary, ugrad_secondary, psiq_primary,
+                                 psiq_secondary, pgrad_primary, pgrad_secondary,
+                                 jp_uq_primary, jp_uq_secondary,
+                                 jp_ugrad_primary, jp_ugrad_secondary);
+
+        typename Physics::grad_t coef_ugrad_ref_primary{};    // ∂e/∂(∇_ξ)uq
+        typename Physics::grad_t coef_ugrad_ref_secondary{};  // ∂e/∂(∇_ξ)uq
+
+        typename Physics::grad_t
+            jp_ugrad_ref_primary{};  // ∂2e/∂(∇_ξ)uq2 * (∇_ξ)psiq
+        typename Physics::grad_t
+            jp_ugrad_ref_secondary{};  // ∂2e/∂(∇_ξ)uq2 * (∇_ξ)psiq
+
+        // Transform gradient from physical coordinates back to ref
+        // coordinates
+        rtransform(J, coef_ugrad_primary, coef_ugrad_ref_primary);
+        rtransform(J, coef_ugrad_secondary, coef_ugrad_ref_secondary);
+
+        rtransform(J, jp_ugrad_primary, jp_ugrad_ref_primary);
+        rtransform(J, jp_ugrad_secondary, jp_ugrad_ref_secondary);
+
+        int offset_wts = j * max_nnodes_per_element;
+        int offset_pts = j * max_nnodes_per_element * spatial_dim;
+
+        add_jac_adj_product<T, Basis>(
+            wts[j], frame_transform_scaling, &wts_grad[offset_wts],
+            &pts_grad[offset_pts], psiq_primary, ugrad_ref_primary,
+            pgrad_ref_primary, uhess_ref_primary, phess_ref_primary,
+            coef_uq_primary, coef_ugrad_ref_primary, jp_uq_primary,
+            jp_ugrad_ref_primary, element_dfdphi.data());
+
+        add_jac_adj_product<T, Basis>(
+            wts[j], frame_transform_scaling, &wts_grad[offset_wts],
+            &pts_grad[offset_pts], psiq_secondary, ugrad_ref_secondary,
+            pgrad_ref_secondary, uhess_ref_secondary, phess_ref_secondary,
+            coef_uq_secondary, coef_ugrad_ref_secondary, jp_uq_secondary,
+            jp_ugrad_ref_secondary, element_dfdphi.data());
+      }
+
+      const auto& lsf_mesh = mesh_primary.get_lsf_mesh();
+      add_element_dfdphi<T, decltype(lsf_mesh), Basis>(
+          lsf_mesh, cell, element_dfdphi.data(), dfdphi);
+    }
+  }
+
   const Mesh& get_primary_mesh() { return mesh_primary; }
   const Mesh& get_secondary_mesh() { return mesh_secondary; }
   const Quadrature& get_quadrature() { return quadrature; }
@@ -430,6 +642,7 @@ class InterfaceGalerkinAnalysis final {
   const Physics& get_physics() { return physics; }
 
  private:
+  template <bool need_Nxixi_and_quad_grads = false>
   auto interpolate_for_element(int cell, const T x[], const T dof[]) const {
     // Get elem indices for this interface cell in both the primary mesh and
     // the secondary mesh
@@ -469,17 +682,28 @@ class InterfaceGalerkinAnalysis final {
                                              nodes_secondary.data(), dof,
                                              element_dof_secondary.data());
 
-    std::vector<T> pts, wts, ns;
-    int num_quad_pts =
-        quadrature.get_quadrature_pts(elem_primary, pts, wts, ns);
-
-    std::vector<T> N, Nxi;
-    basis.eval_basis_grad(elem_primary, pts, N, Nxi);
-
-    return std::make_tuple(nnodes_primary, nnodes_secondary, num_quad_pts,
-                           nodes_primary, nodes_secondary, element_xloc, N, Nxi,
-                           element_dof_primary, element_dof_secondary,
-                           element_x, wts, ns);
+    if constexpr (not need_Nxixi_and_quad_grads) {
+      std::vector<T> pts, wts, ns;
+      int num_quad_pts =
+          quadrature.get_quadrature_pts(elem_primary, pts, wts, ns);
+      std::vector<T> N, Nxi;
+      basis.eval_basis_grad(elem_primary, pts, N, Nxi);
+      return std::make_tuple(nnodes_primary, nnodes_secondary, num_quad_pts,
+                             nodes_primary, nodes_secondary, element_xloc, N,
+                             Nxi, element_dof_primary, element_dof_secondary,
+                             element_x, wts, ns);
+    } else {
+      std::vector<T> pts, wts, ns, pts_grad, wts_grad, wns_grad;
+      int num_quad_pts = quadrature.get_quadrature_pts_grad(
+          elem_primary, pts, wts, ns, pts_grad, wts_grad, wns_grad);
+      std::vector<T> N, Nxi, Nxixi;
+      basis.eval_basis_grad(elem_primary, pts, N, Nxi, Nxixi);
+      return std::make_tuple(nnodes_primary, nnodes_secondary, num_quad_pts,
+                             nodes_primary, nodes_secondary, element_xloc, N,
+                             Nxi, Nxixi, element_dof_primary,
+                             element_dof_secondary, element_x, wts, ns,
+                             pts_grad, wts_grad, wns_grad);
+    }
   }
 
   const Mesh& mesh_primary;

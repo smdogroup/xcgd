@@ -184,13 +184,17 @@ T two_sided_LSF_jacobian_adjoint_product_fd_check(
     psi_neg[i] = -psi[i];
   }
 
-  analysis_primary.LSF_jacobian_adjoint_product(dof.data(), psi.data(),
-                                                dfdphi.data());
-  analysis_secondary.LSF_jacobian_adjoint_product(dof.data(), psi_neg.data(),
-                                                  dfdphi.data(), node_offset);
+  // analysis_primary.LSF_jacobian_adjoint_product(dof.data(), psi.data(),
+  //                                               dfdphi.data());
+  // analysis_secondary.LSF_jacobian_adjoint_product(dof.data(), psi_neg.data(),
+  //                                                 dfdphi.data(),
+  //                                                 node_offset);
+  analysis_interface.LSF_jacobian_adjoint_product(dof.data(), psi.data(),
+                                                  dfdphi.data());
 
-  analysis_primary.residual(nullptr, dof.data(), res1.data());
-  analysis_secondary.residual(nullptr, dof.data(), res1.data(), node_offset);
+  // analysis_primary.residual(nullptr, dof.data(), res1.data());
+  // analysis_secondary.residual(nullptr, dof.data(), res1.data(), node_offset);
+  analysis_interface.residual(nullptr, dof.data(), res1.data());
 
   save_mesh(mesh_primary,
             "two_sided_primary_LSF_jacobian_adjoint_product_fd_check_fd1_Np_" +
@@ -213,6 +217,7 @@ T two_sided_LSF_jacobian_adjoint_product_fd_check(
   }
   mesh_primary.update_mesh();
   mesh_secondary.update_mesh();
+  analysis_interface.update_mesh();
 
   save_mesh(mesh_primary,
             "two_sided_primary_LSF_jacobian_adjoint_product_fd_check_fd2_Np_" +
@@ -222,8 +227,9 @@ T two_sided_LSF_jacobian_adjoint_product_fd_check(
       "two_sided_secondary_LSF_jacobian_adjoint_product_fd_check_fd2_Np_" +
           std::to_string(Np_1d) + "_h_" + std::to_string(dh) + ".vtk");
 
-  analysis_primary.residual(nullptr, dof.data(), res2.data());
-  analysis_secondary.residual(nullptr, dof.data(), res2.data(), node_offset);
+  // analysis_primary.residual(nullptr, dof.data(), res2.data());
+  // analysis_secondary.residual(nullptr, dof.data(), res2.data(), node_offset);
+  analysis_interface.residual(nullptr, dof.data(), res2.data());
 
   T fd = 0.0, exact = 0.0;
   for (int i = 0; i < ndv; i++) {

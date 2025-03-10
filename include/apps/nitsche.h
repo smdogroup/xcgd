@@ -162,7 +162,7 @@ class NitscheTwoSidedApp final {
         physics_interface(physics_interface),
         analysis_bulk_m(mesh_m, quadrature_bulk_m, basis_m, physics_bulk_m),
         analysis_bulk_s(mesh_s, quadrature_bulk_s, basis_s, physics_bulk_s),
-        analysis_interface(mesh_m, mesh_s, quadrature_interface, basis,
+        analysis_interface(mesh_m, mesh_s, quadrature_interface, basis_m,
                            physics_interface) {
     update_mesh();
   }

@@ -187,10 +187,30 @@ class GDLSFQuadrature2D final : public QuadratureBase<T, quad_type> {
    * @param wts_grad concatenation of [∂w/∂φ0, ∂w/∂φ1, ...] for each quadrature
    * point, size: num_quad * max_nnodes_per_element
    */
-  int get_quadrature_pts_grad(int elem, std::vector<T>& pts,
-                              std::vector<T>& wts, std::vector<T>& ns,
-                              std::vector<T>& pts_grad,
-                              std::vector<T>& wts_grad) const {
+  inline int get_quadrature_pts_grad(int elem, std::vector<T>& pts,
+                                     std::vector<T>& wts, std::vector<T>& ns,
+                                     std::vector<T>& pts_grad,
+                                     std::vector<T>& wts_grad) const {
+    std::vector<T> dummy;
+    return get_quadrature_pts_grad_impl<false>(elem, pts, wts, ns, pts_grad,
+                                               wts_grad, dummy);
+  }
+  inline int get_quadrature_pts_grad(int elem, std::vector<T>& pts,
+                                     std::vector<T>& wts, std::vector<T>& ns,
+                                     std::vector<T>& pts_grad,
+                                     std::vector<T>& wts_grad,
+                                     std::vector<T>& wns_grad) const {
+    return get_quadrature_pts_grad_impl<false>(elem, pts, wts, ns, pts_grad,
+                                               wts_grad, wns_grad);
+  }
+
+ private:
+  template <bool compute_ns_grad>
+  int get_quadrature_pts_grad_impl(int elem, std::vector<T>& pts,
+                                   std::vector<T>& wts, std::vector<T>& ns,
+                                   std::vector<T>& pts_grad,
+                                   std::vector<T>& wts_grad,
+                                   std::vector<T>& wns_grad) const {
     if (elements.size() and !elements.count(elem)) {
       return 0;
     }
@@ -223,10 +243,13 @@ class GDLSFQuadrature2D final : public QuadratureBase<T, quad_type> {
 
     pts_grad.clear();
     wts_grad.clear();
-    // wns_grad.clear();
     pts_grad.resize(num_quad_pts * spatial_dim * max_nnodes_per_element);
     wts_grad.resize(num_quad_pts * max_nnodes_per_element);
-    // wns_grad.resize(num_quad_pts * spatial_dim * max_nnodes_per_element);
+
+    if constexpr (compute_ns_grad) {
+      wns_grad.clear();
+      wns_grad.resize(num_quad_pts * spatial_dim * max_nnodes_per_element);
+    }
 
     for (int i = 0; i < max_nnodes_per_element; i++) {
       element_lsf_d[i].dpart(1.0);
@@ -249,7 +272,9 @@ class GDLSFQuadrature2D final : public QuadratureBase<T, quad_type> {
         wts_grad[index] = dwts[q];
         for (int d = 0; d < spatial_dim; d++) {
           pts_grad[index * spatial_dim + d] = dpts[q * spatial_dim + d];
-          // wns_grad[index * spatial_dim + d] = dwns[q * spatial_dim + d];
+          if constexpr (compute_ns_grad) {
+            wns_grad[index * spatial_dim + d] = dwns[q * spatial_dim + d];
+          }
         }
       }
     }
@@ -257,7 +282,6 @@ class GDLSFQuadrature2D final : public QuadratureBase<T, quad_type> {
     return num_quad_pts;
   }
 
- private:
   template <typename T2>
   void getQuadrature(const T2 element_lsf[],
                      const VandermondeEvaluator<T, GridMesh_>& eval,
@@ -306,23 +330,25 @@ class GDLSFQuadrature2D final : public QuadratureBase<T, quad_type> {
                                   algoim::bernstein::evalBernsteinPolyGradient(
                                       ipquad.phi.poly(0), x);
 
-                              // Normalize g
-                              T2 nrm = T2(0.0);
+                              T2 nrm2 = T2(0.0);
                               for (int d = 0; d < spatial_dim; d++) {
-                                nrm += g(d) * g(d);
+                                nrm2 += g(d) * g(d);
                               }
-                              nrm = sqrt(nrm);
+                              T2 nrm = sqrt(nrm2);
+
+                              // Normalize g
+                              algoim::uvector<T2, spatial_dim> gn;
                               for (int d = 0; d < spatial_dim; d++) {
-                                g(d) = g(d) / nrm;
+                                gn(d) = g(d) / nrm;
                               }
 
                               for (int d = 0; d < spatial_dim; d++) {
                                 if constexpr (is_dual) {
                                   pts.push_back(x(d).dpart());
-                                  ns.push_back(g(d).dpart());
+                                  ns.push_back(gn(d).dpart());
                                 } else {
                                   pts.push_back(x(d));
-                                  ns.push_back(g(d));
+                                  ns.push_back(gn(d));
                                 }
                               }
                               if constexpr (is_dual) {

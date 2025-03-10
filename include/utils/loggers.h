@@ -50,6 +50,7 @@ class VandermondeCondLogger {
 
   // Get condition number of elem, if elem does not exist, quitely return NaN
   static double get(int elem) {
+    if (!active) return std::numeric_limits<double>::quiet_NaN();
     try {
       return conds.at(elem);
     } catch (const std::out_of_range& e) {

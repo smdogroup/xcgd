@@ -672,8 +672,10 @@ class GalerkinAnalysis final {
             element_psi, &N[offset_n], &Nxi[offset_nxi], get_ptr(psiq),
             get_ptr(pgrad_ref));
 
-        interp_hess<T, Basis>(element_dof, &Nxixi[offset_nxixi], uhess_ref);
-        interp_hess<T, Basis>(element_psi, &Nxixi[offset_nxixi], phess_ref);
+        interp_hess<T, spatial_dim, max_nnodes_per_element, dof_per_node>(
+            element_dof, &Nxixi[offset_nxixi], get_ptr(uhess_ref));
+        interp_hess<T, spatial_dim, max_nnodes_per_element, dof_per_node>(
+            element_psi, &Nxixi[offset_nxixi], get_ptr(phess_ref));
 
         transform(J, ugrad_ref, ugrad);
         transform(J, pgrad_ref, pgrad);
@@ -832,7 +834,8 @@ class GalerkinAnalysis final {
         interp_val_grad<T, spatial_dim, max_nnodes_per_element, dof_per_node>(
             element_dof, &N[offset_n], &Nxi[offset_nxi], get_ptr(uq),
             get_ptr(ugrad_ref));
-        interp_hess<T, Basis>(element_dof, &Nxixi[offset_nxixi], uhess_ref);
+        interp_hess<T, spatial_dim, max_nnodes_per_element, dof_per_node>(
+            element_dof, &Nxixi[offset_nxixi], get_ptr(uhess_ref));
 
         // Transform gradient from ref coordinates to physical coordinates
         transform(J, ugrad_ref, ugrad);
