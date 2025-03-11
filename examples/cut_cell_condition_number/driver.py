@@ -219,7 +219,8 @@ def sweep(
 
 if __name__ == "__main__":
     for use_finite_cell_mesh, ersatz in zip(
-        [True, True, False], ["nitsche", "none", "none"]
+        [True, True, True, False, False],
+        ["direct", "nitsche", "none", "none", "direct"],
     ):
         run_name = f'mesh_{"fc" if use_finite_cell_mesh else "cut"}_ersatz_{ersatz}'
 

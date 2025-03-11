@@ -78,6 +78,7 @@ void generate_stiffness_matrix(int n, int l, double x0, double y0, double r,
   BSRMat* bsr_mat = nullptr;
   CSCMat* csc_mat = nullptr;
 
+  double ersatz_ratio = 1e-5;
   if constexpr (ersatz == ErsatzMethod::None) {
     using Elastic = StaticElastic<T, Mesh, Quadrature, Basis, typeof(int_func)>;
     Elastic elastic(E, nu, mesh, quadrature, basis, int_func);
@@ -89,7 +90,6 @@ void generate_stiffness_matrix(int n, int l, double x0, double y0, double r,
     using ElasticNitsche = NitscheTwoSidedApp<T, Mesh, Quadrature, Basis,
                                               PhysicsBulk, PhysicsInterface>;
 
-    double ersatz_ratio = 1e-5;
     double nitsche_eta = 1e5;
     PhysicsBulk physics_bulk_primary(E, nu, int_func);
     PhysicsBulk physics_bulk_secondary(E * ersatz_ratio, nu, int_func);
@@ -100,6 +100,11 @@ void generate_stiffness_matrix(int n, int l, double x0, double y0, double r,
                                    physics_interface);
 
     bsr_mat = elastic_nitsche.jacobian();
+  } else if constexpr (ersatz == ErsatzMethod::Direct) {
+    using Elastic =
+        StaticElasticErsatz<T, Mesh, Quadrature, Basis, typeof(int_func)>;
+    Elastic elastic(E, nu, mesh, quadrature, basis, int_func, ersatz_ratio);
+    bsr_mat = elastic.jacobian();
   }
   bsr_mat->zero_rows(bc_dof.size(), bc_dof.data());
   csc_mat = SparseUtils::bsr_to_csc(bsr_mat);
@@ -192,12 +197,18 @@ int main(int argc, char* argv[]) {
       execute<true, ErsatzMethod::None>(Np_1d, n, l, x0, y0, r, prefix);
     } else if (ersatz == ErsatzMethod::Nitsche) {
       execute<true, ErsatzMethod::Nitsche>(Np_1d, n, l, x0, y0, r, prefix);
+    } else if (ersatz == ErsatzMethod::Direct) {
+      execute<true, ErsatzMethod::Direct>(Np_1d, n, l, x0, y0, r, prefix);
     }
   } else {
     if (ersatz == ErsatzMethod::Nitsche) {
       throw std::runtime_error("cannot use Nitsche for cut mesh");
+
+    } else if (ersatz == ErsatzMethod::Direct) {
+      execute<false, ErsatzMethod::Direct>(Np_1d, n, l, x0, y0, r, prefix);
+    } else if (ersatz == ErsatzMethod::None) {
+      execute<false, ErsatzMethod::None>(Np_1d, n, l, x0, y0, r, prefix);
     }
-    execute<false, ErsatzMethod::None>(Np_1d, n, l, x0, y0, r, prefix);
   }
 
   return 0;
