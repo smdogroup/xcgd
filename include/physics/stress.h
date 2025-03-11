@@ -95,6 +95,7 @@ class LinearElasticity2DStrainStress final : public PhysicsBase<T, 2, 0, 2> {
         return E(0, 1);
       }
     }
+    return T(0.0);
   }
 
   void residual(T weight, T _, A2D::Vec<T, spatial_dim>& xloc,
