@@ -531,7 +531,7 @@ class LinearElasticityInterface final
         lambda_secondary(E_secondary * nu_secondary /
                          ((1.0 + nu_secondary) * (1.0 - nu_secondary))) {}
 
-  T energy(T weight, T _, A2D::Vec<T, spatial_dim>& xloc,
+  T energy(T weight, T _, A2D::Vec<T, spatial_dim>& __,
            A2D::Vec<T, spatial_dim>& nrm_ref,
            A2D::Mat<T, spatial_dim, spatial_dim>& J,
            A2D::Vec<T, dof_per_node>& u_primary,
@@ -592,7 +592,7 @@ class LinearElasticityInterface final
   }
 
   void residual(
-      T weight, T _, A2D::Vec<T, spatial_dim>& xloc,
+      T weight, T _, A2D::Vec<T, spatial_dim>& __,
       A2D::Vec<T, spatial_dim>& nrm_ref,
       A2D::Mat<T, spatial_dim, spatial_dim>& J,
       A2D::Vec<T, dof_per_node>& u_primary,
@@ -683,7 +683,7 @@ class LinearElasticityInterface final
   }
 
   void jacobian_product(
-      T weight, T _, A2D::Vec<T, spatial_dim>& xloc,
+      T weight, T _, A2D::Vec<T, spatial_dim>& __,
       A2D::Vec<T, spatial_dim>& nrm_ref,
       A2D::Mat<T, spatial_dim, spatial_dim>& J,
       A2D::Vec<T, dof_per_node>& u_primary,
@@ -782,8 +782,17 @@ class LinearElasticityInterface final
     // }
   }
 
+  void normal_jacobian_product(
+      T weight, T _, A2D::Vec<T, spatial_dim>& __,
+      A2D::Vec<T, spatial_dim>& nrm_ref,
+      A2D::Mat<T, spatial_dim, spatial_dim>& J,
+      A2D::Vec<T, dof_per_node>& u_primary,
+      A2D::Vec<T, dof_per_node>& u_secondary,
+      A2D::Mat<T, dof_per_node, spatial_dim>& grad_primary,
+      A2D::Mat<T, dof_per_node, spatial_dim>& grad_secondary) const {}
+
   void jacobian(
-      T weight, T _, A2D::Vec<T, spatial_dim>& xloc,
+      T weight, T _, A2D::Vec<T, spatial_dim>& __,
       A2D::Vec<T, spatial_dim>& nrm_ref,
       A2D::Mat<T, spatial_dim, spatial_dim>& J,
       A2D::Vec<T, dof_per_node>& u_primary,

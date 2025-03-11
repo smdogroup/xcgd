@@ -151,6 +151,7 @@ def plot_mesh(prefix, Np_1d: int, nxy: int, use_finite_cell_mesh: bool, cell: in
 
 
 def sweep(
+    run_name,
     ax,
     Np_1d=2,
     exp_max=-1.0,
@@ -158,7 +159,12 @@ def sweep(
     num_pts=10,
     nelems=33,
     use_finite_cell_mesh=False,
+    ersatz="none",
 ):
+
+    if not os.path.isdir(run_name):
+        os.mkdir(run_name)
+
     n = nelems
     l = 1.0
     h = l / n
@@ -170,10 +176,14 @@ def sweep(
 
     for i, d in enumerate(tqdm(np.logspace(exp_max, exp_min, num_pts))):
         r = r0_max - d * h
-        prefix = "cond_study_p_%s_%d_%d" % (
-            "fcell" if use_finite_cell_mesh else "cut",
-            p,
-            i,
+        prefix = os.path.join(
+            run_name,
+            "cond_study_p_%s_%d_%d"
+            % (
+                "fcell" if use_finite_cell_mesh else "cut",
+                p,
+                i,
+            ),
         )
         cmd = [
             "./condition_number",
@@ -185,6 +195,7 @@ def sweep(
             "--r=%.10f" % r,
             "--prefix=%s" % prefix,
             "--use-finite-cell-mesh=%d" % int(use_finite_cell_mesh),
+            "--ersatz-method=%s" % ersatz,
         ]
         output = subprocess.run(cmd, capture_output=True)
 
@@ -207,10 +218,15 @@ def sweep(
 
 
 if __name__ == "__main__":
-    for use_finite_cell_mesh in [True, False]:
+    for use_finite_cell_mesh, ersatz in zip(
+        [True, True, False], ["nitsche", "none", "none"]
+    ):
+        run_name = f'mesh_{"fc" if use_finite_cell_mesh else "cut"}_ersatz_{ersatz}'
+
         fig, ax = plt.subplots()
         for Np_1d in [2, 4, 6]:
             sweep(
+                run_name=run_name,
                 ax=ax,
                 Np_1d=Np_1d,
                 exp_max=-1.0,
@@ -218,6 +234,7 @@ if __name__ == "__main__":
                 num_pts=10,
                 nelems=10,
                 use_finite_cell_mesh=use_finite_cell_mesh,
+                ersatz=ersatz,
             )
 
         ax.set_xlabel(r"$dh$")
@@ -226,5 +243,8 @@ if __name__ == "__main__":
         ax.invert_xaxis()
         ax.legend()
         plt.savefig(
-            f"condition_number_study_{'fcell' if use_finite_cell_mesh else 'cut'}.pdf"
+            os.path.join(
+                run_name,
+                f"condition_number_study_{'fcell' if use_finite_cell_mesh else 'cut'}.pdf",
+            )
         )
