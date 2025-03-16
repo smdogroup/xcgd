@@ -48,15 +48,12 @@ class SurfaceIntegration final : public PhysicsBase<T, spatial_dim, 0, 1> {
            A2D::Vec<T, spatial_dim>& ___) const {
     T dt_val[spatial_dim] = {nrm_ref[1], -nrm_ref[0]};
 
-    A2D::Mat<T, spatial_dim, spatial_dim> JTJ;
     A2D::Vec<T, spatial_dim> dt(dt_val);
-    A2D::Vec<T, spatial_dim> JTJdt;
+    A2D::Vec<T, spatial_dim> Jdt;
 
     T scale;
-    A2D::MatMatMult<A2D::MatOp::TRANSPOSE, A2D::MatOp::NORMAL>(J, J, JTJ);
-    A2D::MatVecMult(JTJ, dt, JTJdt);
-    A2D::VecDot(dt, JTJdt, scale);
-    scale = sqrt(scale);
+    A2D::MatVecMult(J, dt, Jdt);
+    A2D::VecNorm(Jdt, scale);
 
     return weight * scale * val;
   }

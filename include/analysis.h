@@ -449,7 +449,7 @@ class GalerkinAnalysis final {
         physics.adjoint_jacobian_product(wts[j], xq, xloc, nrm_ref, J, vals,
                                          grad, psi_vals, psi_grad, dv_val);
 
-        add_jac_adj_product<T, Basis>(&N[offset_n], dv_val, element_dfdx);
+        add_jac_adj_product_bulk<T, Basis>(&N[offset_n], dv_val, element_dfdx);
       }
 
       add_element_dfdx<T, Basis>(nnodes, nodes, element_dfdx, dfdx);
@@ -685,13 +685,10 @@ class GalerkinAnalysis final {
         typename Physics::dof_t jp_uq{};        // ∂2e/∂uq2 * psiq
         typename Physics::grad_t jp_ugrad{};    // ∂2e/∂(∇_x)uq2 * (∇_x)psiq
 
-        T detJ;
-        A2D::MatDet(J, detJ);
-
-        physics.residual(1.0 / detJ, 0.0, xloc, nrm_ref, J, uq, ugrad, coef_uq,
+        physics.residual(wts[j], 0.0, xloc, nrm_ref, J, uq, ugrad, coef_uq,
                          coef_ugrad);
-        physics.jacobian_product(1.0 / detJ, 0.0, xloc, nrm_ref, J, uq, ugrad,
-                                 psiq, pgrad, jp_uq, jp_ugrad);
+        physics.jacobian_product(wts[j], 0.0, xloc, nrm_ref, J, uq, ugrad, psiq,
+                                 pgrad, jp_uq, jp_ugrad);
 
         typename Physics::grad_t coef_ugrad_ref{};  // ∂e/∂(∇_ξ)uq
         typename Physics::grad_t jp_ugrad_ref{};    // ∂2e/∂(∇_ξ)uq2 * (∇_ξ)psiq
@@ -704,8 +701,8 @@ class GalerkinAnalysis final {
         int offset_wts = j * max_nnodes_per_element;
         int offset_pts = j * max_nnodes_per_element * spatial_dim;
 
-        add_jac_adj_product<T, Basis>(
-            wts[j], detJ, &wts_grad[offset_wts], &pts_grad[offset_pts], psiq,
+        add_jac_adj_product_bulk<T, Basis>(
+            wts[j], &wts_grad[offset_wts], &pts_grad[offset_pts], psiq,
             ugrad_ref, pgrad_ref, uhess_ref, phess_ref, coef_uq, coef_ugrad_ref,
             jp_uq, jp_ugrad_ref, element_dfdphi.data());
       }

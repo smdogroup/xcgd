@@ -108,6 +108,18 @@ class InterfacePhysicsBase {
         "jacobian_product() for your physics is not implemented");
   }
 
+  // similar to jacobian_product but evaluates derivatives with respect to
+  // nrm_ref in additional to vals and grad
+  virtual void extended_jacobian_product(
+      T weight, dv_t dv, xloc_t& xloc, nrm_t& nrm_ref, J_t& J, dof_t& vals_m,
+      dof_t& vals_s, grad_t& grad_m, grad_t& grad_s, dof_t& direct_vals_m,
+      dof_t& direct_vals_s, grad_t& direct_grad_m, grad_t& direct_grad_s,
+      dof_t& coef_vals_m, dof_t& coef_vals_s, grad_t& coef_grad_m,
+      grad_t& coef_grad_s, nrm_t& coef_nrm_ref) const {
+    throw NotImplemented(
+        "jacobian_product() for your physics is not implemented");
+  }
+
   /**
    * @brief At a quadrature point, evaluate ∂/∂x(ψ^T * ∂e/∂u)
    *

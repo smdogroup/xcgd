@@ -719,27 +719,31 @@ void add_jac_adj_product(const T N[], const T &x_val, T elem_dfdx[]) {
  *
  * Note: this function only works for the Galerkin difference basis
  *
+ * Note: this is intended to work with bulk integration, for interface
+ * integration use add_jac_adj_product_surf instead
+ *
  * @tparam T numeric type
  * @tparam GDBasis a GD Basis specialization
  * @tparam dim number of dof components at each dof node
- * @param weight quadrature weight
- * @param detJ determinant of the Jacobian transformation matrix a the quad pt
- * @param wts_grad derivatives of quadrature weight w.r.t. nodal phi
- * @param pts_grad derivatives of the quadrature point w.r.t. nodal phi
- * @param psiq adjoint variable at the quadrature point
- * @param ugrad_ref (∇_ξ)uq
- * @param pgrad_ref (∇_ξ)ψq
- * @param uhess_ref (∇2_ξ)uq
- * @param phess_ref (∇2_ξ)ψq
- * @param coef_uq ∂e/∂uq
- * @param coef_ugrad_ref ∂e/∂(∇_ξ)uq
- * @param jp_uq ∂2e/∂uq2 * ψq
- * @param jp_ugrad_ref ∂2e/∂(∇_ξ)uq2 * ψq
- * @param elem_dfdphi output, element vector of ψ^T * dR/dφ
+ * @param [in] weight quadrature weight
+ * @param [in] detJ determinant of Jacobian transformation matrix a the quad pt
+ * @param [in] wts_grad derivatives of quadrature weight w.r.t. nodal phi
+ * @param [in] pts_grad derivatives of the quadrature point w.r.t. nodal phi
+ * @param [in] psiq adjoint variable at the quadrature point, (dim,)
+ * @param [in] ugrad_ref (∇_ξ)uq, (dim, spatial_dim)
+ * @param [in] pgrad_ref (∇_ξ)ψq, (dim, spatial_dim)
+ * @param [in] uhess_ref (∇2_ξ)uq, (dim, spatial_dim * spatial_dim)
+ * @param [in] phess_ref (∇2_ξ)ψq, (dim, spatial_dim * spatial_dim)
+ * @param [in] coef_uq ∂e/∂uq, (dim,)
+ * @param [in] coef_ugrad_ref ∂e/∂(∇_ξ)uq, (dim, spatial_dim)
+ * @param [in] jp_uq ∂2e/∂uq2 * ψq, (dim)
+ * @param [in] jp_ugrad_ref ∂2e/∂(∇_ξ)uq2 * ψq, (dim, spatial_dim)
+ * @param [out] elem_dfdphi element vector of ψ^T * dR/dφ,
+ * (max_nnodes_per_element,)
  */
 template <typename T, class GDBasis, int dim>
-void add_jac_adj_product(
-    T weight, T detJ, const T wts_grad[], const T pts_grad[],
+void add_jac_adj_product_bulk(
+    T weight, const T wts_grad[], const T pts_grad[],
     const A2D::Vec<T, dim> &psiq,
     const A2D::Mat<T, dim, GDBasis::spatial_dim> &ugrad_ref,
     const A2D::Mat<T, dim, GDBasis::spatial_dim> &pgrad_ref,
@@ -807,18 +811,15 @@ void add_jac_adj_product(
     }
   }
 
-  T wdetJ = weight * detJ;
-
   for (int n = 0; n < max_nnodes_per_element; n++) {
     // AJP_{1,n}
-    elem_dfdphi[n] += detJ * dedu_psi * wts_grad[n];
+    elem_dfdphi[n] += dedu_psi * wts_grad[n] / weight;
 
     // AJP_{2,n} is assumed zero
 
     // AJP_{3,n}
     for (int d = 0; d < spatial_dim; d++) {
       elem_dfdphi[n] +=
-          wdetJ *
           (jvp_ugrad(d) + jvp_uhess(d) + deriv_grad(d) + deriv_hess(d)) *
           pts_grad[spatial_dim * n + d];
     }
@@ -827,8 +828,8 @@ void add_jac_adj_product(
 
 // dim == 1
 template <typename T, class GDBasis>
-void add_jac_adj_product(
-    T weight, T detJ, const T wts_grad[], const T pts_grad[], T psiq,
+void add_jac_adj_product_bulk(
+    T weight, const T wts_grad[], const T pts_grad[], T psiq,
     const A2D::Vec<T, GDBasis::spatial_dim> &ugrad_ref,
     const A2D::Vec<T, GDBasis::spatial_dim> &pgrad_ref,
     const A2D::Vec<T, GDBasis::spatial_dim * GDBasis::spatial_dim> &uhess_ref,
@@ -877,6 +878,80 @@ void add_jac_adj_product(
     }
   }
 
+  for (int n = 0; n < max_nnodes_per_element; n++) {
+    // AJP_{1,n}
+    elem_dfdphi[n] += dedu_psi * wts_grad[n] / weight;
+
+    // AJP_{2,n} is assumed zero
+
+    // AJP_{3,n}
+    for (int d = 0; d < spatial_dim; d++) {
+      elem_dfdphi[n] +=
+          (jvp_ugrad(d) + jvp_uhess(d) + deriv_grad(d) + deriv_hess(d)) *
+          pts_grad[spatial_dim * n + d];
+    }
+  }
+}
+
+template <typename T, int spatial_dim, int max_nnodes_per_element, int dim>
+void add_jac_adj_product_bulk_deprecated(
+    T weight, T detJ, const T wts_grad[], const T pts_grad[], const T *psiq,
+    const T *ugrad_ref, const T *pgrad_ref, const T *uhess_ref,
+    const T *phess_ref, const T *coef_uq, const T *coef_ugrad_ref,
+    const T *jp_uq, const T *jp_ugrad_ref, T elem_dfdphi[]) {
+  constexpr int s2 = spatial_dim * spatial_dim;
+
+  // ∂e/∂u * ψ
+  // = ∂e/∂uq * ψq + ∂e/∂(∇_ξ)uq * (∇_ξ)ψq
+  T dedu_psi = 0.0;
+  for (int i = 0; i < dim; i++) {
+    dedu_psi += coef_uq[i] * psiq[i];
+    for (int d = 0; d < spatial_dim; d++) {
+      dedu_psi +=
+          coef_ugrad_ref[i * spatial_dim + d] * pgrad_ref[i * spatial_dim + d];
+    }
+  }
+
+  // Jacobian-vector product times ugrad
+  // ∂2e/∂uq2 * ψq * ∇uq
+  A2D::Vec<T, spatial_dim> jvp_ugrad{};
+  for (int j = 0; j < dim; j++) {
+    for (int d = 0; d < spatial_dim; d++) {
+      jvp_ugrad(d) += jp_uq[j] * ugrad_ref[j * spatial_dim + d];
+    }
+  }
+
+  // Jacobian-vector product times hess
+  // ∂2e/∂uq2 * ∇ψq * ∇2uq
+  A2D::Vec<T, spatial_dim> jvp_uhess{};
+  for (int j = 0; j < dim; j++) {
+    for (int d = 0; d < spatial_dim; d++) {
+      for (int dd = 0; dd < spatial_dim; dd++) {
+        jvp_uhess(dd) += jp_ugrad_ref[j * spatial_dim + d] *
+                         uhess_ref[j * s2 + d * spatial_dim + dd];
+      }
+    }
+  }
+
+  // ∂e/∂uq * ∇ψq
+  A2D::Vec<T, spatial_dim> deriv_grad{};
+  for (int i = 0; i < dim; i++) {
+    for (int d = 0; d < spatial_dim; d++) {
+      deriv_grad(d) += coef_uq[i] * pgrad_ref[i * spatial_dim + d];
+    }
+  }
+
+  // ∂e/∂∇uq * ∇2ψq
+  A2D::Vec<T, spatial_dim> deriv_hess{};
+  for (int i = 0; i < dim; i++) {
+    for (int d = 0; d < spatial_dim; d++) {
+      for (int dd = 0; dd < spatial_dim; dd++) {
+        deriv_hess(dd) += coef_ugrad_ref[i * spatial_dim + d] *
+                          phess_ref[i * s2 + d * spatial_dim + dd];
+      }
+    }
+  }
+
   T wdetJ = weight * detJ;
 
   for (int n = 0; n < max_nnodes_per_element; n++) {
@@ -891,6 +966,124 @@ void add_jac_adj_product(
           wdetJ *
           (jvp_ugrad(d) + jvp_uhess(d) + deriv_grad(d) + deriv_hess(d)) *
           pts_grad[spatial_dim * n + d];
+    }
+  }
+}
+
+template <typename T, class GDBasis, int dim>
+void add_jac_adj_product_surf(
+    T weight, T cq, const T wts_grad[], const T pts_grad[], const T wns_grad[],
+    const A2D::Vec<T, GDBasis::spatial_dim> RTJTJdt,
+    const A2D::Vec<T, dim> &psiq,
+    const A2D::Mat<T, dim, GDBasis::spatial_dim> &ugrad_ref,
+    const A2D::Mat<T, dim, GDBasis::spatial_dim> &pgrad_ref,
+    const A2D::Mat<T, dim, GDBasis::spatial_dim * GDBasis::spatial_dim>
+        &uhess_ref,
+    const A2D::Mat<T, dim, GDBasis::spatial_dim * GDBasis::spatial_dim>
+        &phess_ref,
+    const A2D::Vec<T, dim> &coef_uq,
+    const A2D::Mat<T, dim, GDBasis::spatial_dim> &coef_ugrad_ref,
+    const A2D::Vec<T, dim> &jp_uq,
+    const A2D::Mat<T, dim, GDBasis::spatial_dim> &jp_ugrad_ref,
+    const A2D::Vec<T, GDBasis::spatial_dim> &jp_nrm_ref, T elem_dfdphi[]) {
+  static_assert(GDBasis::is_gd_basis, "This method only works with GD Basis");
+
+  static constexpr int spatial_dim = GDBasis::spatial_dim;
+  static constexpr int max_nnodes_per_element = GDBasis::max_nnodes_per_element;
+
+  // ∂e/∂u * ψ
+  // = ∂e/∂uq * ψq + ∂e/∂(∇_ξ)uq * (∇_ξ)ψq
+  T dedu_psi = 0.0;
+  for (int i = 0; i < dim; i++) {
+    dedu_psi += coef_uq(i) * psiq(i);
+    for (int d = 0; d < spatial_dim; d++) {
+      dedu_psi += coef_ugrad_ref(i, d) * pgrad_ref(i, d);
+    }
+  }
+
+  // Jacobian-vector product times ugrad
+  // ∂2e/∂uq2 * ψq * ∇uq
+  A2D::Vec<T, spatial_dim> jvp_ugrad{};
+  for (int j = 0; j < dim; j++) {
+    for (int d = 0; d < spatial_dim; d++) {
+      jvp_ugrad(d) += jp_uq(j) * ugrad_ref(j, d);
+    }
+  }
+
+  // Jacobian-vector product times hess
+  // ∂2e/∂uq2 * ∇ψq * ∇2uq
+  A2D::Vec<T, spatial_dim> jvp_uhess{};
+  for (int j = 0; j < dim; j++) {
+    for (int d = 0; d < spatial_dim; d++) {
+      for (int dd = 0; dd < spatial_dim; dd++) {
+        jvp_uhess(dd) +=
+            jp_ugrad_ref(j, d) * uhess_ref(j, d * spatial_dim + dd);
+      }
+    }
+  }
+
+  // ∂e/∂uq * ∇ψq
+  A2D::Vec<T, spatial_dim> deriv_grad{};
+  for (int i = 0; i < dim; i++) {
+    for (int d = 0; d < spatial_dim; d++) {
+      deriv_grad(d) += coef_uq(i) * pgrad_ref(i, d);
+    }
+  }
+
+  // ∂e/∂∇uq * ∇2ψq
+  A2D::Vec<T, spatial_dim> deriv_hess{};
+  for (int i = 0; i < dim; i++) {
+    for (int d = 0; d < spatial_dim; d++) {
+      for (int dd = 0; dd < spatial_dim; dd++) {
+        deriv_hess(dd) +=
+            coef_ugrad_ref(i, d) * phess_ref(i, d * spatial_dim + dd);
+      }
+    }
+  }
+
+  // T wcq = weight * cq;
+  // T w_over_cq = weight / cq;
+
+  for (int n = 0; n < max_nnodes_per_element; n++) {
+    // AJP_{1,n}
+    // TODO: delete
+    elem_dfdphi[n] += dedu_psi * wts_grad[n];
+    // TODO: revert
+    // elem_dfdphi[n] += dedu_psi * wts_grad[n] * cq;
+
+    // for (int d = 0; d < spatial_dim; d++) {
+    //   // TODO: delete
+    //   elem_dfdphi[n] += weight / cq / cq * RTJTJdt(d) *
+    //                     wns_grad[spatial_dim * n + d] * dedu_psi;
+    //   // TODO: revert
+    //   // elem_dfdphi[n] +=
+    //   //     w_over_cq * RTJTJdt(d) * wns_grad[spatial_dim * n + d] *
+    //   dedu_psi;
+    // }
+
+    // AJP_{2,n} is assumed zero
+
+    // AJP_{3,n}
+    for (int d = 0; d < spatial_dim; d++) {
+      // // TODO: delete
+      // elem_dfdphi[n] +=
+      //     weight *
+      //     (jvp_ugrad(d) + jvp_uhess(d) + deriv_grad(d) + deriv_hess(d)) *
+      //     pts_grad[spatial_dim * n + d];
+
+      // TODO: delete
+      elem_dfdphi[n] +=
+          weight *
+          ((jvp_ugrad(d) + jvp_uhess(d) + deriv_grad(d) + deriv_hess(d)) *
+               pts_grad[spatial_dim * n + d] +
+           jp_nrm_ref(d) * wns_grad[spatial_dim * n + d]);
+
+      // TODO: revert
+      // elem_dfdphi[n] +=
+      //     wcq * ((jvp_ugrad(d) + jvp_uhess(d) + deriv_grad(d) +
+      //     deriv_hess(d)) *
+      //                pts_grad[spatial_dim * n + d] +
+      //            jp_nrm_ref(d) * wns_grad[spatial_dim * n + d]);
     }
   }
 }

@@ -200,8 +200,8 @@ class GDLSFQuadrature2D final : public QuadratureBase<T, quad_type> {
                                      std::vector<T>& pts_grad,
                                      std::vector<T>& wts_grad,
                                      std::vector<T>& wns_grad) const {
-    return get_quadrature_pts_grad_impl<false>(elem, pts, wts, ns, pts_grad,
-                                               wts_grad, wns_grad);
+    return get_quadrature_pts_grad_impl<true>(elem, pts, wts, ns, pts_grad,
+                                              wts_grad, wns_grad);
   }
 
  private:
