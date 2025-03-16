@@ -610,11 +610,19 @@ class LinearElasticityInterface final
     rot(1, 0) = 1.0;
     A2D::MatVecMult(rot, nrm_ref, tan_ref);
 
+    A2D::Vec<T, spatial_dim> debug_nrm;
+    debug_nrm(0) = 0.123;
+    debug_nrm(1) = 0.456;
+
+    A2D::Vec<T, spatial_dim> debug_tan;
+    A2D::MatVecMult(rot, debug_nrm, debug_tan);
+
     // Prepare passive quantities: Compute the scaling from ref frame to
     // physical frame
     T cq;  // frame transform scaling
     A2D::Vec<T, spatial_dim> Jdt;
-    A2D::MatVecMult(J, tan_ref, Jdt);
+    // A2D::MatVecMult(J, tan_ref, Jdt);  // TODO: revert
+    A2D::MatVecMult(J, debug_tan, Jdt);  // TODO: delete
     A2D::VecNorm(Jdt, cq);
 
     // Prepare passive quantities: Normalize surface normal vector
@@ -638,10 +646,6 @@ class LinearElasticityInterface final
         Sn_secondary_obj;
     A2D::ADObj<T> uTSn_primary_obj, uTSn_secondary_obj, dot_obj, output_obj;
 
-    A2D::Vec<T, spatial_dim> debug_vec;
-    debug_vec(0) = 0.123;
-    debug_vec(1) = 0.456;
-
     auto stack = A2D::MakeStack(
         A2D::MatGreenStrain<A2D::GreenStrainType::LINEAR>(grad_primary_obj,
                                                           E_primary_obj),
@@ -653,8 +657,10 @@ class LinearElasticityInterface final
                           S_secondary_obj),
         A2D::VecSum(1.0, u_primary_obj, -1.0, u_secondary_obj,
                     u_diff_obj),  // u_diff = u_primary - u_secondary
-        A2D::MatVecMult(S_primary_obj, nrm, Sn_primary_obj),
-        A2D::MatVecMult(S_secondary_obj, nrm, Sn_secondary_obj),
+        // A2D::MatVecMult(S_primary_obj, nrm, Sn_primary_obj),
+        // A2D::MatVecMult(S_secondary_obj, nrm, Sn_secondary_obj),
+        A2D::MatVecMult(S_primary_obj, debug_nrm, Sn_primary_obj),
+        A2D::MatVecMult(S_secondary_obj, debug_nrm, Sn_secondary_obj),
         A2D::VecDot(u_diff_obj, Sn_primary_obj, uTSn_primary_obj),
         A2D::VecDot(u_diff_obj, Sn_secondary_obj, uTSn_secondary_obj),
         A2D::VecDot(u_diff_obj, u_diff_obj, dot_obj),
@@ -727,9 +733,17 @@ class LinearElasticityInterface final
     A2D::A2DObj<A2D::Vec<T, spatial_dim>> tan_ref_obj;
     A2D::A2DObj<A2D::Vec<T, spatial_dim>> Jdt_obj;
 
-    A2D::Vec<T, spatial_dim> debug_vec;
-    debug_vec(0) = 0.123;
-    debug_vec(1) = 0.456;
+    A2D::Vec<T, spatial_dim> debug_nrm;
+    debug_nrm(0) = 0.123;
+    debug_nrm(1) = 0.456;
+
+    A2D::Vec<T, spatial_dim> debug_tan;
+    A2D::MatVecMult(rot, debug_nrm, debug_tan);
+
+    T debug_cq;
+    A2D::Vec<T, spatial_dim> debug_Jdt;
+    A2D::MatVecMult(J, debug_tan, debug_Jdt);
+    A2D::VecNorm(debug_Jdt, debug_cq);
 
     auto stack = A2D::MakeStack(
         A2D::MatVecMult(rot, nrm_ref_obj, tan_ref_obj),
@@ -747,12 +761,15 @@ class LinearElasticityInterface final
                           S_secondary_obj),
         A2D::VecSum(1.0, u_primary_obj, -1.0, u_secondary_obj,
                     u_diff_obj),  // u_diff = u_primary - u_secondary
-        A2D::MatVecMult(S_primary_obj, nrm_normalized_obj, Sn_primary_obj),
-        A2D::MatVecMult(S_secondary_obj, nrm_normalized_obj, Sn_secondary_obj),
+        // A2D::MatVecMult(S_primary_obj, nrm_normalized_obj, Sn_primary_obj),
+        // A2D::MatVecMult(S_secondary_obj, nrm_normalized_obj,
+        // Sn_secondary_obj),
+        A2D::MatVecMult(S_primary_obj, debug_nrm, Sn_primary_obj),
+        A2D::MatVecMult(S_secondary_obj, debug_nrm, Sn_secondary_obj),
         A2D::VecDot(u_diff_obj, Sn_primary_obj, uTSn_primary_obj),
         A2D::VecDot(u_diff_obj, Sn_secondary_obj, uTSn_secondary_obj),
         A2D::VecDot(u_diff_obj, u_diff_obj, dot_obj),
-        A2D::Eval(weight * scale_obj *
+        A2D::Eval(weight * debug_cq *
                       (-0.5 * (uTSn_primary_obj + uTSn_secondary_obj) +
                        0.25 * eta *
                            (lambda_primary + mu_primary + lambda_secondary +

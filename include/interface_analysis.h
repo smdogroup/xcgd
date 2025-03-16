@@ -629,13 +629,12 @@ class InterfaceGalerkinAnalysis final {
             coef_uq_primary, coef_ugrad_ref_primary, jp_uq_primary,
             jp_ugrad_ref_primary, jp_nrm_ref, element_dfdphi.data());
 
-        // add_jac_adj_product_surf<T, Basis>(
-        //     wts[j], cq, &wts_grad[offset_wts], &pts_grad[offset_pts],
-        //     &wns_grad[offset_wns], RTJTJdt, psiq_secondary,
-        //     ugrad_ref_secondary, pgrad_ref_secondary, uhess_ref_secondary,
-        //     phess_ref_secondary, coef_uq_secondary, coef_ugrad_ref_secondary,
-        //     jp_uq_secondary, jp_ugrad_ref_secondary, jp_nrm_ref,
-        //     element_dfdphi.data());
+        add_jac_adj_product_surf<T, Basis>(
+            wts[j], cq, &wts_grad[offset_wts], &pts_grad[offset_pts],
+            &wns_grad[offset_wns], RTJTJdt, psiq_secondary, ugrad_ref_secondary,
+            pgrad_ref_secondary, uhess_ref_secondary, phess_ref_secondary,
+            coef_uq_secondary, coef_ugrad_ref_secondary, jp_uq_secondary,
+            jp_ugrad_ref_secondary, jp_nrm_ref, element_dfdphi.data());
       }
 
       const auto& lsf_mesh = mesh_primary.get_lsf_mesh();
