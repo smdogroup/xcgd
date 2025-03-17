@@ -1051,15 +1051,15 @@ void add_jac_adj_product_surf(
     // TODO: revert
     // elem_dfdphi[n] += dedu_psi * wts_grad[n] * cq;
 
-    // for (int d = 0; d < spatial_dim; d++) {
-    //   // TODO: delete
-    //   elem_dfdphi[n] += weight / cq / cq * RTJTJdt(d) *
-    //                     wns_grad[spatial_dim * n + d] * dedu_psi;
-    //   // TODO: revert
-    //   // elem_dfdphi[n] +=
-    //   //     w_over_cq * RTJTJdt(d) * wns_grad[spatial_dim * n + d] *
-    //   dedu_psi;
-    // }
+    for (int d = 0; d < spatial_dim; d++) {
+      // TODO: delete
+      elem_dfdphi[n] += weight / cq / cq * RTJTJdt(d) *
+                        wns_grad[spatial_dim * n + d] * dedu_psi;
+      // TODO: revert
+      // elem_dfdphi[n] +=
+      //     w_over_cq * RTJTJdt(d) * wns_grad[spatial_dim * n + d] *
+      // dedu_psi;
+    }
 
     // AJP_{2,n} is assumed zero
 

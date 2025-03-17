@@ -614,15 +614,15 @@ class LinearElasticityInterface final
     debug_nrm(0) = 0.123;
     debug_nrm(1) = 0.456;
 
-    A2D::Vec<T, spatial_dim> debug_tan;
-    A2D::MatVecMult(rot, debug_nrm, debug_tan);
+    // A2D::Vec<T, spatial_dim> debug_tan;
+    // A2D::MatVecMult(rot, debug_nrm, debug_tan);
 
     // Prepare passive quantities: Compute the scaling from ref frame to
     // physical frame
     T cq;  // frame transform scaling
     A2D::Vec<T, spatial_dim> Jdt;
-    // A2D::MatVecMult(J, tan_ref, Jdt);  // TODO: revert
-    A2D::MatVecMult(J, debug_tan, Jdt);  // TODO: delete
+    A2D::MatVecMult(J, tan_ref, Jdt);  // TODO: revert
+    // A2D::MatVecMult(J, debug_tan, Jdt);  // TODO: delete
     A2D::VecNorm(Jdt, cq);
 
     // Prepare passive quantities: Normalize surface normal vector
@@ -646,6 +646,13 @@ class LinearElasticityInterface final
         Sn_secondary_obj;
     A2D::ADObj<T> uTSn_primary_obj, uTSn_secondary_obj, dot_obj, output_obj;
 
+    // // Debug
+    // A2D::Vec<T, dof_per_node> debug_ones;
+    // for (int i = 0; i < dof_per_node; i++) {
+    //   debug_ones(i) = 1.0;
+    // }
+    // A2D::ADObj<T> debug_u_primary_l1_obj;
+
     auto stack = A2D::MakeStack(
         A2D::MatGreenStrain<A2D::GreenStrainType::LINEAR>(grad_primary_obj,
                                                           E_primary_obj),
@@ -664,6 +671,8 @@ class LinearElasticityInterface final
         A2D::VecDot(u_diff_obj, Sn_primary_obj, uTSn_primary_obj),
         A2D::VecDot(u_diff_obj, Sn_secondary_obj, uTSn_secondary_obj),
         A2D::VecDot(u_diff_obj, u_diff_obj, dot_obj),
+        // A2D::VecDot(u_primary_obj, debug_ones, debug_u_primary_l1_obj),
+        // A2D::Eval(weight * debug_u_primary_l1_obj * cq, output_obj)
         A2D::Eval(weight * cq *
                       (-0.5 * (uTSn_primary_obj + uTSn_secondary_obj) +
                        0.25 * eta *
@@ -729,7 +738,7 @@ class LinearElasticityInterface final
         Sn_secondary_obj;
     A2D::A2DObj<T> uTSn_primary_obj, uTSn_secondary_obj, dot_obj, output_obj;
 
-    A2D::A2DObj<T> scale_obj;
+    A2D::A2DObj<T> cq_obj;
     A2D::A2DObj<A2D::Vec<T, spatial_dim>> tan_ref_obj;
     A2D::A2DObj<A2D::Vec<T, spatial_dim>> Jdt_obj;
 
@@ -745,10 +754,23 @@ class LinearElasticityInterface final
     A2D::MatVecMult(J, debug_tan, debug_Jdt);
     A2D::VecNorm(debug_Jdt, debug_cq);
 
+    T cq_passive;  // frame transform scaling
+    A2D::Vec<T, spatial_dim> tan_ref_passive, Jdt_passive;
+    A2D::MatVecMult(rot, nrm_ref, tan_ref_passive);
+    A2D::MatVecMult(J, tan_ref_passive, Jdt_passive);  // TODO: revert
+    // A2D::MatVecMult(J, debug_tan, Jdt);  // TODO: delete
+    A2D::VecNorm(Jdt_passive, cq_passive);
+
+    // // Debug
+    // A2D::Vec<T, dof_per_node> debug_ones;
+    // for (int i = 0; i < dof_per_node; i++) {
+    //   debug_ones(i) = 1.0;
+    // }
+    // A2D::A2DObj<T> debug_u_primary_l1_obj;
+
     auto stack = A2D::MakeStack(
         A2D::MatVecMult(rot, nrm_ref_obj, tan_ref_obj),
-        A2D::MatVecMult(J, tan_ref_obj, Jdt_obj),
-        A2D::VecNorm(Jdt_obj, scale_obj),
+        A2D::MatVecMult(J, tan_ref_obj, Jdt_obj), A2D::VecNorm(Jdt_obj, cq_obj),
         A2D::MatVecMult(J, nrm_ref_obj, nrm_obj),
         A2D::VecNormalize(nrm_obj, nrm_normalized_obj),
         A2D::MatGreenStrain<A2D::GreenStrainType::LINEAR>(grad_primary_obj,
@@ -769,13 +791,23 @@ class LinearElasticityInterface final
         A2D::VecDot(u_diff_obj, Sn_primary_obj, uTSn_primary_obj),
         A2D::VecDot(u_diff_obj, Sn_secondary_obj, uTSn_secondary_obj),
         A2D::VecDot(u_diff_obj, u_diff_obj, dot_obj),
-        A2D::Eval(weight * debug_cq *
+        // A2D::VecDot(u_primary_obj, debug_ones, debug_u_primary_l1_obj),
+        // A2D::Eval(weight * debug_u_primary_l1_obj * cq_passive, output_obj)
+        A2D::Eval(weight * cq_passive *
                       (-0.5 * (uTSn_primary_obj + uTSn_secondary_obj) +
                        0.25 * eta *
                            (lambda_primary + mu_primary + lambda_secondary +
                             mu_secondary) *
                            dot_obj),
-                  output_obj));
+                  output_obj)
+        // A2D::Eval(weight * cq_obj *
+        //               (-0.5 * (uTSn_primary_obj + uTSn_secondary_obj) +
+        //                0.25 * eta *
+        //                    (lambda_primary + mu_primary + lambda_secondary +
+        //                     mu_secondary) *
+        //                    dot_obj),
+        //           output_obj)
+    );
     output_obj.bvalue() = 1.0;
     stack.hproduct();
   }
