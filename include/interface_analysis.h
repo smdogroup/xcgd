@@ -231,9 +231,9 @@ class InterfaceGalerkinAnalysis final {
       add_element_res<T, dof_per_node, Basis>(nnodes_primary,
                                               nodes_primary.data(),
                                               element_res_primary.data(), res);
-      add_element_res<T, dof_per_node, Basis>(
-          nnodes_secondary, nodes_secondary.data(),
-          element_res_secondary.data(), res);
+      // add_element_res<T, dof_per_node, Basis>(
+      //     nnodes_secondary, nodes_secondary.data(),
+      //     element_res_secondary.data(), res);
     }
   }
 
@@ -596,6 +596,16 @@ class InterfaceGalerkinAnalysis final {
                          uq_secondary, ugrad_primary, ugrad_secondary,
                          coef_uq_primary, coef_uq_secondary, coef_ugrad_primary,
                          coef_ugrad_secondary);
+
+        // // TODO: delete
+        // psiq_primary = {};
+        // psiq_secondary = {};
+        // pgrad_primary = {};
+        // pgrad_secondary = {};
+        //
+        // psiq_primary(0) = 1.0;
+        // // pgrad_primary(0, 0) = 1.0;
+
         physics.extended_jacobian_product(
             1.0, dummy_x, xloc, nrm_ref, J, uq_primary, uq_secondary,
             ugrad_primary, ugrad_secondary, psiq_primary, psiq_secondary,
@@ -622,6 +632,7 @@ class InterfaceGalerkinAnalysis final {
         int offset_pts = j * max_nnodes_per_element * spatial_dim;
         int offset_wns = j * max_nnodes_per_element * spatial_dim;
 
+        // std::printf("[cell:%2d][quad:%2d]", cell, j);
         add_jac_adj_product_surf<T, Basis>(
             wts[j], cq, &wts_grad[offset_wts], &pts_grad[offset_pts],
             &wns_grad[offset_wns], RTJTJdt, psiq_primary, ugrad_ref_primary,
@@ -629,12 +640,14 @@ class InterfaceGalerkinAnalysis final {
             coef_uq_primary, coef_ugrad_ref_primary, jp_uq_primary,
             jp_ugrad_ref_primary, jp_nrm_ref, element_dfdphi.data());
 
-        add_jac_adj_product_surf<T, Basis>(
-            wts[j], cq, &wts_grad[offset_wts], &pts_grad[offset_pts],
-            &wns_grad[offset_wns], RTJTJdt, psiq_secondary, ugrad_ref_secondary,
-            pgrad_ref_secondary, uhess_ref_secondary, phess_ref_secondary,
-            coef_uq_secondary, coef_ugrad_ref_secondary, jp_uq_secondary,
-            jp_ugrad_ref_secondary, jp_nrm_ref, element_dfdphi.data());
+        // jp_nrm_ref = {};
+        // add_jac_adj_product_surf<T, Basis>(
+        //     wts[j], cq, &wts_grad[offset_wts], &pts_grad[offset_pts],
+        //     &wns_grad[offset_wns], RTJTJdt, psiq_secondary,
+        //     ugrad_ref_secondary, pgrad_ref_secondary, uhess_ref_secondary,
+        //     phess_ref_secondary, coef_uq_secondary, coef_ugrad_ref_secondary,
+        //     jp_uq_secondary, jp_ugrad_ref_secondary, jp_nrm_ref,
+        //     element_dfdphi.data());
       }
 
       const auto& lsf_mesh = mesh_primary.get_lsf_mesh();

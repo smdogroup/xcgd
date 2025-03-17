@@ -197,7 +197,8 @@ T two_sided_LSF_jacobian_adjoint_product_fd_check(
   // analysis_secondary.residual(nullptr, dof.data(), res1.data(), node_offset);
   analysis_interface.residual(nullptr, dof.data(), res1.data());
 
-  auto [wc_sum_1, wc_grad] = analysis_interface.debug_wc_and_grad(dof.data());
+  // auto [wc_sum_1, wc_grad] =
+  // analysis_interface.debug_wc_and_grad(dof.data());
 
   // save_mesh(mesh_primary,
   //           "two_sided_primary_LSF_jacobian_adjoint_product_fd_check_fd1_Np_"
@@ -239,23 +240,25 @@ T two_sided_LSF_jacobian_adjoint_product_fd_check(
 
   analysis_interface.residual(nullptr, dof.data(), res2.data());
 
-  auto [wc_sum_2, wc_grad_2] = analysis_interface.debug_wc_and_grad(dof.data());
+  // auto [wc_sum_2, wc_grad_2] =
+  // analysis_interface.debug_wc_and_grad(dof.data());
 
   T fd = 0.0, exact = 0.0;
 
-  if constexpr (tests_dwcdphi) {
-    // xcgd_assert(wc_quad_1.size() == wc_quad_2.size(),
-    //             "inconsistent wc_quad size");
-    // xcgd_assert(wc_quad_1.size() == wc_grad_quad.size(),
-    //             "inconsistent wc_grad_quad size");
+  // if constexpr (tests_dwcdphi) {
+  //   // xcgd_assert(wc_quad_1.size() == wc_quad_2.size(),
+  //   //             "inconsistent wc_quad size");
+  //   // xcgd_assert(wc_quad_1.size() == wc_grad_quad.size(),
+  //   //             "inconsistent wc_grad_quad size");
+  //
+  //   fd = (wc_sum_2 - wc_sum_1) / dh;
+  //   for (int i = 0; i < ndv; i++) {
+  //     exact += wc_grad[i] * p[i];
+  //   }
+  // }
 
-    fd = (wc_sum_2 - wc_sum_1) / dh;
-    for (int i = 0; i < ndv; i++) {
-      exact += wc_grad[i] * p[i];
-    }
-  }
-
-  else {
+  // else
+  {
     for (int i = 0; i < ndv; i++) {
       exact += dfdphi[i] * p[i];
     }

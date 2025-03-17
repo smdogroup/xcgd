@@ -1053,8 +1053,8 @@ void add_jac_adj_product_surf(
 
     for (int d = 0; d < spatial_dim; d++) {
       // TODO: delete
-      elem_dfdphi[n] += weight / cq / cq * RTJTJdt(d) *
-                        wns_grad[spatial_dim * n + d] * dedu_psi;
+      // elem_dfdphi[n] += weight / cq / cq * RTJTJdt(d) *
+      //                   wns_grad[spatial_dim * n + d] * dedu_psi;
       // TODO: revert
       // elem_dfdphi[n] +=
       //     w_over_cq * RTJTJdt(d) * wns_grad[spatial_dim * n + d] *
@@ -1072,11 +1072,13 @@ void add_jac_adj_product_surf(
       //     pts_grad[spatial_dim * n + d];
 
       // TODO: delete
-      elem_dfdphi[n] +=
-          weight *
-          ((jvp_ugrad(d) + jvp_uhess(d) + deriv_grad(d) + deriv_hess(d)) *
-               pts_grad[spatial_dim * n + d] +
-           jp_nrm_ref(d) * wns_grad[spatial_dim * n + d]);
+      elem_dfdphi[n] += weight * pts_grad[spatial_dim * n + d] *
+                        (jvp_ugrad(d) + jvp_uhess(d));
+
+      elem_dfdphi[n] += weight * pts_grad[spatial_dim * n + d] *
+                        (deriv_grad(d) + deriv_hess(d));
+
+      elem_dfdphi[n] += weight * jp_nrm_ref(d) * wns_grad[spatial_dim * n + d];
 
       // TODO: revert
       // elem_dfdphi[n] +=
@@ -1085,6 +1087,15 @@ void add_jac_adj_product_surf(
       //                pts_grad[spatial_dim * n + d] +
       //            jp_nrm_ref(d) * wns_grad[spatial_dim * n + d]);
     }
+
+    T dcq_ad = 0.0;
+    T dcq_manual = 0.0;
+    for (int d = 0; d < spatial_dim; d++) {
+      dcq_ad += jp_nrm_ref(d) * wns_grad[spatial_dim * n + d];
+      dcq_manual +=
+          RTJTJdt(d) / cq * wns_grad[spatial_dim * n + d] * dedu_psi / cq;
+    }
+    // printf("[n=%2d]manual: %20.10f, ad: %20.10f\n", n, dcq_manual, dcq_ad);
   }
 }
 

@@ -1,6 +1,7 @@
 #ifndef XCGD_LINEAR_ELASTICITY_H
 #define XCGD_LINEAR_ELASTICITY_H
 
+#include "ad/core/a2dsymmatmulttracecore.h"
 #include "interface_physics_commons.h"
 #include "physics_commons.h"
 
@@ -646,12 +647,14 @@ class LinearElasticityInterface final
         Sn_secondary_obj;
     A2D::ADObj<T> uTSn_primary_obj, uTSn_secondary_obj, dot_obj, output_obj;
 
-    // // Debug
-    // A2D::Vec<T, dof_per_node> debug_ones;
-    // for (int i = 0; i < dof_per_node; i++) {
-    //   debug_ones(i) = 1.0;
-    // }
-    // A2D::ADObj<T> debug_u_primary_l1_obj;
+    // Debug
+    A2D::Vec<T, dof_per_node> debug_ones;
+    for (int i = 0; i < dof_per_node; i++) {
+      debug_ones(i) = 1.0;
+    }
+    A2D::ADObj<T> debug_u_primary_l1_obj;
+    A2D::ADObj<T> debug_u_primary_l2_obj;
+    A2D::ADObj<T> debug_energy_primary_obj;
 
     auto stack = A2D::MakeStack(
         A2D::MatGreenStrain<A2D::GreenStrainType::LINEAR>(grad_primary_obj,
@@ -664,22 +667,28 @@ class LinearElasticityInterface final
                           S_secondary_obj),
         A2D::VecSum(1.0, u_primary_obj, -1.0, u_secondary_obj,
                     u_diff_obj),  // u_diff = u_primary - u_secondary
-        // A2D::MatVecMult(S_primary_obj, nrm, Sn_primary_obj),
-        // A2D::MatVecMult(S_secondary_obj, nrm, Sn_secondary_obj),
-        A2D::MatVecMult(S_primary_obj, debug_nrm, Sn_primary_obj),
-        A2D::MatVecMult(S_secondary_obj, debug_nrm, Sn_secondary_obj),
+        A2D::MatVecMult(S_primary_obj, nrm, Sn_primary_obj),
+        A2D::MatVecMult(S_secondary_obj, nrm, Sn_secondary_obj),
+        // A2D::MatVecMult(S_primary_obj, debug_nrm, Sn_primary_obj),
+        // A2D::MatVecMult(S_secondary_obj, debug_nrm, Sn_secondary_obj),
         A2D::VecDot(u_diff_obj, Sn_primary_obj, uTSn_primary_obj),
         A2D::VecDot(u_diff_obj, Sn_secondary_obj, uTSn_secondary_obj),
         A2D::VecDot(u_diff_obj, u_diff_obj, dot_obj),
-        // A2D::VecDot(u_primary_obj, debug_ones, debug_u_primary_l1_obj),
-        // A2D::Eval(weight * debug_u_primary_l1_obj * cq, output_obj)
-        A2D::Eval(weight * cq *
-                      (-0.5 * (uTSn_primary_obj + uTSn_secondary_obj) +
-                       0.25 * eta *
-                           (lambda_primary + mu_primary + lambda_secondary +
-                            mu_secondary) *
-                           dot_obj),
-                  output_obj));
+        A2D::VecDot(u_primary_obj, debug_ones, debug_u_primary_l1_obj),
+        A2D::VecNorm(u_primary_obj, debug_u_primary_l2_obj),
+        A2D::SymMatMultTrace(E_primary_obj, S_primary_obj,
+                             debug_energy_primary_obj),
+        A2D::Eval(weight * debug_u_primary_l2_obj * cq *
+                      debug_u_primary_l1_obj * debug_energy_primary_obj,
+                  output_obj)
+        // A2D::Eval(weight * cq *
+        //               (-0.5 * (uTSn_primary_obj + uTSn_secondary_obj) +
+        //                0.25 * eta *
+        //                    (lambda_primary + mu_primary + lambda_secondary +
+        //                     mu_secondary) *
+        //                    dot_obj),
+        //           output_obj)
+    );
 
     output_obj.bvalue() = 1.0;
     stack.reverse();
@@ -761,12 +770,14 @@ class LinearElasticityInterface final
     // A2D::MatVecMult(J, debug_tan, Jdt);  // TODO: delete
     A2D::VecNorm(Jdt_passive, cq_passive);
 
-    // // Debug
-    // A2D::Vec<T, dof_per_node> debug_ones;
-    // for (int i = 0; i < dof_per_node; i++) {
-    //   debug_ones(i) = 1.0;
-    // }
-    // A2D::A2DObj<T> debug_u_primary_l1_obj;
+    // Debug
+    A2D::Vec<T, dof_per_node> debug_ones;
+    for (int i = 0; i < dof_per_node; i++) {
+      debug_ones(i) = 1.0;
+    }
+    A2D::A2DObj<T> debug_u_primary_l1_obj;
+    A2D::A2DObj<T> debug_u_primary_l2_obj;
+    A2D::A2DObj<T> debug_energy_primary_obj;
 
     auto stack = A2D::MakeStack(
         A2D::MatVecMult(rot, nrm_ref_obj, tan_ref_obj),
@@ -783,23 +794,27 @@ class LinearElasticityInterface final
                           S_secondary_obj),
         A2D::VecSum(1.0, u_primary_obj, -1.0, u_secondary_obj,
                     u_diff_obj),  // u_diff = u_primary - u_secondary
-        // A2D::MatVecMult(S_primary_obj, nrm_normalized_obj, Sn_primary_obj),
-        // A2D::MatVecMult(S_secondary_obj, nrm_normalized_obj,
-        // Sn_secondary_obj),
-        A2D::MatVecMult(S_primary_obj, debug_nrm, Sn_primary_obj),
-        A2D::MatVecMult(S_secondary_obj, debug_nrm, Sn_secondary_obj),
+        A2D::MatVecMult(S_primary_obj, nrm_normalized_obj, Sn_primary_obj),
+        A2D::MatVecMult(S_secondary_obj, nrm_normalized_obj, Sn_secondary_obj),
+        // A2D::MatVecMult(S_primary_obj, debug_nrm, Sn_primary_obj),
+        // A2D::MatVecMult(S_secondary_obj, debug_nrm, Sn_secondary_obj),
         A2D::VecDot(u_diff_obj, Sn_primary_obj, uTSn_primary_obj),
         A2D::VecDot(u_diff_obj, Sn_secondary_obj, uTSn_secondary_obj),
         A2D::VecDot(u_diff_obj, u_diff_obj, dot_obj),
-        // A2D::VecDot(u_primary_obj, debug_ones, debug_u_primary_l1_obj),
-        // A2D::Eval(weight * debug_u_primary_l1_obj * cq_passive, output_obj)
-        A2D::Eval(weight * cq_passive *
-                      (-0.5 * (uTSn_primary_obj + uTSn_secondary_obj) +
-                       0.25 * eta *
-                           (lambda_primary + mu_primary + lambda_secondary +
-                            mu_secondary) *
-                           dot_obj),
+        A2D::VecDot(u_primary_obj, debug_ones, debug_u_primary_l1_obj),
+        A2D::VecNorm(u_primary_obj, debug_u_primary_l2_obj),
+        A2D::SymMatMultTrace(E_primary_obj, S_primary_obj,
+                             debug_energy_primary_obj),
+        A2D::Eval(weight * debug_u_primary_l2_obj * cq_obj *
+                      debug_u_primary_l1_obj * debug_energy_primary_obj,
                   output_obj)
+        // A2D::Eval(weight * cq_passive *
+        //               (-0.5 * (uTSn_primary_obj + uTSn_secondary_obj) +
+        //                0.25 * eta *
+        //                    (lambda_primary + mu_primary + lambda_secondary +
+        //                     mu_secondary) *
+        //                    dot_obj),
+        //           output_obj)
         // A2D::Eval(weight * cq_obj *
         //               (-0.5 * (uTSn_primary_obj + uTSn_secondary_obj) +
         //                0.25 * eta *
