@@ -129,30 +129,12 @@ class InterfaceGalerkinAnalysis final {
     return total_energy;
   }
 
-  void residual(const T x[], const T dof[], T res[],
-                std::vector<T> debug_phi_primary = {}) const {
-    // TODO: delete
-    std::vector<T> phi_primary = mesh_primary.get_lsf_dof();
-    if (debug_phi_primary.size()) {
-      xcgd_assert(debug_phi_primary.size() == phi_primary.size(),
-                  "incompatible lsf_dof size");
-    }
-
+  void residual(const T x[], const T dof[], T res[]) const {
     for (int cell : interface_cells) {
       auto [nnodes_primary, nnodes_secondary, num_quad_pts, nodes_primary,
             nodes_secondary, element_xloc, N, Nxi, element_dof_primary,
             element_dof_secondary, element_x, wts, ns] =
           interpolate_for_element(cell, x, dof);
-
-      if (debug_phi_primary.size()) {
-        mesh_primary.get_lsf_dof() = debug_phi_primary;
-        mesh_primary.update_mesh();
-        auto [_nnodes_primary, _nnodes_secondary, _num_quad_pts, _nodes_primary,
-              _nodes_secondary, _element_xloc, _N, _Nxi, _element_dof_primary,
-              _element_dof_secondary, _element_x, _wts, _ns] =
-            interpolate_for_element(cell, x, dof);
-        mesh_primary.get_lsf_dof() = phi_primary;
-      }
 
       std::vector<T> element_res_primary(max_dof_per_element, T(0.0));
       std::vector<T> element_res_secondary(max_dof_per_element, T(0.0));
@@ -195,10 +177,6 @@ class InterfaceGalerkinAnalysis final {
           }
         }
 
-        // // TODO: delete
-        // nrm_ref(0) = 0.2;
-        // nrm_ref(1) = 0.7;
-
         // Transform gradient from ref coordinates to physical coordinates
         transform(J, grad_ref_primary, grad_primary);
         transform(J, grad_ref_secondary, grad_secondary);
@@ -231,9 +209,9 @@ class InterfaceGalerkinAnalysis final {
       add_element_res<T, dof_per_node, Basis>(nnodes_primary,
                                               nodes_primary.data(),
                                               element_res_primary.data(), res);
-      // add_element_res<T, dof_per_node, Basis>(
-      //     nnodes_secondary, nodes_secondary.data(),
-      //     element_res_secondary.data(), res);
+      add_element_res<T, dof_per_node, Basis>(
+          nnodes_secondary, nodes_secondary.data(),
+          element_res_secondary.data(), res);
     }
   }
 
@@ -412,10 +390,6 @@ class InterfaceGalerkinAnalysis final {
           }
         }
 
-        // // TODO: delete
-        // nrm_ref(0) = 0.2;
-        // nrm_ref(1) = 0.7;
-
         // Transform gradient from ref coordinates to physical coordinates
         transform(J, grad_ref_primary, grad_primary);
         transform(J, grad_ref_secondary, grad_secondary);
@@ -568,11 +542,6 @@ class InterfaceGalerkinAnalysis final {
             jp_ugrad_secondary{};  // ∂2e/∂(∇_x)uq2 * (∇_x)psiq
         typename Physics::nrm_t jp_nrm_ref{};
 
-        // // TODO: delete
-        // nrm_ref(0) = 0.2;
-        // nrm_ref(1) = 0.7;
-        // for (auto& val : wns_grad) val = 0.0;
-
         static_assert(spatial_dim == 2,
                       "InterfaceGalerkinAnalysis is only implemented for 2D");
         // Prepare passive quantities: Evaluate dt
@@ -582,29 +551,11 @@ class InterfaceGalerkinAnalysis final {
         rot(1, 0) = 1.0;
         A2D::MatVecMult(rot, nrm_ref, tan_ref);
 
-        T cq;  // frame transform scaling
-        A2D::Vec<T, spatial_dim> Jdt;
-        A2D::MatVecMult(J, tan_ref, Jdt);
-        A2D::VecNorm(Jdt, cq);
-
-        A2D::Vec<T, spatial_dim> JTJdt, RTJTJdt;
-        A2D::MatVecMult<A2D::MatOp::TRANSPOSE>(J, Jdt, JTJdt);
-        A2D::MatVecMult<A2D::MatOp::TRANSPOSE>(rot, JTJdt, RTJTJdt);
-
         T dummy_x = 0.0;
         physics.residual(1.0, dummy_x, xloc, nrm_ref, J, uq_primary,
                          uq_secondary, ugrad_primary, ugrad_secondary,
                          coef_uq_primary, coef_uq_secondary, coef_ugrad_primary,
                          coef_ugrad_secondary);
-
-        // // TODO: delete
-        // psiq_primary = {};
-        // psiq_secondary = {};
-        // pgrad_primary = {};
-        // pgrad_secondary = {};
-        //
-        // psiq_primary(0) = 1.0;
-        // // pgrad_primary(0, 0) = 1.0;
 
         physics.extended_jacobian_product(
             1.0, dummy_x, xloc, nrm_ref, J, uq_primary, uq_secondary,
@@ -632,116 +583,21 @@ class InterfaceGalerkinAnalysis final {
         int offset_pts = j * max_nnodes_per_element * spatial_dim;
         int offset_wns = j * max_nnodes_per_element * spatial_dim;
 
-        // std::printf("[cell:%2d][quad:%2d]", cell, j);
-        add_jac_adj_product_surf<T, Basis>(
-            wts[j], cq, &wts_grad[offset_wts], &pts_grad[offset_pts],
-            &wns_grad[offset_wns], RTJTJdt, psiq_primary, ugrad_ref_primary,
-            pgrad_ref_primary, uhess_ref_primary, phess_ref_primary,
-            coef_uq_primary, coef_ugrad_ref_primary, jp_uq_primary,
-            jp_ugrad_ref_primary, jp_nrm_ref, element_dfdphi.data());
-
-        // jp_nrm_ref = {};
-        // add_jac_adj_product_surf<T, Basis>(
-        //     wts[j], cq, &wts_grad[offset_wts], &pts_grad[offset_pts],
-        //     &wns_grad[offset_wns], RTJTJdt, psiq_secondary,
-        //     ugrad_ref_secondary, pgrad_ref_secondary, uhess_ref_secondary,
-        //     phess_ref_secondary, coef_uq_secondary, coef_ugrad_ref_secondary,
-        //     jp_uq_secondary, jp_ugrad_ref_secondary, jp_nrm_ref,
-        //     element_dfdphi.data());
+        add_jac_adj_product_interface<T, Basis>(
+            wts[j], &wts_grad[offset_wts], &pts_grad[offset_pts],
+            &wns_grad[offset_wns], psiq_primary, psiq_secondary,
+            ugrad_ref_primary, ugrad_ref_secondary, pgrad_ref_primary,
+            pgrad_ref_secondary, uhess_ref_primary, uhess_ref_secondary,
+            phess_ref_primary, phess_ref_secondary, coef_uq_primary,
+            coef_uq_secondary, coef_ugrad_ref_primary, coef_ugrad_ref_secondary,
+            jp_uq_primary, jp_uq_secondary, jp_ugrad_ref_primary,
+            jp_ugrad_ref_secondary, jp_nrm_ref, element_dfdphi.data());
       }
 
       const auto& lsf_mesh = mesh_primary.get_lsf_mesh();
       add_element_dfdphi<T, decltype(lsf_mesh), Basis>(
           lsf_mesh, cell, element_dfdphi.data(), dfdphi);
     }
-  }
-
-  auto debug_wc_and_grad(const T dof[]) {
-    const auto& lsf_mesh = mesh_primary.get_lsf_mesh();
-
-    T wc_sum = 0.0;
-    std::vector<T> wc_grad(lsf_mesh.get_num_nodes(), 0.0);
-
-    for (int cell : interface_cells) {
-      constexpr bool need_Nxixi_and_quad_grads = true;
-      auto [nnodes_primary, nnodes_secondary, num_quad_pts, nodes_primary,
-            nodes_secondary, element_xloc, N, Nxi, Nxixi, element_dof_primary,
-            element_dof_secondary, element_x, wts, ns, pts_grad, wts_grad,
-            wns_grad] =
-          interpolate_for_element<need_Nxixi_and_quad_grads>(cell, nullptr,
-                                                             dof);
-
-      std::vector<T> element_wc_grad(max_nnodes_per_element, 0.0);
-      for (int j = 0; j < num_quad_pts; j++) {
-        int offset_n = j * max_nnodes_per_element;
-        int offset_nxi = j * max_nnodes_per_element * spatial_dim;
-        int offset_nxixi =
-            j * max_nnodes_per_element * spatial_dim * spatial_dim;
-
-        A2D::Vec<T, spatial_dim> xloc, nrm_ref;
-        A2D::Mat<T, spatial_dim, spatial_dim> J;
-        interp_val_grad<T, spatial_dim, max_nnodes_per_element, spatial_dim>(
-            element_xloc.data(), &N[offset_n], &Nxi[offset_nxi], get_ptr(xloc),
-            get_ptr(J));
-
-        if constexpr (Quadrature::quad_type == QuadPtType::SURFACE) {
-          for (int d = 0; d < spatial_dim; d++) {
-            nrm_ref[d] = ns[spatial_dim * j + d];
-          }
-        }
-
-        A2D::Vec<T, spatial_dim> tan_ref;
-        A2D::Mat<T, spatial_dim, spatial_dim> rot;
-        rot(0, 1) = -1.0;
-        rot(1, 0) = 1.0;
-        A2D::MatVecMult(rot, nrm_ref, tan_ref);
-
-        T cq;  // frame transform scaling
-        A2D::Vec<T, spatial_dim> Jdt;
-        A2D::MatVecMult(J, tan_ref, Jdt);
-        A2D::VecNorm(Jdt, cq);
-
-        wc_sum += cq * wts[j];
-
-        A2D::Vec<T, spatial_dim> JTJdt, RTJTJdt;
-        A2D::MatVecMult<A2D::MatOp::TRANSPOSE>(J, Jdt, JTJdt);
-        A2D::MatVecMult<A2D::MatOp::TRANSPOSE>(rot, JTJdt, RTJTJdt);
-
-        int offset_wts = j * max_nnodes_per_element;
-        int offset_pts = j * max_nnodes_per_element * spatial_dim;
-        int offset_wns = j * max_nnodes_per_element * spatial_dim;
-
-        // Evaluate the derivative of the dof in the computational coordinates
-        typename Physics::dof_t uq_primary{}, psiq_primary{};  // uq, psiq
-        typename Physics::grad_t ugrad_primary{},
-            ugrad_ref_primary{};  // (∇_x)uq, (∇_ξ)uq
-        typename Physics::grad_t pgrad_primary{},
-            pgrad_ref_primary{};                       // (∇_x)psiq, (∇_ξ)psiq
-        typename Physics::hess_t uhess_ref_primary{};  //(∇2_ξ)uq
-        typename Physics::hess_t phess_ref_primary{};  //(∇2_ξ)psiq
-
-        typename Physics::dof_t coef_uq_primary{};          // ∂e/∂uq
-        typename Physics::grad_t coef_ugrad_ref_primary{};  // ∂e/∂(∇_ξ)uq
-        typename Physics::grad_t
-            jp_ugrad_ref_primary{};               // ∂2e/∂(∇_ξ)uq2 * (∇_ξ)psiq
-        typename Physics::dof_t jp_uq_primary{};  // ∂2e/∂uq2 * psiq
-        typename Physics::nrm_t jp_nrm_ref{};
-
-        coef_uq_primary(0) = 1.0;
-        psiq_primary(0) = 1.0;
-
-        add_jac_adj_product_surf<T, Basis>(
-            wts[j], cq, &wts_grad[offset_wts], &pts_grad[offset_pts],
-            &wns_grad[offset_wns], RTJTJdt, psiq_primary, ugrad_ref_primary,
-            pgrad_ref_primary, uhess_ref_primary, phess_ref_primary,
-            coef_uq_primary, coef_ugrad_ref_primary, jp_uq_primary,
-            jp_ugrad_ref_primary, jp_nrm_ref, element_wc_grad.data());
-      }
-      add_element_dfdphi<T, decltype(lsf_mesh), Basis>(
-          lsf_mesh, cell, element_wc_grad.data(), wc_grad.data());
-    }
-
-    return std::make_tuple(wc_sum, wc_grad);
   }
 
   const Mesh& get_primary_mesh() { return mesh_primary; }

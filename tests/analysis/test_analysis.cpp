@@ -110,8 +110,7 @@ T LSF_jacobian_adjoint_product_fd_check(Physics& physics, double dh = 1e-6) {
   return relerr;
 }
 
-template <int Np_1d, bool tests_dwcdphi, class PhysicsBulk,
-          class PhysicsInterface>
+template <int Np_1d, class PhysicsBulk, class PhysicsInterface>
 T two_sided_LSF_jacobian_adjoint_product_fd_check(
     PhysicsBulk& physics_bulk_primary, PhysicsBulk& physics_bulk_secondary,
     PhysicsInterface& physics_interface, double dh = 1e-6) {
@@ -185,34 +184,27 @@ T two_sided_LSF_jacobian_adjoint_product_fd_check(
     psi_neg[i] = -psi[i];
   }
 
-  // analysis_primary.LSF_jacobian_adjoint_product(dof.data(), psi.data(),
-  //                                               dfdphi.data());
-  // analysis_secondary.LSF_jacobian_adjoint_product(dof.data(), psi_neg.data(),
-  //                                                 dfdphi.data(),
-  //                                                 node_offset);
+  analysis_primary.LSF_jacobian_adjoint_product(dof.data(), psi.data(),
+                                                dfdphi.data());
+  analysis_secondary.LSF_jacobian_adjoint_product(dof.data(), psi_neg.data(),
+                                                  dfdphi.data(), node_offset);
   analysis_interface.LSF_jacobian_adjoint_product(dof.data(), psi.data(),
                                                   dfdphi.data());
 
-  // analysis_primary.residual(nullptr, dof.data(), res1.data());
-  // analysis_secondary.residual(nullptr, dof.data(), res1.data(), node_offset);
+  analysis_primary.residual(nullptr, dof.data(), res1.data());
+  analysis_secondary.residual(nullptr, dof.data(), res1.data(), node_offset);
   analysis_interface.residual(nullptr, dof.data(), res1.data());
 
-  // auto [wc_sum_1, wc_grad] =
-  // analysis_interface.debug_wc_and_grad(dof.data());
-
-  // save_mesh(mesh_primary,
-  //           "two_sided_primary_LSF_jacobian_adjoint_product_fd_check_fd1_Np_"
-  //           +
-  //               std::to_string(Np_1d) + "_h_" + std::to_string(dh) + ".vtk");
-  // save_mesh(
-  //     mesh_secondary,
-  //     "two_sided_secondary_LSF_jacobian_adjoint_product_fd_check_fd1_Np_" +
-  //         std::to_string(Np_1d) + "_h_" + std::to_string(dh) + ".vtk");
+  save_mesh(mesh_primary,
+            "two_sided_primary_LSF_jacobian_adjoint_product_fd_check_fd1_Np_" +
+                std::to_string(Np_1d) + "_h_" + std::to_string(dh) + ".vtk");
+  save_mesh(
+      mesh_secondary,
+      "two_sided_secondary_LSF_jacobian_adjoint_product_fd_check_fd1_Np_" +
+          std::to_string(Np_1d) + "_h_" + std::to_string(dh) + ".vtk");
 
   auto& phi_primary = mesh_primary.get_lsf_dof();
   auto& phi_secondary = mesh_secondary.get_lsf_dof();
-
-  std::vector<T> phi_primary_baseline = phi_primary;
 
   if (phi_primary.size() != ndv) throw std::runtime_error("dimension mismatch");
   if (phi_secondary.size() != ndv)
@@ -226,46 +218,26 @@ T two_sided_LSF_jacobian_adjoint_product_fd_check(
   mesh_secondary.update_mesh();
   analysis_interface.update_mesh();
 
-  // save_mesh(mesh_primary,
-  //           "two_sided_primary_LSF_jacobian_adjoint_product_fd_check_fd2_Np_"
-  //           +
-  //               std::to_string(Np_1d) + "_h_" + std::to_string(dh) + ".vtk");
-  // save_mesh(
-  //     mesh_secondary,
-  //     "two_sided_secondary_LSF_jacobian_adjoint_product_fd_check_fd2_Np_" +
-  //         std::to_string(Np_1d) + "_h_" + std::to_string(dh) + ".vtk");
+  save_mesh(mesh_primary,
+            "two_sided_primary_LSF_jacobian_adjoint_product_fd_check_fd2_Np_" +
+                std::to_string(Np_1d) + "_h_" + std::to_string(dh) + ".vtk");
+  save_mesh(
+      mesh_secondary,
+      "two_sided_secondary_LSF_jacobian_adjoint_product_fd_check_fd2_Np_" +
+          std::to_string(Np_1d) + "_h_" + std::to_string(dh) + ".vtk");
 
-  // analysis_primary.residual(nullptr, dof.data(), res2.data());
-  // analysis_secondary.residual(nullptr, dof.data(), res2.data(), node_offset);
-
+  analysis_primary.residual(nullptr, dof.data(), res2.data());
+  analysis_secondary.residual(nullptr, dof.data(), res2.data(), node_offset);
   analysis_interface.residual(nullptr, dof.data(), res2.data());
-
-  // auto [wc_sum_2, wc_grad_2] =
-  // analysis_interface.debug_wc_and_grad(dof.data());
 
   T fd = 0.0, exact = 0.0;
 
-  // if constexpr (tests_dwcdphi) {
-  //   // xcgd_assert(wc_quad_1.size() == wc_quad_2.size(),
-  //   //             "inconsistent wc_quad size");
-  //   // xcgd_assert(wc_quad_1.size() == wc_grad_quad.size(),
-  //   //             "inconsistent wc_grad_quad size");
-  //
-  //   fd = (wc_sum_2 - wc_sum_1) / dh;
-  //   for (int i = 0; i < ndv; i++) {
-  //     exact += wc_grad[i] * p[i];
-  //   }
-  // }
+  for (int i = 0; i < ndv; i++) {
+    exact += dfdphi[i] * p[i];
+  }
 
-  // else
-  {
-    for (int i = 0; i < ndv; i++) {
-      exact += dfdphi[i] * p[i];
-    }
-
-    for (int i = 0; i < ndof; i++) {
-      fd += psi[i] * (res2[i] - res1[i]) / dh;
-    }
+  for (int i = 0; i < ndof; i++) {
+    fd += psi[i] * (res2[i] - res1[i]) / dh;
   }
 
   T relerr = fabs(fd - exact) / fabs(exact);
@@ -273,15 +245,6 @@ T two_sided_LSF_jacobian_adjoint_product_fd_check(
   std::printf(
       "Np_1d: %d, dh: %.5e, FD: %30.20e, Actual: %30.20e, Rel err: %20.10e\n",
       Np_1d, dh, fd, exact, relerr);
-
-  // Debug
-  // auto [xloc_q, val_q] = analysis.interpolate(
-  //     std::vector<T>(mesh.get_num_nodes() * Physics::dof_per_node,
-  //     0.0).data());
-  // FieldToVTKNew<T, Basis::spatial_dim> field_vtk(
-  //     "LSF_jap_quad_Np_" + std::to_string(Np_1d) + ".vtk");
-  // field_vtk.add_mesh(xloc_q);
-  // field_vtk.write_mesh();
 
   return relerr;
 }
@@ -386,25 +349,8 @@ void test_two_sided_LSF_jacobian_adjoint_product(
   for (double dh :
        std::vector<double>{1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9,
                            1e-10, 1e-11, 1e-12, 1e-13, 1e-14, 1e-15}) {
-    T ret = two_sided_LSF_jacobian_adjoint_product_fd_check<
-        Np_1d, false, PhysicsBulk, PhysicsInterface>(
-        physics_primary, physics_secondary, physics_interface, dh);
-    if (ret < relerr_min) relerr_min = ret;
-  }
-
-  EXPECT_LE(relerr_min, tol);
-}
-
-template <int Np_1d, class PhysicsBulk, class PhysicsInterface>
-void test_two_sided_wc_grad(PhysicsBulk& physics_primary,
-                            PhysicsBulk& physics_secondary,
-                            PhysicsInterface& physics_interface,
-                            double tol = 1e-6) {
-  T relerr_min = 1.0;
-  for (double dh : std::vector<double>{1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10,
-                                       1e-11, 1e-12, 1e-13, 1e-14, 1e-15}) {
-    T ret = two_sided_LSF_jacobian_adjoint_product_fd_check<
-        Np_1d, true, PhysicsBulk, PhysicsInterface>(
+    T ret = two_sided_LSF_jacobian_adjoint_product_fd_check<Np_1d, PhysicsBulk,
+                                                            PhysicsInterface>(
         physics_primary, physics_secondary, physics_interface, dh);
     if (ret < relerr_min) relerr_min = ret;
   }
@@ -470,28 +416,8 @@ TEST(analysis, AdjJacProductElasticityInterface) {
 
   test_two_sided_LSF_jacobian_adjoint_product<2>(
       physics_primary, physics_secondary, physics_interface, 1e-5);
-}
-
-TEST(analysis, AdjJacProductElasticityInterface_dwcdphi) {
-  auto int_func = [](const A2D::Vec<T, 2> xloc) {
-    A2D::Vec<T, 2> ret;
-    return ret;
-  };
-
-  int constexpr spatial_dim = 2;
-  using PhysicsBulk = LinearElasticity<T, spatial_dim, typeof(int_func)>;
-  using PhysicsInterface = LinearElasticityInterface<T, spatial_dim>;
-
-  T E1 = 20.0, nu1 = 0.3;
-  T E2 = 12.0, nu2 = 0.4;
-  PhysicsBulk physics_primary(E1, nu1, int_func);
-  PhysicsBulk physics_secondary(E2, nu2, int_func);
-
-  double eta = 12.345;
-  PhysicsInterface physics_interface(eta, E1, nu1, E2, nu2);
-
-  test_two_sided_wc_grad<2>(physics_primary, physics_secondary,
-                            physics_interface, 1e-5);
+  test_two_sided_LSF_jacobian_adjoint_product<4>(
+      physics_primary, physics_secondary, physics_interface, 1e-5);
 }
 
 TEST(analysis, EnergyPartialStressKS) {
