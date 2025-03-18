@@ -6,10 +6,14 @@ import argparse
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
-    p.add_argument("--physics", default="Elasticity", choices=["Poisson", "Elasticity"])
+    p.add_argument(
+        "--physics",
+        default="Elasticity",
+        choices=["Poisson", "Elasticity", "Interface"],
+    )
     args = p.parse_args()
 
-    cmd = [f'./test_analysis --gtest_filter="*{args.physics}*"']
+    cmd = [f'./test_analysis --gtest_filter="*{args.physics}"']
     print(cmd)
     result = subprocess.run(
         cmd, capture_output=True, text=True, check=False, shell=True
