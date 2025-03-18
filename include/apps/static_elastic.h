@@ -2,6 +2,7 @@
 
 #include "analysis.h"
 #include "elements/gd_mesh.h"
+#include "nitsche.h"
 #include "physics/linear_elasticity.h"
 #include "sparse_utils/sparse_utils.h"
 #include "utils/vtk.h"
@@ -523,6 +524,56 @@ class StaticElasticErsatz final {
   Analysis analysis_l, analysis_r;
 
   std::vector<T> rhs;
+};
+
+template <typename T, class Mesh, class Quadrature, class Basis, class IntFunc>
+class StaticElasticNitscheTwoSided final {
+  using PhysicsBulk = LinearElasticity<T, Basis::spatial_dim, IntFunc>;
+  using PhysicsInterface = LinearElasticityInterface<T, Basis::spatial_dim>;
+
+  using NitscheApp = NitscheTwoSidedApp<T, Mesh, Quadrature, Basis, PhysicsBulk,
+                                        PhysicsInterface>;
+
+ public:
+  StaticElasticNitscheTwoSided(double nitsche_eta, double E1, double nu1,
+                               double E2, double nu2, Mesh& mesh,
+                               Quadrature& quadrature, Basis& basis,
+                               const IntFunc& int_func)
+      : physics_bulk_primary(E1, nu1, int_func),
+        physics_bulk_secondary(E2, nu2, int_func),
+        physics_interface(nitsche_eta, E1, nu1, E2, nu2),
+        nitsche_app(mesh, quadrature, basis, physics_bulk_primary,
+                    physics_bulk_secondary, physics_interface) {}
+
+  template <class... LoadAnalyses>
+  std::vector<T> solve(
+      const std::vector<int>& bc_dof, const std::vector<T>& bc_vals,
+      const std::tuple<LoadAnalyses...>& load_analyses,
+      std::shared_ptr<SparseUtils::SparseCholesky<T>>* chol_out = nullptr) {
+    return nitsche_app.solve(bc_dof, bc_vals, load_analyses, chol_out);
+  }
+
+  std::vector<T>& get_rhs() { return nitsche_app.get_rhs(); }
+
+  Mesh& get_mesh() { return nitsche_app.get_primary_mesh(); }
+  Mesh& get_mesh_ersatz() { return nitsche_app.get_secondary_mesh(); }
+  Quadrature& get_quadrature() {
+    return nitsche_app.get_primary_bulk_quadrature();
+  }
+  Quadrature& get_quadrature_ersatz() {
+    return nitsche_app.get_seconary_bulk_quadrature();
+  }
+  Basis& get_basis() { return nitsche_app.get_primary_basis(); }
+  Basis& get_basis_ersatz() { return nitsche_app.get_secondary_basis(); }
+  auto& get_analysis() { return nitsche_app.get_primary_bulk_analysis(); }
+  auto& get_analysis_ersatz() {
+    return nitsche_app.get_secondary_bulk_analysis();
+  }
+
+ private:
+  PhysicsBulk physics_bulk_primary, physics_bulk_secondary;
+  PhysicsInterface physics_interface;
+  NitscheApp nitsche_app;
 };
 
 #endif  // XCGD_STATIC_ELASTIC_H

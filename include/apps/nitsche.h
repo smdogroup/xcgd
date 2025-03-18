@@ -401,6 +401,8 @@ class NitscheTwoSidedApp final {
     return sol;
   }
 
+  std::vector<T>& get_rhs() { return rhs; }
+
   Mesh& get_primary_mesh() { return mesh_m; }
   Mesh& get_secondary_mesh() { return mesh_s; }
 
@@ -413,6 +415,8 @@ class NitscheTwoSidedApp final {
   Basis& get_primary_basis() { return basis_m; }
   Basis& get_secondary_basis() { return basis_s; }
 
+  AnalysisBulk& get_primary_bulk_analysis() { return analysis_bulk_m; }
+  AnalysisBulk& get_secondary_bulk_analysis() { return analysis_bulk_s; }
   AnalysisInterface& get_interface_analysis() { return analysis_interface; }
 
  private:

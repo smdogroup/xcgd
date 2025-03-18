@@ -48,25 +48,32 @@ class ProbMeshBase {
   virtual int get_nvars() = 0;
   virtual std::set<int> get_loaded_cells() = 0;
   virtual std::set<int> get_loaded_verts() = 0;
-  virtual std::set<int> get_non_design_verts() = 0;
+  virtual Grid& get_grid() = 0;
+  virtual Mesh& get_erode_mesh() = 0;
+  virtual Mesh& get_dilate_mesh() = 0;
+
   virtual std::set<int>
   get_protected_verts() = 0;  // dv on protected verts are constrained
                               // <= 0.5 by the optimizer
   virtual std::vector<int> get_bc_nodes() = 0;
 
+  // === If there is non-design verts, implement the following methods
+
   // Convert between full vector and reduced vector
-  virtual std::vector<T> expand(std::vector<T> x,
-                                T non_design_val) = 0;  // expand xr -> x
-  virtual std::vector<T> reduce(std::vector<T> x) = 0;  // reduce x -> xr
+  // expand xr -> x
+  virtual std::vector<T> expand(std::vector<T> x, T non_design_val) {
+    return x;
+  };
+
+  // reduce x -> xr
+  virtual std::vector<T> reduce(std::vector<T> x) { return x; };
 
   // Convert between the index in full vector and reduced vector
-  virtual int expand_index(
-      int ir) = 0;  // return -1 means ir is not a reduced index
-  virtual int reduce_index(int i) = 0;
+  // return -1 means ir is not a reduced index
+  virtual int expand_index(int ir) { return ir; };
+  virtual int reduce_index(int i) { return i; };
 
-  virtual Grid& get_grid() = 0;
-  virtual Mesh& get_erode_mesh() = 0;
-  virtual Mesh& get_dilate_mesh() = 0;
+  virtual std::set<int> get_non_design_verts() { return {}; };
 };
 
 template <typename T, int Np_1d, bool use_finite_cell_mesh>
@@ -126,19 +133,11 @@ class CantileverMesh final
 
   std::set<int> get_loaded_cells() { return loaded_cells; }
   std::set<int> get_loaded_verts() { return loaded_verts; }
-  std::set<int> get_non_design_verts() { return {}; }
   std::set<int> get_protected_verts() { return protected_verts; }
 
   std::vector<int> get_bc_nodes() {
     return this->erode_mesh.get_left_boundary_nodes();
   }
-
-  // Dummy methods, since we don't have non-design nodes for this mesh
-  std::vector<T> expand(std::vector<T> xr, T _) { return xr; }
-  std::vector<T> reduce(std::vector<T> x) { return x; }
-
-  int expand_index(int ir) { return ir; }
-  int reduce_index(int i) { return i; }
 
   Grid& get_grid() { return grid; }
   Mesh& get_erode_mesh() { return erode_mesh; }
@@ -445,10 +444,24 @@ class TopoAnalysis {
         return ret;
       };
 
+  // using Elastic = typename std::conditional<
+  //     two_material_method == TwoMaterial::ERSATZ,
+  //     StaticElasticErsatz<T, Mesh, Quadrature, Basis, typeof(int_func),
+  //     Grid>, StaticElastic<T, Mesh, Quadrature, Basis,
+  //     typeof(int_func)>>::type;
+
+  using ElasticVanilla =
+      StaticElastic<T, Mesh, Quadrature, Basis, typeof(int_func)>;
+  using ElasticErsatz =
+      StaticElasticErsatz<T, Mesh, Quadrature, Basis, typeof(int_func), Grid>;
+  using ElasticNitsche = StaticElasticNitscheTwoSided<T, Mesh, Quadrature,
+                                                      Basis, typeof(int_func)>;
+
   using Elastic = typename std::conditional<
-      two_material_method == TwoMaterial::ERSATZ,
-      StaticElasticErsatz<T, Mesh, Quadrature, Basis, typeof(int_func), Grid>,
-      StaticElastic<T, Mesh, Quadrature, Basis, typeof(int_func)>>::type;
+      two_material_method == TwoMaterial::OFF, ElasticVanilla,
+      typename std::conditional<two_material_method == TwoMaterial::ERSATZ,
+                                ElasticErsatz, ElasticNitsche>::type>::type;
+
   using Volume = VolumePhysics<T, Basis::spatial_dim>;
   using Penalization = GradPenalization<T, Basis::spatial_dim>;
   using Stress = LinearElasticity2DVonMisesStress<T>;
@@ -558,6 +571,17 @@ class TopoAnalysis {
       elastic =
           std::make_unique<Elastic>(E, nu, erode_mesh, erode_quadrature,
                                     erode_basis, int_func, E2 / E, nu2 / nu);
+    } else if constexpr (two_material_method == TwoMaterial::NITSCHE) {
+      double nitsche_eta = parser.get_double_option("nitsche_eta");
+      double E1 = parser.get_double_option("E");
+      double nu1 = parser.get_double_option("nu");
+      double E2 = parser.get_double_option("E2");
+      double nu2 = parser.get_double_option("nu2");
+      elastic =
+          std::make_unique<Elastic>(nitsche_eta, E1, nu1, E2, nu2, erode_mesh,
+                                    erode_quadrature, erode_basis, int_func);
+    } else {
+      throw std::runtime_error("unknown two_material_method");
     }
   }
 
@@ -793,7 +817,8 @@ class TopoAnalysis {
     erode_mesh.update_mesh();
     dilate_mesh.update_mesh();
 
-    if constexpr (two_material_method == TwoMaterial::ERSATZ) {
+    if constexpr (two_material_method == TwoMaterial::ERSATZ or
+                  two_material_method == TwoMaterial::NITSCHE) {
       int nverts = grid.get_num_verts();
       auto& elastic_phi = elastic->get_mesh().get_lsf_dof();
       auto& elastic_ersatz_phi = elastic->get_mesh_ersatz().get_lsf_dof();
@@ -2241,14 +2266,17 @@ void execute_1(int argc, char* argv[], int Np_1d) {
   if (Np_1d == 2) {
     execute<2, two_material_method, use_lbracket_grid, use_finite_cell_mesh>(
         argc, argv);
-  } else if (Np_1d == 4) {
-    execute<4, two_material_method, use_lbracket_grid, use_finite_cell_mesh>(
-        argc, argv);
-
-  } else if (Np_1d == 6) {
-    execute<6, two_material_method, use_lbracket_grid, use_finite_cell_mesh>(
-        argc, argv);
-  } else {
+  }
+  // else if (Np_1d == 4) {
+  //   execute<4, two_material_method, use_lbracket_grid, use_finite_cell_mesh>(
+  //       argc, argv);
+  //
+  // }
+  // else if (Np_1d == 6) {
+  //   execute<6, two_material_method, use_lbracket_grid, use_finite_cell_mesh>(
+  //       argc, argv);
+  // }
+  else {
     throw std::runtime_error("Np_1d = " + std::to_string(Np_1d) +
                              " not precompiled");
   }
