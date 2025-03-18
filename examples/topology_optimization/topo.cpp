@@ -414,11 +414,14 @@ class LbracketGridMesh final
   std::set<int> loaded_cells, loaded_verts, protected_verts;
 };
 
-template <typename T, int Np_1d, int Np_1d_filter, bool use_ersatz_,
-          class Grid_, bool use_finite_cell_mesh>
+enum class TwoMaterial { OFF, ERSATZ, NITSCHE };
+
+template <typename T, int Np_1d, int Np_1d_filter,
+          TwoMaterial two_material_method_, class Grid_,
+          bool use_finite_cell_mesh>
 class TopoAnalysis {
  public:
-  static constexpr bool use_ersatz = use_ersatz_;
+  static constexpr TwoMaterial two_material_method = two_material_method_;
   static constexpr int get_spatial_dim() { return Grid_::spatial_dim; }
 
  private:
@@ -443,7 +446,7 @@ class TopoAnalysis {
       };
 
   using Elastic = typename std::conditional<
-      use_ersatz,
+      two_material_method == TwoMaterial::ERSATZ,
       StaticElasticErsatz<T, Mesh, Quadrature, Basis, typeof(int_func), Grid>,
       StaticElastic<T, Mesh, Quadrature, Basis, typeof(int_func)>>::type;
   using Volume = VolumePhysics<T, Basis::spatial_dim>;
@@ -455,25 +458,31 @@ class TopoAnalysis {
       GalerkinAnalysis<T, typename HFilter::Mesh, typename HFilter::Quadrature,
                        typename HFilter::Basis, Penalization>;
   using StressAnalysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Stress>;
+
+  static constexpr bool from_to_grid_mesh =
+      (two_material_method == TwoMaterial::ERSATZ);
+
   using StressKSAnalysis =
-      GalerkinAnalysis<T, Mesh, Quadrature, Basis, StressKS, use_ersatz>;
+      GalerkinAnalysis<T, Mesh, Quadrature, Basis, StressKS, from_to_grid_mesh>;
   using StrainStress = LinearElasticity2DStrainStress<T>;
   using StrainStressAnalysis =
-      GalerkinAnalysis<T, Mesh, Quadrature, Basis, StrainStress, use_ersatz>;
+      GalerkinAnalysis<T, Mesh, Quadrature, Basis, StrainStress,
+                       from_to_grid_mesh>;
   using BulkInt = BulkIntegration<T, Grid::spatial_dim>;
   using BulkIntAnalysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, BulkInt>;
-  using SPRStress = SPRStress2D<T, Np_1d, Grid, Mesh, Basis, use_ersatz>;
+  using SPRStress = SPRStress2D<T, Np_1d, Grid, Mesh, Basis, from_to_grid_mesh>;
 
   using LoadPhysics =
       ElasticityExternalLoad<T, Basis::spatial_dim, typeof(load_func)>;
   using LoadQuadratureRight =
       GDGaussQuadrature2D<T, Np_1d, QuadPtType::SURFACE, SurfQuad::RIGHT, Mesh>;
-  using LoadAnalysisRight = GalerkinAnalysis<T, Mesh, LoadQuadratureRight,
-                                             Basis, LoadPhysics, use_ersatz>;
+  using LoadAnalysisRight =
+      GalerkinAnalysis<T, Mesh, LoadQuadratureRight, Basis, LoadPhysics,
+                       from_to_grid_mesh>;
   using LoadQuadratureTop =
       GDGaussQuadrature2D<T, Np_1d, QuadPtType::SURFACE, SurfQuad::TOP, Mesh>;
   using LoadAnalysisTop = GalerkinAnalysis<T, Mesh, LoadQuadratureTop, Basis,
-                                           LoadPhysics, use_ersatz>;
+                                           LoadPhysics, from_to_grid_mesh>;
 
   int constexpr static spatial_dim = Basis::spatial_dim;
 
@@ -537,15 +546,18 @@ class TopoAnalysis {
     loaded_cells = prob_mesh.get_loaded_cells();
 
     // Instantiate the elastic app
-    if constexpr (use_ersatz) {
-      elastic = std::make_unique<Elastic>(
-          parser.get_double_option("E"), parser.get_double_option("nu"),
-          erode_mesh, erode_quadrature, erode_basis, int_func,
-          parser.get_double_option("ersatz_ratio"));
-    } else {
+    if constexpr (two_material_method == TwoMaterial::OFF) {
       elastic = std::make_unique<Elastic>(
           parser.get_double_option("E"), parser.get_double_option("nu"),
           erode_mesh, erode_quadrature, erode_basis, int_func);
+    } else if constexpr (two_material_method == TwoMaterial::ERSATZ) {
+      double E = parser.get_double_option("E");
+      double nu = parser.get_double_option("nu");
+      double E2 = parser.get_double_option("E2");
+      double nu2 = parser.get_double_option("nu2");
+      elastic =
+          std::make_unique<Elastic>(E, nu, erode_mesh, erode_quadrature,
+                                    erode_basis, int_func, E2 / E, nu2 / nu);
     }
   }
 
@@ -781,7 +793,7 @@ class TopoAnalysis {
     erode_mesh.update_mesh();
     dilate_mesh.update_mesh();
 
-    if constexpr (use_ersatz) {
+    if constexpr (two_material_method == TwoMaterial::ERSATZ) {
       int nverts = grid.get_num_verts();
       auto& elastic_phi = elastic->get_mesh().get_lsf_dof();
       auto& elastic_ersatz_phi = elastic->get_mesh_ersatz().get_lsf_dof();
@@ -795,7 +807,7 @@ class TopoAnalysis {
     bc_dof.clear();
     std::vector<int> bc_nodes = prob_mesh.get_bc_nodes();
     for (int n : bc_nodes) {
-      if constexpr (use_ersatz) {
+      if constexpr (two_material_method == TwoMaterial::ERSATZ) {
         n = elastic->get_mesh().get_node_vert(n);
       }
       for (int d = 0; d < spatial_dim; d++) {
@@ -828,8 +840,8 @@ class TopoAnalysis {
 
       std::vector<T> sol;
 
-      bool lbracket_load_top = parser.get_bool_option("lbracket_load_top");
-      if (lbracket_load_top) {
+      bool load_top = parser.get_bool_option("load_top");
+      if (load_top) {
         LoadQuadratureTop load_quadrature(elastic_mesh, load_elements);
         LoadAnalysisTop load_analysis(elastic_mesh, load_quadrature,
                                       elastic->get_basis(), load_physics);
@@ -984,7 +996,7 @@ class TopoAnalysis {
 
   std::pair<std::vector<T>, std::vector<T>> eval_stress(
       const std::vector<T>& u) {
-    if constexpr (use_ersatz) {
+    if constexpr (two_material_method == TwoMaterial::ERSATZ) {
       return stress_analysis.interpolate_energy(
           grid_dof_to_cut_dof<spatial_dim>(stress_analysis.get_mesh(), u)
               .data());
@@ -1048,7 +1060,7 @@ class TopoAnalysis {
     std::fill(gcomp.begin(), gcomp.end(), 0.0);
     elastic->get_analysis().LSF_jacobian_adjoint_product(
         sol.data(), psi_comp.data(), gcomp.data());
-    if constexpr (use_ersatz) {
+    if constexpr (two_material_method == TwoMaterial::ERSATZ) {
       elastic->get_analysis_ersatz().LSF_jacobian_adjoint_product(
           sol.data(), sol.data() /*this is effectively -psi*/, gcomp.data());
     }
@@ -1114,7 +1126,7 @@ class TopoAnalysis {
     // Implicit derivatives via the adjoint variables
     elastic->get_analysis().LSF_jacobian_adjoint_product(
         sol.data(), psi_stress.data(), gstress.data());
-    if constexpr (use_ersatz) {
+    if constexpr (two_material_method == TwoMaterial::ERSATZ) {
       elastic->get_analysis_ersatz().LSF_jacobian_adjoint_product(
           sol.data(), psi_stress_neg.data(), gstress.data());
     }
@@ -1639,7 +1651,7 @@ class TopoProb {
         protected_verts_v[v] = 1.0;
       }
 
-      if constexpr (TopoAnalysis::use_ersatz) {
+      if constexpr (TopoAnalysis::two_material_method == TwoMaterial::ERSATZ) {
         topo.write_grid_vtk(vtk_path, x,
                             {{"protected_verts", protected_verts_v}}, {},
                             {{"displacement", u}, {"rhs", topo.get_rhs()}}, {});
@@ -1651,7 +1663,7 @@ class TopoProb {
       // Write cut mesh to vtk
       vtk_path =
           fspath(prefix) / fspath("cut_" + std::to_string(counter) + ".vtk");
-      if constexpr (TopoAnalysis::use_ersatz) {
+      if constexpr (TopoAnalysis::two_material_method == TwoMaterial::ERSATZ) {
         topo.write_cut_vtk(vtk_path, x, {}, {}, {}, {});
       } else {
         topo.write_cut_vtk(vtk_path, x, {}, {}, {{"displacement", u}}, {});
@@ -1685,7 +1697,7 @@ class TopoProb {
         cell_loaded_or_not[i] = 1.0;
       }
 
-      if constexpr (TopoAnalysis::use_ersatz) {
+      if constexpr (TopoAnalysis::two_material_method == TwoMaterial::ERSATZ) {
         topo.write_grid_vtk(fspath(prefix) / fspath(vtk_name), x,
                             {{"loaded_verts", vert_loaded_or_not}},
                             {{"loaded_cells", cell_loaded_or_not}},
@@ -1697,7 +1709,7 @@ class TopoProb {
       }
 
       vtk_name = "fdcheck_cut_" + std::to_string(counter) + ".vtk";
-      if constexpr (TopoAnalysis::use_ersatz) {
+      if constexpr (TopoAnalysis::two_material_method == TwoMaterial::ERSATZ) {
         topo.write_cut_vtk(fspath(prefix) / fspath(vtk_name), x, {}, {}, {},
                            {});
       } else {
@@ -2107,7 +2119,7 @@ void optimize_snopt(bool smoke_test, std::string prefix, ConfigParser& parser,
                     pi.data(), rc.data(), nS, nInf, sInf, objective);
 }
 
-template <int Np_1d, bool use_ersatz, bool use_lbracket_grid,
+template <int Np_1d, TwoMaterial two_material_method, bool use_lbracket_grid,
           bool use_finite_cell_mesh>
 void execute(int argc, char* argv[]) {
   constexpr int Np_1d_filter = Np_1d > 2 ? 4 : 2;
@@ -2116,8 +2128,8 @@ void execute(int argc, char* argv[]) {
   using T = double;
   using Grid = typename std::conditional<use_lbracket_grid, LbracketGrid2D<T>,
                                          StructuredGrid2D<T>>::type;
-  using TopoAnalysis = TopoAnalysis<T, Np_1d, Np_1d_filter, use_ersatz, Grid,
-                                    use_finite_cell_mesh>;
+  using TopoAnalysis = TopoAnalysis<T, Np_1d, Np_1d_filter, two_material_method,
+                                    Grid, use_finite_cell_mesh>;
   using TopoProb = TopoProb<T, TopoAnalysis>;
 
   bool smoke_test = false;
@@ -2183,8 +2195,8 @@ void execute(int argc, char* argv[]) {
   double loaded_frac = parser.get_double_option("loaded_frac");
   if constexpr (use_lbracket_grid) {
     double lbracket_frac = parser.get_double_option("lbracket_frac");
-    bool lbracket_load_top = parser.get_bool_option("lbracket_load_top");
-    if (lbracket_load_top) {
+    bool load_top = parser.get_bool_option("load_top");
+    if (load_top) {
       prob_mesh = std::make_shared<
           LbracketGridMesh<T, Np_1d, true, use_finite_cell_mesh>>(
           nxy, lxy, loaded_frac, lbracket_frac);
@@ -2223,6 +2235,62 @@ void execute(int argc, char* argv[]) {
   MPI_Finalize();
 }
 
+template <TwoMaterial two_material_method, bool use_lbracket_grid,
+          bool use_finite_cell_mesh>
+void execute_1(int argc, char* argv[], int Np_1d) {
+  if (Np_1d == 2) {
+    execute<2, two_material_method, use_lbracket_grid, use_finite_cell_mesh>(
+        argc, argv);
+  } else if (Np_1d == 4) {
+    execute<4, two_material_method, use_lbracket_grid, use_finite_cell_mesh>(
+        argc, argv);
+
+  } else if (Np_1d == 6) {
+    execute<6, two_material_method, use_lbracket_grid, use_finite_cell_mesh>(
+        argc, argv);
+  } else {
+    throw std::runtime_error("Np_1d = " + std::to_string(Np_1d) +
+                             " not precompiled");
+  }
+}
+
+template <bool use_lbracket_grid, bool use_finite_cell_mesh>
+void execute_2(int argc, char* argv[], int Np_1d,
+               TwoMaterial two_material_method) {
+  if (two_material_method == TwoMaterial::OFF) {
+    execute_1<TwoMaterial::OFF, use_lbracket_grid, use_finite_cell_mesh>(
+        argc, argv, Np_1d);
+  } else if (two_material_method == TwoMaterial::ERSATZ) {
+    execute_1<TwoMaterial::ERSATZ, use_lbracket_grid, use_finite_cell_mesh>(
+        argc, argv, Np_1d);
+  } else {
+    execute_1<TwoMaterial::NITSCHE, use_lbracket_grid, use_finite_cell_mesh>(
+        argc, argv, Np_1d);
+  }
+}
+
+template <bool use_finite_cell_mesh>
+void execute_3(int argc, char* argv[], int Np_1d,
+               TwoMaterial two_material_method, bool use_lbracket_grid) {
+  if (use_lbracket_grid) {
+    execute_2<true, use_finite_cell_mesh>(argc, argv, Np_1d,
+                                          two_material_method);
+  } else {
+    execute_2<false, use_finite_cell_mesh>(argc, argv, Np_1d,
+                                           two_material_method);
+  }
+}
+
+void execute_4(int argc, char* argv[], int Np_1d,
+               TwoMaterial two_material_method, bool use_lbracket_grid,
+               bool use_finite_cell_mesh) {
+  if (use_finite_cell_mesh) {
+    execute_3<true>(argc, argv, Np_1d, two_material_method, use_lbracket_grid);
+  } else {
+    execute_3<false>(argc, argv, Np_1d, two_material_method, use_lbracket_grid);
+  }
+}
+
 int main(int argc, char* argv[]) {
   VandermondeCondLogger::enable();
 
@@ -2234,7 +2302,17 @@ int main(int argc, char* argv[]) {
   std::string cfg_path{argv[1]};
   ConfigParser parser{cfg_path};
   int Np_1d = parser.get_int_option("Np_1d");
-  bool use_ersatz = parser.get_bool_option("use_ersatz");
+
+  std::map<std::string, TwoMaterial> two_material_map = {
+      {"ersatz", TwoMaterial::ERSATZ},
+      {"off", TwoMaterial::OFF},
+      {"nitsche", {TwoMaterial::NITSCHE}}};
+  std::string two_material_method_str =
+      parser.get_str_option("two_material_method");
+  xcgd_assert(two_material_map.count(two_material_method_str),
+              "unknown two_material_method");
+  TwoMaterial two_material_method = two_material_map[two_material_method_str];
+
   bool use_lbracket_grid = parser.get_bool_option("use_lbracket_grid");
   bool use_finite_cell_mesh = parser.get_bool_option("use_finite_cell_mesh");
 
@@ -2243,80 +2321,8 @@ int main(int argc, char* argv[]) {
     exit(-1);
   }
 
-  switch (Np_1d) {
-    case 2:
-      if (use_ersatz) {
-        if (use_lbracket_grid) {
-          if (use_finite_cell_mesh) {
-            execute<2, true, true, true>(argc, argv);
-          } else {
-            execute<2, true, true, false>(argc, argv);
-          }
-        } else {
-          if (use_finite_cell_mesh) {
-            execute<2, true, false, true>(argc, argv);
-          } else {
-            execute<2, true, false, false>(argc, argv);
-          }
-        }
-      } else {
-        if (use_lbracket_grid) {
-          if (use_finite_cell_mesh) {
-            execute<2, false, true, true>(argc, argv);
-          } else {
-            execute<2, false, true, false>(argc, argv);
-          }
-        } else {
-          if (use_finite_cell_mesh) {
-            execute<2, false, false, true>(argc, argv);
-          } else {
-            execute<2, false, false, false>(argc, argv);
-          }
-        }
-      }
-      break;
-
-    case 4:
-      if (use_ersatz) {
-        if (use_lbracket_grid) {
-          if (use_finite_cell_mesh) {
-            execute<4, true, true, true>(argc, argv);
-          } else {
-            execute<4, true, true, false>(argc, argv);
-          }
-        } else {
-          if (use_finite_cell_mesh) {
-            execute<4, true, false, true>(argc, argv);
-          } else {
-            execute<4, true, false, false>(argc, argv);
-          }
-        }
-
-      } else {
-        if (use_lbracket_grid) {
-          if (use_finite_cell_mesh) {
-            execute<4, false, true, true>(argc, argv);
-          } else {
-            execute<4, false, true, false>(argc, argv);
-          }
-        } else {
-          if (use_finite_cell_mesh) {
-            execute<4, false, false, true>(argc, argv);
-          } else {
-            execute<4, false, false, false>(argc, argv);
-          }
-        }
-      }
-      break;
-
-    default:
-      std::printf(
-          "Np_1d = %d is not pre-compiled, enumerate it in the source code if "
-          "you intend to use this combination.\n",
-          Np_1d);
-      exit(-1);
-      break;
-  }
+  execute_4(argc, argv, Np_1d, two_material_method, use_lbracket_grid,
+            use_finite_cell_mesh);
 
   return 0;
 }

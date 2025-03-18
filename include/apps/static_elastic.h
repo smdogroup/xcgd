@@ -252,9 +252,9 @@ class StaticElasticErsatz final {
       2 * Mesh::max_nnodes_per_element;
 
  public:
-  StaticElasticErsatz(T E, T nu, Mesh& mesh, Quadrature& quadrature,
+  StaticElasticErsatz(double E, double nu, Mesh& mesh, Quadrature& quadrature,
                       Basis& basis, const IntFunc& int_func,
-                      double ersatz_ratio = 1e-6)
+                      double E2_ratio = 1e-6, double nu2_ratio = 1.0)
       : grid(mesh.get_grid()),
         mesh_l(mesh),
         mesh_r(grid),
@@ -263,7 +263,7 @@ class StaticElasticErsatz final {
         basis_l(basis),
         basis_r(mesh_r),
         physics_l(E, nu, int_func),
-        physics_r(E * ersatz_ratio, nu, int_func),
+        physics_r(E * E2_ratio, nu * nu2_ratio, int_func),
         analysis_l(mesh_l, quadrature_l, basis_l, physics_l),
         analysis_r(mesh_r, quadrature_r, basis_r, physics_r) {
     for (int i = 0; i < grid.get_num_verts(); i++) {

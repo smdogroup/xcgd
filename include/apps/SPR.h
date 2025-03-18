@@ -19,7 +19,7 @@
 #include "physics/stress.h"
 
 template <typename T, int Np_1d, class Grid, class Mesh, class Basis,
-          bool use_ersatz>
+          bool from_to_grid_mesh>
 class SPRStress2D {
  private:
   static constexpr int Amat_dim = Np_1d * Np_1d;  // for 2d problem
@@ -29,8 +29,8 @@ class SPRStress2D {
   using SPRSampler = GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER, Grid,
                                        nsamples_per_elem_1d, Mesh>;
   using StrainStress = LinearElasticity2DStrainStress<T>;
-  using SPRAnalysis =
-      GalerkinAnalysis<T, Mesh, SPRSampler, Basis, StrainStress, use_ersatz>;
+  using SPRAnalysis = GalerkinAnalysis<T, Mesh, SPRSampler, Basis, StrainStress,
+                                       from_to_grid_mesh>;
 
  public:
   SPRStress2D(Mesh& mesh, Basis& basis, double E, double nu)
