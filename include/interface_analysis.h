@@ -24,8 +24,8 @@ class InterfaceGalerkinAnalysis final {
   static constexpr int dof_per_vert = Physics::dof_per_vert;
   static constexpr int data_per_node = Physics::data_per_node;
 
-  static_assert(Mesh::is_finite_cell_mesh,
-                "InterfaceProblem only works with FiniteCellMesh");
+  // static_assert(Mesh::is_finite_cell_mesh,
+  //               "InterfaceProblem only works with FiniteCellMesh");
   static_assert(data_per_node == 0 or data_per_node == 1,
                 "we only support data_per_node == 0 or 1 for now");
   static_assert(Quadrature::quad_type == QuadPtType::SURFACE,
@@ -50,6 +50,8 @@ class InterfaceGalerkinAnalysis final {
         cell_primary_elems(mesh_primary.get_cell_elems()),
         cell_secondary_elems(mesh_secondary.get_cell_elems()),
         secondary_node_offset(mesh_primary.get_num_nodes()) {
+    xcgd_assert(Mesh::is_finite_cell_mesh,
+                "InterfaceProblem only works with FiniteCellMesh for now");
     update_mesh();
   }
 

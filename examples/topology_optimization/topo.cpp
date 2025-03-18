@@ -501,8 +501,6 @@ class TopoAnalysis {
                         grid.get_num_verts()),
         hfilter(parser.get_double_option("filter_r0"), grid),
         cfilter(parser.get_double_option("filter_r0"), grid),
-        elastic(parser.get_double_option("E"), parser.get_double_option("nu"),
-                erode_mesh, erode_quadrature, erode_basis, int_func),
         vol_analysis(dilate_mesh, dilate_quadrature, dilate_basis, vol),
         pen(parser.get_double_option("grad_penalty_coeff")),
         pen_analysis(hfilter.get_mesh(), hfilter.get_quadrature(),
@@ -537,6 +535,18 @@ class TopoAnalysis {
         cache({{"x", {}}, {"sol", {}}, {"chol", nullptr}}) {
     // Get loaded cells
     loaded_cells = prob_mesh.get_loaded_cells();
+
+    // Instantiate the elastic app
+    if constexpr (use_ersatz) {
+      elastic = std::make_unique<Elastic>(
+          parser.get_double_option("E"), parser.get_double_option("nu"),
+          erode_mesh, erode_quadrature, erode_basis, int_func,
+          parser.get_double_option("ersatz_ratio"));
+    } else {
+      elastic = std::make_unique<Elastic>(
+          parser.get_double_option("E"), parser.get_double_option("nu"),
+          erode_mesh, erode_quadrature, erode_basis, int_func);
+    }
   }
 
   // construct the initial design using sine waves
@@ -773,12 +783,12 @@ class TopoAnalysis {
 
     if constexpr (use_ersatz) {
       int nverts = grid.get_num_verts();
-      auto& elastic_phi = elastic.get_mesh().get_lsf_dof();
-      auto& elastic_ersatz_phi = elastic.get_mesh_ersatz().get_lsf_dof();
+      auto& elastic_phi = elastic->get_mesh().get_lsf_dof();
+      auto& elastic_ersatz_phi = elastic->get_mesh_ersatz().get_lsf_dof();
       for (int i = 0; i < nverts; i++) {
         elastic_ersatz_phi[i] = -elastic_phi[i];
       }
-      elastic.get_mesh_ersatz().update_mesh();
+      elastic->get_mesh_ersatz().update_mesh();
     }
 
     // Update bc dof for elastic
@@ -786,7 +796,7 @@ class TopoAnalysis {
     std::vector<int> bc_nodes = prob_mesh.get_bc_nodes();
     for (int n : bc_nodes) {
       if constexpr (use_ersatz) {
-        n = elastic.get_mesh().get_node_vert(n);
+        n = elastic->get_mesh().get_node_vert(n);
       }
       for (int d = 0; d < spatial_dim; d++) {
         bc_dof.push_back(spatial_dim * n + d);
@@ -808,7 +818,7 @@ class TopoAnalysis {
     try {
       LoadPhysics load_physics(load_func);
       std::set<int> load_elements;
-      auto& elastic_mesh = elastic.get_mesh();
+      auto& elastic_mesh = elastic->get_mesh();
       int elastic_nelems = elastic_mesh.get_num_elements();
       for (int i = 0; i < elastic_nelems; i++) {
         if (loaded_cells.count(elastic_mesh.get_elem_cell(i))) {
@@ -822,15 +832,16 @@ class TopoAnalysis {
       if (lbracket_load_top) {
         LoadQuadratureTop load_quadrature(elastic_mesh, load_elements);
         LoadAnalysisTop load_analysis(elastic_mesh, load_quadrature,
-                                      elastic.get_basis(), load_physics);
-        sol = elastic.solve(bc_dof, std::vector<T>(bc_dof.size(), T(0.0)),
-                            std::tuple<LoadAnalysisTop>(load_analysis), chol);
+                                      elastic->get_basis(), load_physics);
+        sol = elastic->solve(bc_dof, std::vector<T>(bc_dof.size(), T(0.0)),
+                             std::tuple<LoadAnalysisTop>(load_analysis), chol);
       } else {
         LoadQuadratureRight load_quadrature(elastic_mesh, load_elements);
         LoadAnalysisRight load_analysis(elastic_mesh, load_quadrature,
-                                        elastic.get_basis(), load_physics);
-        sol = elastic.solve(bc_dof, std::vector<T>(bc_dof.size(), T(0.0)),
-                            std::tuple<LoadAnalysisRight>(load_analysis), chol);
+                                        elastic->get_basis(), load_physics);
+        sol =
+            elastic->solve(bc_dof, std::vector<T>(bc_dof.size(), T(0.0)),
+                           std::tuple<LoadAnalysisRight>(load_analysis), chol);
       }
 
       return sol;
@@ -839,7 +850,7 @@ class TopoAnalysis {
           "StencilConstructionFailed error has been caught when calling "
           "update_mesh_and_solve(), dumping debug info in a vtk and "
           "throwing...\n");
-      auto cut_mesh = elastic.get_mesh();
+      auto cut_mesh = elastic->get_mesh();
       ToVTK<T, Mesh> err_vtk(
           cut_mesh, fspath(prefix) / "stencil_construction_failed.vtk");
       err_vtk.write_mesh();
@@ -865,7 +876,7 @@ class TopoAnalysis {
     std::vector<T> sol = update_mesh_and_solve(x, HFx, &chol);
 
     T comp = std::inner_product(sol.begin(), sol.end(),
-                                elastic.get_rhs().begin(), T(0.0));
+                                elastic->get_rhs().begin(), T(0.0));
 
     std::vector<T> vol_dummy(vol_analysis.get_mesh().get_num_nodes(), 0.0);
     T area = vol_analysis.energy(nullptr, vol_dummy.data());
@@ -1035,10 +1046,10 @@ class TopoAnalysis {
 
     gcomp.resize(x.size());
     std::fill(gcomp.begin(), gcomp.end(), 0.0);
-    elastic.get_analysis().LSF_jacobian_adjoint_product(
+    elastic->get_analysis().LSF_jacobian_adjoint_product(
         sol.data(), psi_comp.data(), gcomp.data());
     if constexpr (use_ersatz) {
-      elastic.get_analysis_ersatz().LSF_jacobian_adjoint_product(
+      elastic->get_analysis_ersatz().LSF_jacobian_adjoint_product(
           sol.data(), sol.data() /*this is effectively -psi*/, gcomp.data());
     }
 
@@ -1101,10 +1112,10 @@ class TopoAnalysis {
                                               stress_use_discrete_ks);
 
     // Implicit derivatives via the adjoint variables
-    elastic.get_analysis().LSF_jacobian_adjoint_product(
+    elastic->get_analysis().LSF_jacobian_adjoint_product(
         sol.data(), psi_stress.data(), gstress.data());
     if constexpr (use_ersatz) {
-      elastic.get_analysis_ersatz().LSF_jacobian_adjoint_product(
+      elastic->get_analysis_ersatz().LSF_jacobian_adjoint_product(
           sol.data(), psi_stress_neg.data(), gstress.data());
     }
 
@@ -1190,7 +1201,7 @@ class TopoAnalysis {
                      std::map<std::string, std::vector<T>&> cell_sols = {},
                      std::map<std::string, std::vector<T>&> node_vecs = {},
                      std::map<std::string, std::vector<T>&> cell_vecs = {}) {
-    const Mesh& mesh = elastic.get_mesh();
+    const Mesh& mesh = elastic->get_mesh();
     ToVTK<T, Mesh> vtk(mesh, vtk_path);
     vtk.write_mesh();
 
@@ -1292,7 +1303,7 @@ class TopoAnalysis {
     write_json(json_path, j);
   }
 
-  std::vector<T>& get_rhs() { return elastic.get_rhs(); }
+  std::vector<T>& get_rhs() { return elastic->get_rhs(); }
   ProbMesh& get_prob_mesh() { return prob_mesh; }
 
   void set_stress_ksrho(double ksrho) { stress_ks.set_ksrho(ksrho); }
@@ -1311,7 +1322,7 @@ class TopoAnalysis {
   RobustProjection<T> projector_blueprint, projector_dilate, projector_erode;
   HFilter hfilter;
   CFilter cfilter;
-  Elastic elastic;
+  std::unique_ptr<Elastic> elastic;
   Volume vol;
   VolAnalysis vol_analysis;
   Penalization pen;
