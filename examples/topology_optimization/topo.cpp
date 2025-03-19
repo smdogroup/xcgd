@@ -121,12 +121,14 @@ class CantileverMesh final
     for (int v : loaded_verts) {
       int ixy[2] = {-1, -1};
       grid.get_vert_coords(v, ixy);
-      for (auto [dx, dy] : std::vector<std::pair<int, int>>{
-               {0, 0}, {0, 1}, {0, -1}, {-1, 0}, {-1, -1}}) {
-        if (grid.is_valid_vert(ixy[0] + dx, ixy[1] + dy)) {
-          protected_verts.insert(
-              grid.get_coords_vert(ixy[0] + dx, ixy[1] + dy));
-        };
+
+      for (int dx = -1; dx <= 1; dx++) {
+        for (int dy = -1; dy <= 1; dy++) {
+          if (grid.is_valid_vert(ixy[0] + dx, ixy[1] + dy)) {
+            protected_verts.insert(
+                grid.get_coords_vert(ixy[0] + dx, ixy[1] + dy));
+          }
+        }
       }
     }
 
