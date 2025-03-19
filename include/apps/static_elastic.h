@@ -31,6 +31,8 @@ class StaticElastic final {
 
   ~StaticElastic() = default;
 
+  void update_mesh() { mesh.update_mesh(); }
+
   // Compute Jacobian matrix without boundary conditions
   BSRMat* jacobian() {
     int ndof = Physics::dof_per_node * mesh.get_num_nodes();
@@ -295,6 +297,18 @@ class StaticElasticErsatz final {
 
   ~StaticElasticErsatz() = default;
 
+  void update_mesh() {
+    int nverts = grid.get_num_verts();
+    auto& elastic_phi = get_mesh().get_lsf_dof();
+    auto& elastic_ersatz_phi = get_mesh_ersatz().get_lsf_dof();
+    for (int i = 0; i < nverts; i++) {
+      elastic_ersatz_phi[i] = -elastic_phi[i];
+    }
+
+    get_mesh().update_mesh();
+    get_mesh_ersatz().update_mesh();
+  }
+
   // Compute Jacobian matrix without boundary conditions
   BSRMat* jacobian() {
     int ndof = Physics::dof_per_node * grid.get_num_verts();
@@ -545,6 +559,8 @@ class StaticElasticNitscheTwoSided final {
         nitsche_app(mesh, quadrature, basis, physics_bulk_primary,
                     physics_bulk_secondary, physics_interface) {}
 
+  void update_mesh() { nitsche_app.update_mesh(); }
+
   template <class... LoadAnalyses>
   std::vector<T> solve(
       const std::vector<int>& bc_dof, const std::vector<T>& bc_vals,
@@ -557,6 +573,7 @@ class StaticElasticNitscheTwoSided final {
 
   Mesh& get_mesh() { return nitsche_app.get_primary_mesh(); }
   Mesh& get_mesh_ersatz() { return nitsche_app.get_secondary_mesh(); }
+
   Quadrature& get_quadrature() {
     return nitsche_app.get_primary_bulk_quadrature();
   }
@@ -565,9 +582,13 @@ class StaticElasticNitscheTwoSided final {
   }
   Basis& get_basis() { return nitsche_app.get_primary_basis(); }
   Basis& get_basis_ersatz() { return nitsche_app.get_secondary_basis(); }
+
   auto& get_analysis() { return nitsche_app.get_primary_bulk_analysis(); }
   auto& get_analysis_ersatz() {
     return nitsche_app.get_secondary_bulk_analysis();
+  }
+  auto& get_analysis_interface() {
+    return nitsche_app.get_interface_analysis();
   }
 
  private:

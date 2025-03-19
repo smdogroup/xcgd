@@ -48,8 +48,7 @@ class InterfaceGalerkinAnalysis final {
         basis(basis_primary),
         physics(physics_interface),
         cell_primary_elems(mesh_primary.get_cell_elems()),
-        cell_secondary_elems(mesh_secondary.get_cell_elems()),
-        secondary_node_offset(mesh_primary.get_num_nodes()) {
+        cell_secondary_elems(mesh_secondary.get_cell_elems()) {
     xcgd_assert(Mesh::is_finite_cell_mesh,
                 "InterfaceProblem only works with FiniteCellMesh for now");
     update_mesh();
@@ -64,6 +63,9 @@ class InterfaceGalerkinAnalysis final {
         interface_cells.push_back(mesh_primary.get_elem_cell(elem_primary));
       }
     }
+
+    // update offset
+    node_offset = mesh_primary.get_num_nodes();
   }
 
   T energy(const T x[], const T dof[]) const {
@@ -117,10 +119,6 @@ class InterfaceGalerkinAnalysis final {
             nrm_ref[d] = ns[spatial_dim * j + d];
           }
         }
-
-        // // TODO: delete
-        // nrm_ref(0) = 0.2;
-        // nrm_ref(1) = 0.7;
 
         total_energy +=
             physics.energy(wts[j], xq, xloc, nrm_ref, J, vals_primary,
@@ -625,7 +623,7 @@ class InterfaceGalerkinAnalysis final {
     int nnodes_secondary = mesh_secondary.get_elem_dof_nodes(
         elem_secondary, nodes_secondary.data());
     for (int ii = 0; ii < nnodes_secondary; ii++) {
-      nodes_secondary[ii] += secondary_node_offset;
+      nodes_secondary[ii] += node_offset;
     }
 
     // Get the element node locations
@@ -681,6 +679,6 @@ class InterfaceGalerkinAnalysis final {
 
   const std::map<int, int>& cell_primary_elems;
   const std::map<int, int>& cell_secondary_elems;
-  int secondary_node_offset;
+  int node_offset;
   std::vector<int> interface_cells;
 };

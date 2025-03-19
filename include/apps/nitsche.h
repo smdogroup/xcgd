@@ -174,6 +174,7 @@ class NitscheTwoSidedApp final {
       mesh_s.get_lsf_dof()[i] = -mesh_m.get_lsf_dof()[i];
     }
     mesh_s.update_mesh();
+    analysis_interface.update_mesh();
   }
 
   BSRMat* jacobian() {

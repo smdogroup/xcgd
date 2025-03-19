@@ -55,7 +55,10 @@ class ProbMeshBase {
   virtual std::set<int>
   get_protected_verts() = 0;  // dv on protected verts are constrained
                               // <= 0.5 by the optimizer
-  virtual std::vector<int> get_bc_nodes() = 0;
+
+  // Return the boundary condition verts
+  // vert index -> [is_x_constrained, is_y_constrained, ...]
+  virtual std::map<int, std::array<bool, Grid::spatial_dim>> get_bc() = 0;
 
   // === If there is non-design verts, implement the following methods
 
@@ -126,6 +129,14 @@ class CantileverMesh final
         };
       }
     }
+
+    // Set left verts as bc verts and constrain all DOFs
+    for (int iy = 0; iy < nxy[1] + 1; iy++) {
+      int vert = this->grid.get_coords_vert(0, iy);
+      std::array<bool, Grid::spatial_dim> bc_dim;
+      bc_dim.fill(true);  // constrain all DOFs
+      bc[vert] = bc_dim;
+    }
   }
 
   int get_nvars() { return this->grid.get_num_verts(); }
@@ -135,9 +146,7 @@ class CantileverMesh final
   std::set<int> get_loaded_verts() { return loaded_verts; }
   std::set<int> get_protected_verts() { return protected_verts; }
 
-  std::vector<int> get_bc_nodes() {
-    return this->erode_mesh.get_left_boundary_nodes();
-  }
+  std::map<int, std::array<bool, Grid::spatial_dim>> get_bc() { return bc; }
 
   Grid& get_grid() { return grid; }
   Mesh& get_erode_mesh() { return erode_mesh; }
@@ -150,6 +159,7 @@ class CantileverMesh final
   Mesh erode_mesh, dilate_mesh;
 
   double loaded_frac;
+  std::map<int, std::array<bool, Grid::spatial_dim>> bc;
   std::set<int> loaded_cells, loaded_verts, protected_verts;
 };
 
@@ -195,6 +205,14 @@ class LbracketMesh final
       this->grid.get_cell_verts(cell, verts);
       loaded_verts.insert(verts[1]);
       loaded_verts.insert(verts[2]);
+    }
+
+    // Set top verts as bc verts and constrain all DOFs
+    for (int ix = 0; ix < nxy[0] + 1; ix++) {
+      int vert = this->grid.get_coords_vert(ix, nxy[0]);
+      std::array<bool, Grid::spatial_dim> bc_dim;
+      bc_dim.fill(true);  // constrain all DOFs
+      bc[vert] = bc_dim;
     }
 
     // Find protected verts
@@ -253,9 +271,7 @@ class LbracketMesh final
   std::set<int> get_non_design_verts() { return {}; }  // TODO: delete
   std::set<int> get_protected_verts() { return protected_verts; }
 
-  std::vector<int> get_bc_nodes() {
-    return this->erode_mesh.get_upper_boundary_nodes();
-  }
+  std::map<int, std::array<bool, Grid::spatial_dim>> get_bc() { return bc; }
 
   // TODO: delete
   std::vector<T> expand(std::vector<T> xr, T _) { return xr; }
@@ -298,6 +314,7 @@ class LbracketMesh final
   Grid grid;
   Mesh erode_mesh, dilate_mesh;
   double loaded_frac, domain_area;
+  std::map<int, std::array<bool, Grid::spatial_dim>> bc;
   std::set<int> loaded_cells, loaded_verts, protected_verts;
   std::set<int> non_design_verts;
   int N, Nr;
@@ -378,6 +395,14 @@ class LbracketGridMesh final
         };
       }
     }
+
+    // Set top verts as bc verts and constrain all DOFs
+    for (int ix = 0; ix < nx2 + 1; ix++) {
+      int vert = this->grid.get_coords_vert(ix, ny1 + ny2);
+      std::array<bool, Grid::spatial_dim> bc_dim;
+      bc_dim.fill(true);  // constrain all DOFs
+      bc[vert] = bc_dim;
+    }
   }
 
   int get_nvars() { return this->grid.get_num_verts(); }
@@ -389,9 +414,7 @@ class LbracketGridMesh final
   std::set<int> get_non_design_verts() { return {}; }
   std::set<int> get_protected_verts() { return protected_verts; }
 
-  std::vector<int> get_bc_nodes() {
-    return this->erode_mesh.get_upper_boundary_nodes();
-  }
+  std::map<int, std::array<bool, Grid::spatial_dim>> get_bc() { return bc; }
 
   // Dummy methods, since we don't have non-design nodes for this mesh
   std::vector<T> expand(std::vector<T> xr, T _) { return xr; }
@@ -410,6 +433,7 @@ class LbracketGridMesh final
   Grid grid;
   Mesh erode_mesh, dilate_mesh;
   double loaded_frac, domain_area;
+  std::map<int, std::array<bool, Grid::spatial_dim>> bc;
   std::set<int> loaded_cells, loaded_verts, protected_verts;
 };
 
@@ -422,6 +446,9 @@ class TopoAnalysis {
  public:
   static constexpr TwoMaterial two_material_method = two_material_method_;
   static constexpr int get_spatial_dim() { return Grid_::spatial_dim; }
+  static constexpr int dof_per_node =
+      get_spatial_dim();  // FIXME: this is not the best practice, should get
+                          // from Physics
 
  private:
   using ProbMesh = ProbMeshBase<T, Np_1d, Grid_, use_finite_cell_mesh>;
@@ -815,28 +842,47 @@ class TopoAnalysis {
 
     // Update the mesh given new phi value
     erode_mesh.update_mesh();
+
+    // Update dilate mesh used for volume
     dilate_mesh.update_mesh();
 
-    if constexpr (two_material_method == TwoMaterial::ERSATZ or
-                  two_material_method == TwoMaterial::NITSCHE) {
-      int nverts = grid.get_num_verts();
-      auto& elastic_phi = elastic->get_mesh().get_lsf_dof();
-      auto& elastic_ersatz_phi = elastic->get_mesh_ersatz().get_lsf_dof();
-      for (int i = 0; i < nverts; i++) {
-        elastic_ersatz_phi[i] = -elastic_phi[i];
-      }
-      elastic->get_mesh_ersatz().update_mesh();
-    }
+    // Update main mesh for elastic analysis
+    elastic->update_mesh();
 
     // Update bc dof for elastic
     bc_dof.clear();
-    std::vector<int> bc_nodes = prob_mesh.get_bc_nodes();
-    for (int n : bc_nodes) {
-      if constexpr (two_material_method == TwoMaterial::ERSATZ) {
-        n = elastic->get_mesh().get_node_vert(n);
-      }
+    std::map<int, std::array<bool, Grid::spatial_dim>> bc = prob_mesh.get_bc();
+
+    auto& bc_mesh = elastic->get_mesh();
+
+    for (auto& [v, bc_dim] : bc) {
       for (int d = 0; d < spatial_dim; d++) {
-        bc_dof.push_back(spatial_dim * n + d);
+        if (bc_dim[d]) {
+          if constexpr (two_material_method == TwoMaterial::OFF) {
+            if (bc_mesh.get_vert_nodes().count(v)) {
+              int n = bc_mesh.get_vert_nodes().at(v);
+              bc_dof.push_back(spatial_dim * n + d);
+            }
+          } else if constexpr (two_material_method == TwoMaterial::ERSATZ) {
+            bc_dof.push_back(spatial_dim * v + d);
+          } else if constexpr (two_material_method == TwoMaterial::NITSCHE) {
+            auto bc_mesh_ersatz = elastic->get_mesh_ersatz();
+            int node_offset = bc_mesh.get_num_nodes();
+
+            if (bc_mesh.get_vert_nodes().count(v)) {
+              int n = bc_mesh.get_vert_nodes().at(v);
+              bc_dof.push_back(spatial_dim * n + d);
+            }
+
+            if (bc_mesh_ersatz.get_vert_nodes().count(v)) {
+              int n = bc_mesh_ersatz.get_vert_nodes().at(v) + node_offset;
+              bc_dof.push_back(spatial_dim * n + d);
+            }
+
+          } else {
+            throw std::runtime_error("unknown two_material_method");
+          }
+        }
       }
     }
 
@@ -1088,6 +1134,13 @@ class TopoAnalysis {
     if constexpr (two_material_method == TwoMaterial::ERSATZ) {
       elastic->get_analysis_ersatz().LSF_jacobian_adjoint_product(
           sol.data(), sol.data() /*this is effectively -psi*/, gcomp.data());
+    } else if constexpr (two_material_method == TwoMaterial::NITSCHE) {
+      int node_offset = elastic->get_mesh().get_num_nodes();
+      elastic->get_analysis_ersatz().LSF_jacobian_adjoint_product(
+          sol.data(), sol.data() /*this is effectively -psi*/, gcomp.data(),
+          node_offset);
+      elastic->get_analysis_interface().LSF_jacobian_adjoint_product(
+          sol.data(), psi_comp.data(), gcomp.data());
     }
 
     std::vector<T> Fx(x.size(), 0.0);
@@ -1154,6 +1207,12 @@ class TopoAnalysis {
     if constexpr (two_material_method == TwoMaterial::ERSATZ) {
       elastic->get_analysis_ersatz().LSF_jacobian_adjoint_product(
           sol.data(), psi_stress_neg.data(), gstress.data());
+    } else if constexpr (two_material_method == TwoMaterial::NITSCHE) {
+      int node_offset = elastic->get_mesh().get_num_nodes();
+      elastic->get_analysis_ersatz().LSF_jacobian_adjoint_product(
+          sol.data(), psi_stress_neg.data(), gstress.data(), node_offset);
+      elastic->get_analysis_interface().LSF_jacobian_adjoint_product(
+          sol.data(), psi_stress.data(), gstress.data());
     }
 
     design_mapping_apply_gradient(gstress.data(), gstress.data());
@@ -1233,39 +1292,40 @@ class TopoAnalysis {
     }
   }
 
+  template <bool is_secondary_mesh = false>
   void write_cut_vtk(const std::string vtk_path, const std::vector<T>& x,
                      std::map<std::string, std::vector<T>&> node_sols = {},
                      std::map<std::string, std::vector<T>&> cell_sols = {},
                      std::map<std::string, std::vector<T>&> node_vecs = {},
                      std::map<std::string, std::vector<T>&> cell_vecs = {}) {
-    const Mesh& mesh = elastic->get_mesh();
-    ToVTK<T, Mesh> vtk(mesh, vtk_path);
+    std::shared_ptr<const Mesh> mesh;
+    if constexpr (is_secondary_mesh) {
+      static_assert(two_material_method == TwoMaterial::NITSCHE,
+                    "only supported for Nitsche formulation");
+      mesh = std::make_shared<const Mesh>(elastic->get_mesh_ersatz());
+    } else {
+      mesh = std::make_shared<const Mesh>(elastic->get_mesh());
+    }
+    ToVTK<T, Mesh> vtk(*mesh, vtk_path);
     vtk.write_mesh();
 
     // Node solutions
     for (auto [name, vals] : node_sols) {
-      if (vals.size() != mesh.get_num_nodes()) {
+      if (vals.size() != mesh->get_num_nodes()) {
         throw std::runtime_error(
             "[TopoAnalysis::write_cut_vtk()]node sol size doesn't match "
             "number of nodes");
       }
       vtk.write_sol(name, vals.data());
     }
-    vtk.write_sol("x", mesh.get_lsf_nodes(x).data());
-    vtk.write_sol("phi_blueprint", mesh.get_lsf_nodes(phi_blueprint).data());
-    vtk.write_sol("phi_dilate", mesh.get_lsf_nodes(phi_dilate).data());
-    vtk.write_sol("phi_erode", mesh.get_lsf_nodes(phi_erode).data());
-
-    std::vector<T> bc_nodes_v(mesh.get_num_nodes(), 0.0);
-    const auto& bc_nodes = prob_mesh.get_bc_nodes();
-    for (int n : bc_nodes) {
-      bc_nodes_v[n] = 1.0;
-    }
-    vtk.write_sol("bc_nodes", bc_nodes_v.data());
+    vtk.write_sol("x", mesh->get_lsf_nodes(x).data());
+    vtk.write_sol("phi_blueprint", mesh->get_lsf_nodes(phi_blueprint).data());
+    vtk.write_sol("phi_dilate", mesh->get_lsf_nodes(phi_dilate).data());
+    vtk.write_sol("phi_erode", mesh->get_lsf_nodes(phi_erode).data());
 
     // Node vectors
     for (auto [name, vals] : node_vecs) {
-      if (vals.size() != spatial_dim * mesh.get_num_nodes()) {
+      if (vals.size() != spatial_dim * mesh->get_num_nodes()) {
         throw std::runtime_error("[TopoAnalysis::write_cut_vtk()]node vec " +
                                  name +
                                  " size doesn't match "
@@ -1274,17 +1334,31 @@ class TopoAnalysis {
       vtk.write_vec(name, vals.data());
     }
 
+    std::vector<T> bc_dof_v(dof_per_node * mesh->get_num_nodes(), 0.0);
+    if constexpr (is_secondary_mesh) {
+      int dof_offset = dof_per_node * elastic->get_mesh().get_num_nodes();
+      for (int val : bc_dof) {
+        bc_dof_v[val - dof_offset] = 1.0;
+      }
+    } else {
+      for (int val : bc_dof) {
+        bc_dof_v[val] = 1.0;
+      }
+    }
+
+    vtk.write_vec("bc", bc_dof_v.data());
+
     // Cell solutions
-    int nelems = mesh.get_num_elements();
+    int nelems = mesh->get_num_elements();
     std::vector<T> is_cut_elem_v(nelems, 0.0);
     for (int i = 0; i < nelems; i++) {
-      if (mesh.is_cut_elem(i)) {
+      if (mesh->is_cut_elem(i)) {
         is_cut_elem_v[i] = 1.0;
       }
     }
     vtk.write_cell_sol("is_cut_element", is_cut_elem_v.data());
     for (auto [name, vals] : cell_sols) {
-      if (vals.size() != mesh.get_num_elements()) {
+      if (vals.size() != mesh->get_num_elements()) {
         throw std::runtime_error(
             "[TopoAnalysis::write_cut_vtk()]cell sol size doesn't match "
             "number of elements");
@@ -1292,13 +1366,13 @@ class TopoAnalysis {
       vtk.write_cell_sol(name, vals.data());
     }
 
-    std::vector<double> conds(mesh.get_num_elements());
-    for (int elem = 0; elem < mesh.get_num_elements(); elem++) {
+    std::vector<double> conds(mesh->get_num_elements());
+    for (int elem = 0; elem < mesh->get_num_elements(); elem++) {
       conds[elem] = VandermondeCondLogger::get_conds().at(elem);
     }
     vtk.write_cell_sol("cond", conds.data());
 
-    auto& stencils = mesh.get_elem_nodes();
+    auto& stencils = mesh->get_elem_nodes();
     std::map<int, std::vector<int>> degenerate_stencils;
     std::vector<double> nstencils(stencils.size(), -1);
     for (auto& [elem, stencil] : stencils) {
@@ -1312,7 +1386,7 @@ class TopoAnalysis {
 
     // Cell vectors
     for (auto [name, vals] : cell_vecs) {
-      if (vals.size() != mesh.get_num_elements()) {
+      if (vals.size() != mesh->get_num_elements()) {
         throw std::runtime_error(
             "[TopoAnalysis::write_cut_vtk()]cell vec size doesn't match "
             "number of elements * spatial_dim");
@@ -1321,12 +1395,14 @@ class TopoAnalysis {
     }
 
     // Save stencils and degenerate stencils
-    auto [base, suffix] = split_path(vtk_path);
-    StencilToVTK<T, Mesh> stencil_vtk(mesh, base + "_stencils" + suffix);
-    stencil_vtk.write_stencils(stencils);
-    StencilToVTK<T, Mesh> degen_stencil_vtk(mesh,
-                                            base + "_degen_stencils" + suffix);
-    degen_stencil_vtk.write_stencils(degenerate_stencils);
+    if constexpr (two_material_method != TwoMaterial::NITSCHE) {
+      auto [base, suffix] = split_path(vtk_path);
+      StencilToVTK<T, Mesh> stencil_vtk(*mesh, base + "_stencils" + suffix);
+      stencil_vtk.write_stencils(stencils);
+      StencilToVTK<T, Mesh> degen_stencil_vtk(
+          *mesh, base + "_degen_stencils" + suffix);
+      degen_stencil_vtk.write_stencils(degenerate_stencils);
+    }
   }
 
   void write_prob_json(const std::string json_path, const ConfigParser& parser,
@@ -1344,6 +1420,8 @@ class TopoAnalysis {
   ProbMesh& get_prob_mesh() { return prob_mesh; }
 
   void set_stress_ksrho(double ksrho) { stress_ks.set_ksrho(ksrho); }
+
+  auto& get_elastic() { return elastic; }
 
  private:
   ProbMesh& prob_mesh;
@@ -1680,7 +1758,10 @@ class TopoProb {
         topo.write_grid_vtk(vtk_path, x,
                             {{"protected_verts", protected_verts_v}}, {},
                             {{"displacement", u}, {"rhs", topo.get_rhs()}}, {});
-      } else {
+      } else if constexpr (TopoAnalysis::two_material_method ==
+                               TwoMaterial::OFF or
+                           TopoAnalysis::two_material_method ==
+                               TwoMaterial::NITSCHE) {
         topo.write_grid_vtk(
             vtk_path, x, {{"protected_verts", protected_verts_v}}, {}, {}, {});
       }
@@ -1690,8 +1771,33 @@ class TopoProb {
           fspath(prefix) / fspath("cut_" + std::to_string(counter) + ".vtk");
       if constexpr (TopoAnalysis::two_material_method == TwoMaterial::ERSATZ) {
         topo.write_cut_vtk(vtk_path, x, {}, {}, {}, {});
-      } else {
+      } else if constexpr (TopoAnalysis::two_material_method ==
+                           TwoMaterial::OFF) {
         topo.write_cut_vtk(vtk_path, x, {}, {}, {{"displacement", u}}, {});
+      } else if constexpr (TopoAnalysis::two_material_method ==
+                           TwoMaterial::NITSCHE) {
+        std::string vtk_path_primary =
+            fspath(prefix) /
+            fspath("cut_primary_" + std::to_string(counter) + ".vtk");
+        std::string vtk_path_secondary =
+            fspath(prefix) /
+            fspath("cut_secondary_" + std::to_string(counter) + ".vtk");
+
+        constexpr int dof_per_node = TopoAnalysis::dof_per_node;
+        int dof_offset =
+            topo.get_elastic()->get_mesh().get_num_nodes() * dof_per_node;
+
+        std::vector<T> u_primary(u.begin(), u.begin() + dof_offset);
+        std::vector<T> u_secondary(u.begin() + dof_offset, u.end());
+
+        xcgd_assert((u_primary.size() + u_secondary.size()) == u.size(),
+                    "incompatible");
+
+        topo.write_cut_vtk(vtk_path_primary, x, {}, {},
+                           {{"displacement", u_primary}}, {});
+
+        topo.template write_cut_vtk<true>(vtk_path_secondary, x, {}, {},
+                                          {{"displacement", u_secondary}}, {});
       }
 
       // Write quadrature-level data
@@ -1737,9 +1843,14 @@ class TopoProb {
       if constexpr (TopoAnalysis::two_material_method == TwoMaterial::ERSATZ) {
         topo.write_cut_vtk(fspath(prefix) / fspath(vtk_name), x, {}, {}, {},
                            {});
-      } else {
+      } else if constexpr (TopoAnalysis::two_material_method ==
+                           TwoMaterial::OFF) {
         topo.write_cut_vtk(fspath(prefix) / fspath(vtk_name), x, {}, {},
                            {{"displacement", u}}, {});
+      } else if constexpr (TopoAnalysis::two_material_method ==
+                           TwoMaterial::NITSCHE) {
+        topo.write_cut_vtk(fspath(prefix) / fspath(vtk_name), x, {}, {}, {},
+                           {});
       }
     }
 
