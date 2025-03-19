@@ -598,12 +598,6 @@ class TopoAnalysis {
         return ret;
       };
 
-  // using Elastic = typename std::conditional<
-  //     two_material_method == TwoMaterial::ERSATZ,
-  //     StaticElasticErsatz<T, Mesh, Quadrature, Basis, typeof(int_func),
-  //     Grid>, StaticElastic<T, Mesh, Quadrature, Basis,
-  //     typeof(int_func)>>::type;
-
   using ElasticVanilla =
       StaticElastic<T, Mesh, Quadrature, Basis, typeof(int_func)>;
   using ElasticErsatz =
