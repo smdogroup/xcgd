@@ -1306,7 +1306,15 @@ class TopoAnalysis {
                      std::map<std::string, std::vector<T>&> node_sols = {},
                      std::map<std::string, std::vector<T>&> cell_sols = {},
                      std::map<std::string, std::vector<T>&> node_vecs = {},
-                     std::map<std::string, std::vector<T>&> cell_vecs = {}) {
+                     std::map<std::string, std::vector<T>&> cell_vecs = {}) {}
+
+  template <bool is_secondary_mesh = false>
+  void write_cut_vtk_deprecated(
+      const std::string vtk_path, const std::vector<T>& x,
+      std::map<std::string, std::vector<T>&> node_sols = {},
+      std::map<std::string, std::vector<T>&> cell_sols = {},
+      std::map<std::string, std::vector<T>&> node_vecs = {},
+      std::map<std::string, std::vector<T>&> cell_vecs = {}) {
     if constexpr (is_secondary_mesh) {
       static_assert(two_material_method == TwoMaterial::NITSCHE,
                     "only supported for Nitsche formulation");
