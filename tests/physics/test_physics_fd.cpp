@@ -12,6 +12,7 @@
 #include "interface_analysis.h"
 #include "physics/linear_elasticity.h"
 #include "physics/poisson.h"
+#include "physics/stress.h"
 #include "sparse_utils/sparse_utils.h"
 #include "test_commons.h"
 #include "utils/mesher.h"
@@ -324,6 +325,24 @@ void test_linear_elasticity_interface(
   test_physics_fd(tuple, physics, h, tol);
 }
 
+template <class Quadrature, class Basis>
+void test_surf_stress_aggregation(
+    std::tuple<typename Basis::Mesh *, Quadrature *, Basis *> tuple,
+    double h = 1e-5, double tol = 1e-10) {
+  using Physics = LinearElasticity2DSurfStressAggregation<T>;
+  double ksrho = 1.23;
+  T yield_stress = 2.4;
+  T E = 15.6, nu = 5.6;
+
+  Physics physics(ksrho, E, nu, yield_stress);
+  physics.set_type(SurfStressType::normal);
+  bool check_res_only = true;
+  test_physics_fd(tuple, physics, h, tol, check_res_only);
+
+  physics.set_type(SurfStressType::tangent);
+  test_physics_fd(tuple, physics, h, tol, check_res_only);
+}
+
 TEST(physics, PoissonCutDirichlet) {
   test_poisson_cut_dirichlet(create_gd_lsf_surf_basis(), 1e-5, 1e-10);
 }
@@ -349,4 +368,9 @@ TEST(physics, ElasticityExternalLoad) {
 TEST(physics, LinearElasticityInterface) {
   test_linear_elasticity_interface(create_gd_lsf_surf_basis<2>());
   test_linear_elasticity_interface(create_gd_lsf_surf_basis<4>());
+}
+
+TEST(physics, SurfStressAggregation) {
+  test_surf_stress_aggregation(create_gd_lsf_surf_basis<2>(), 1e-5, 1e-9);
+  test_surf_stress_aggregation(create_gd_lsf_surf_basis<4>(), 1e-5, 1e-9);
 }

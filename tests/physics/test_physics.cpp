@@ -178,33 +178,6 @@ create_gd_basis() {
   return {mesh, new Quadrature(*mesh), new Basis(*mesh)};
 }
 
-template <int Np_1d = 4>
-std::tuple<CutMesh<T, Np_1d> *,
-           GDLSFQuadrature2D<T, Np_1d, QuadPtType::SURFACE> *,
-           GDBasis2D<T, CutMesh<T, Np_1d>> *>
-create_gd_lsf_surf_basis() {
-  int constexpr nx = 8, ny = 8;
-  using Grid = StructuredGrid2D<T>;
-  using Quadrature = GDLSFQuadrature2D<T, Np_1d, QuadPtType::SURFACE>;
-  using Mesh = CutMesh<T, Np_1d>;
-  using Basis = GDBasis2D<T, Mesh>;
-
-  int nxy[2] = {nx, ny};
-  T lxy[2] = {3.0, 3.0};
-  T pt0[2] = {1.5, 1.5};
-  T r0 = 1.0;
-  Grid *grid = new Grid(nxy, lxy);
-  Mesh *mesh = new Mesh(*grid, [pt0, r0](T x[]) {
-    return (x[0] - pt0[0]) * (x[0] - pt0[0]) +
-           (x[1] - pt0[1]) * (x[1] - pt0[1]) - r0 * r0;
-  });
-
-  // ToVTK<T, Mesh> vtk(*mesh, "lsf_surf.vtk");
-  // vtk.write_mesh();
-  // vtk.write_sol("lsf", mesh->get_lsf_nodes().data());
-  return {mesh, new Quadrature(*mesh), new Basis(*mesh)};
-}
-
 template <class Quadrature, class Basis>
 void test_neohookean(
     std::tuple<typename Basis::Mesh *, Quadrature *, Basis *> tuple,
@@ -338,9 +311,9 @@ TEST(physics, GradPenalizationGD) {
   test_grad_penalization(create_gd_basis(), 1e-8, 1e-8);
 }
 
-TEST(physics, StressAggregation2DQuad) {
+TEST(physics, VonMisesStressAggregation2DQuad) {
   test_stress_aggregation(create_quad_basis());
 }
-TEST(physics, StressAggregation2DGD) {
+TEST(physics, VonMisesStressAggregation2DGD) {
   test_stress_aggregation(create_gd_basis(), 1e-8, 1e-6);
 }
