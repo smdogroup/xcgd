@@ -587,7 +587,7 @@ class TopoAnalysis {
 
     // Instantiate the elastic app
     if constexpr (two_material_method == TwoMaterial::OFF) {
-      elastic = std::make_unique<Elastic>(
+      elastic = std::make_shared<Elastic>(
           parser.get_double_option("E"), parser.get_double_option("nu"),
           erode_mesh, erode_quadrature, erode_basis, int_func);
     } else if constexpr (two_material_method == TwoMaterial::ERSATZ) {
@@ -596,7 +596,7 @@ class TopoAnalysis {
       double E2 = parser.get_double_option("E2");
       double nu2 = parser.get_double_option("nu2");
       elastic =
-          std::make_unique<Elastic>(E, nu, erode_mesh, erode_quadrature,
+          std::make_shared<Elastic>(E, nu, erode_mesh, erode_quadrature,
                                     erode_basis, int_func, E2 / E, nu2 / nu);
     } else if constexpr (two_material_method == TwoMaterial::NITSCHE) {
       double nitsche_eta = parser.get_double_option("nitsche_eta");
@@ -605,7 +605,7 @@ class TopoAnalysis {
       double E2 = parser.get_double_option("E2");
       double nu2 = parser.get_double_option("nu2");
       elastic =
-          std::make_unique<Elastic>(nitsche_eta, E1, nu1, E2, nu2, erode_mesh,
+          std::make_shared<Elastic>(nitsche_eta, E1, nu1, E2, nu2, erode_mesh,
                                     erode_quadrature, erode_basis, int_func);
     } else {
       throw std::runtime_error("unknown two_material_method");
@@ -1293,39 +1293,47 @@ class TopoAnalysis {
   }
 
   template <bool is_secondary_mesh = false>
+  Mesh& get_mesh_for_vtk() {
+    if constexpr (is_secondary_mesh) {
+      return elastic->get_mesh_ersatz();
+    } else {
+      return elastic->get_mesh();
+    }
+  }
+
+  template <bool is_secondary_mesh = false>
   void write_cut_vtk(const std::string vtk_path, const std::vector<T>& x,
                      std::map<std::string, std::vector<T>&> node_sols = {},
                      std::map<std::string, std::vector<T>&> cell_sols = {},
                      std::map<std::string, std::vector<T>&> node_vecs = {},
                      std::map<std::string, std::vector<T>&> cell_vecs = {}) {
-    std::shared_ptr<const Mesh> mesh;
     if constexpr (is_secondary_mesh) {
       static_assert(two_material_method == TwoMaterial::NITSCHE,
                     "only supported for Nitsche formulation");
-      mesh = std::make_shared<const Mesh>(elastic->get_mesh_ersatz());
-    } else {
-      mesh = std::make_shared<const Mesh>(elastic->get_mesh());
     }
-    ToVTK<T, Mesh> vtk(*mesh, vtk_path);
+
+    Mesh& mesh = get_mesh_for_vtk<is_secondary_mesh>();
+
+    ToVTK<T, Mesh> vtk(mesh, vtk_path);
     vtk.write_mesh();
 
     // Node solutions
     for (auto [name, vals] : node_sols) {
-      if (vals.size() != mesh->get_num_nodes()) {
+      if (vals.size() != mesh.get_num_nodes()) {
         throw std::runtime_error(
             "[TopoAnalysis::write_cut_vtk()]node sol size doesn't match "
             "number of nodes");
       }
       vtk.write_sol(name, vals.data());
     }
-    vtk.write_sol("x", mesh->get_lsf_nodes(x).data());
-    vtk.write_sol("phi_blueprint", mesh->get_lsf_nodes(phi_blueprint).data());
-    vtk.write_sol("phi_dilate", mesh->get_lsf_nodes(phi_dilate).data());
-    vtk.write_sol("phi_erode", mesh->get_lsf_nodes(phi_erode).data());
+    vtk.write_sol("x", mesh.get_lsf_nodes(x).data());
+    vtk.write_sol("phi_blueprint", mesh.get_lsf_nodes(phi_blueprint).data());
+    vtk.write_sol("phi_dilate", mesh.get_lsf_nodes(phi_dilate).data());
+    vtk.write_sol("phi_erode", mesh.get_lsf_nodes(phi_erode).data());
 
     // Node vectors
     for (auto [name, vals] : node_vecs) {
-      if (vals.size() != spatial_dim * mesh->get_num_nodes()) {
+      if (vals.size() != spatial_dim * mesh.get_num_nodes()) {
         throw std::runtime_error("[TopoAnalysis::write_cut_vtk()]node vec " +
                                  name +
                                  " size doesn't match "
@@ -1334,7 +1342,7 @@ class TopoAnalysis {
       vtk.write_vec(name, vals.data());
     }
 
-    std::vector<T> bc_dof_v(dof_per_node * mesh->get_num_nodes(), 0.0);
+    std::vector<T> bc_dof_v(dof_per_node * mesh.get_num_nodes(), 0.0);
     if constexpr (is_secondary_mesh) {
       int dof_offset = dof_per_node * elastic->get_mesh().get_num_nodes();
       for (int val : bc_dof) {
@@ -1349,16 +1357,16 @@ class TopoAnalysis {
     vtk.write_vec("bc", bc_dof_v.data());
 
     // Cell solutions
-    int nelems = mesh->get_num_elements();
+    int nelems = mesh.get_num_elements();
     std::vector<T> is_cut_elem_v(nelems, 0.0);
     for (int i = 0; i < nelems; i++) {
-      if (mesh->is_cut_elem(i)) {
+      if (mesh.is_cut_elem(i)) {
         is_cut_elem_v[i] = 1.0;
       }
     }
     vtk.write_cell_sol("is_cut_element", is_cut_elem_v.data());
     for (auto [name, vals] : cell_sols) {
-      if (vals.size() != mesh->get_num_elements()) {
+      if (vals.size() != mesh.get_num_elements()) {
         throw std::runtime_error(
             "[TopoAnalysis::write_cut_vtk()]cell sol size doesn't match "
             "number of elements");
@@ -1366,13 +1374,13 @@ class TopoAnalysis {
       vtk.write_cell_sol(name, vals.data());
     }
 
-    std::vector<double> conds(mesh->get_num_elements());
-    for (int elem = 0; elem < mesh->get_num_elements(); elem++) {
+    std::vector<double> conds(mesh.get_num_elements());
+    for (int elem = 0; elem < mesh.get_num_elements(); elem++) {
       conds[elem] = VandermondeCondLogger::get_conds().at(elem);
     }
     vtk.write_cell_sol("cond", conds.data());
 
-    auto& stencils = mesh->get_elem_nodes();
+    auto& stencils = mesh.get_elem_nodes();
     std::map<int, std::vector<int>> degenerate_stencils;
     std::vector<double> nstencils(stencils.size(), -1);
     for (auto& [elem, stencil] : stencils) {
@@ -1386,7 +1394,7 @@ class TopoAnalysis {
 
     // Cell vectors
     for (auto [name, vals] : cell_vecs) {
-      if (vals.size() != mesh->get_num_elements()) {
+      if (vals.size() != mesh.get_num_elements()) {
         throw std::runtime_error(
             "[TopoAnalysis::write_cut_vtk()]cell vec size doesn't match "
             "number of elements * spatial_dim");
@@ -1397,10 +1405,10 @@ class TopoAnalysis {
     // Save stencils and degenerate stencils
     if constexpr (two_material_method != TwoMaterial::NITSCHE) {
       auto [base, suffix] = split_path(vtk_path);
-      StencilToVTK<T, Mesh> stencil_vtk(*mesh, base + "_stencils" + suffix);
+      StencilToVTK<T, Mesh> stencil_vtk(mesh, base + "_stencils" + suffix);
       stencil_vtk.write_stencils(stencils);
       StencilToVTK<T, Mesh> degen_stencil_vtk(
-          *mesh, base + "_degen_stencils" + suffix);
+          mesh, base + "_degen_stencils" + suffix);
       degen_stencil_vtk.write_stencils(degenerate_stencils);
     }
   }
@@ -1437,7 +1445,7 @@ class TopoAnalysis {
   RobustProjection<T> projector_blueprint, projector_dilate, projector_erode;
   HFilter hfilter;
   CFilter cfilter;
-  std::unique_ptr<Elastic> elastic;
+  std::shared_ptr<Elastic> elastic;
   Volume vol;
   VolAnalysis vol_analysis;
   Penalization pen;
