@@ -46,19 +46,28 @@ class ProbMeshBase {
 
   virtual T get_domain_area() = 0;
   virtual int get_nvars() = 0;
-  virtual std::set<int> get_loaded_cells() = 0;
-  virtual std::set<int> get_loaded_verts() = 0;
   virtual Grid& get_grid() = 0;
   virtual Mesh& get_erode_mesh() = 0;
   virtual Mesh& get_dilate_mesh() = 0;
 
-  virtual std::set<int>
-  get_protected_verts() = 0;  // dv on protected verts are constrained
-                              // <= 0.5 by the optimizer
+  virtual std::set<int> get_loaded_cells() { return {}; };
+  virtual std::set<int> get_loaded_verts() { return {}; };
+
+  // Protected verts are verts where we would like material on
+  // dv on protected verts are constrained <= 0.5 by the optimizer
+  // dv < 0.5 is material
+  virtual std::set<int> get_protected_verts() { return {}; };
+
+  // Void verts are verts where we would like void on
+  // dv on protected verts are constrained >= 0.5 by the optimizer
+  // dv > 0.5 is void
+  virtual std::set<int> get_void_verts() { return {}; }
 
   // Return the boundary condition verts
-  // vert index -> [is_x_constrained, is_y_constrained, ...]
-  virtual std::map<int, std::array<bool, Grid::spatial_dim>> get_bc() = 0;
+  // vert index -> [(dim1, val1), (dim2, val2), ...]
+  // for example, 0 -> [(0, 0), (1, 0), (2, 0)] is clamping vert 0 in all x y
+  // and z directions
+  virtual std::map<int, std::vector<std::pair<int, T>>> get_bc() = 0;
 
   // === If there is non-design verts, implement the following methods
 
@@ -135,9 +144,9 @@ class CantileverMesh final
     // Set left verts as bc verts and constrain all DOFs
     for (int iy = 0; iy < nxy[1] + 1; iy++) {
       int vert = this->grid.get_coords_vert(0, iy);
-      std::array<bool, Grid::spatial_dim> bc_dim;
-      bc_dim.fill(true);  // constrain all DOFs
-      bc[vert] = bc_dim;
+      for (int d = 0; d < Grid::spatial_dim; d++) {
+        bc[vert].push_back({d, 0.0});
+      }
     }
   }
 
@@ -148,7 +157,7 @@ class CantileverMesh final
   std::set<int> get_loaded_verts() { return loaded_verts; }
   std::set<int> get_protected_verts() { return protected_verts; }
 
-  std::map<int, std::array<bool, Grid::spatial_dim>> get_bc() { return bc; }
+  std::map<int, std::vector<std::pair<int, T>>> get_bc() { return bc; }
 
   Grid& get_grid() { return grid; }
   Mesh& get_erode_mesh() { return erode_mesh; }
@@ -161,8 +170,118 @@ class CantileverMesh final
   Mesh erode_mesh, dilate_mesh;
 
   double loaded_frac;
-  std::map<int, std::array<bool, Grid::spatial_dim>> bc;
+  std::map<int, std::vector<std::pair<int, T>>> bc;
   std::set<int> loaded_cells, loaded_verts, protected_verts;
+};
+
+/*
+ * Material anchor problem mesh.
+ *
+ *           ┌─────────── l1(C) ───────────┐
+ *
+ *     ┌     ┌─────────────────────────────┐→
+ *     │     │                             │→
+ *     │     │                             │→
+ *     │     │                             │→  (D)
+ * 0.5 l1 (A)│                             │→
+ *     │  ┌  ├──...                        │→
+ *     │l2(B)│                             │→
+ *     └  └  ------------ (E) --------------→  Symmetry axis
+ *
+ *
+ *    - Symmetry conditions are applied to E
+ *    - prescribed displacement is applied to D
+ *    - B is clamped
+ *    - C is constrained in y direction and free to slide in x direction
+ *    - l2 / l1 = clamped ratio
+ *
+ * */
+template <typename T, int Np_1d, bool use_finite_cell_mesh>
+class AnchorMesh final
+    : public ProbMeshBase<T, Np_1d, StructuredGrid2D<T>, use_finite_cell_mesh> {
+ private:
+  using Base =
+      ProbMeshBase<T, Np_1d, StructuredGrid2D<T>, use_finite_cell_mesh>;
+
+ public:
+  using typename Base::Grid;
+  using typename Base::Mesh;
+
+  AnchorMesh(std::array<int, Grid::spatial_dim> nxy,
+             std::array<T, Grid::spatial_dim> lxy, double clamped_frac, T D_ux)
+      : nxy(nxy),
+        lxy(lxy),
+        grid(nxy.data(), lxy.data()),
+        erode_mesh(grid),
+        dilate_mesh(grid),
+        clamped_frac(clamped_frac) {
+    // // depth of protection in number of verts, inclusive
+    // int protect_levels = 2;
+
+    // Find clamped verts
+    for (int iy = 0; iy < nxy[1] + 1; iy++) {
+      int vert = this->grid.get_coords_vert(0, iy);
+      T xloc[Grid::spatial_dim];
+      this->grid.get_vert_xloc(vert, xloc);
+      if (xloc[1] <= lxy[1] * clamped_frac) {
+        for (int d = 0; d < Grid::spatial_dim; d++) {
+          bc[vert].push_back({d, 0.0});
+        }
+
+        // Set protected verts
+        protected_verts.insert(vert);
+      } else {
+        // Set void verts
+        void_verts.insert(vert);
+      }
+    }
+
+    // Set bc for edge (E)
+    for (int ix = 1 /*we skip the first vert*/; ix < nxy[0] + 1; ix++) {
+      int vert = this->grid.get_coords_vert(ix, 0);
+      bc[vert].push_back({1, 0.0});  // constrain y-movement
+    }
+
+    // Set bc for edge (C)
+    for (int ix = 0; ix < nxy[0] + 1; ix++) {
+      int vert = this->grid.get_coords_vert(ix, nxy[1]);
+      bc[vert].push_back({1, 0.0});  // constrain y-movement
+
+      // Set void verts
+      void_verts.insert(vert);
+    }
+
+    // Set bc for edge (D)
+    for (int iy = 0; iy < nxy[1] + 1; iy++) {
+      int vert = this->grid.get_coords_vert(nxy[0], iy);
+      bc[vert].push_back({0, D_ux});  // prescribe the x-displacement
+
+      // Set void verts
+      void_verts.insert(vert);
+    }
+  }
+
+  int get_nvars() { return this->grid.get_num_verts(); }
+  T get_domain_area() { return lxy[0] * lxy[1]; }
+
+  std::set<int> get_protected_verts() { return protected_verts; }
+  std::set<int> get_void_verts() { return void_verts; }
+
+  std::map<int, std::vector<std::pair<int, T>>> get_bc() { return bc; }
+
+  Grid& get_grid() { return grid; }
+  Mesh& get_erode_mesh() { return erode_mesh; }
+  Mesh& get_dilate_mesh() { return dilate_mesh; }
+
+ private:
+  std::array<int, Grid::spatial_dim> nxy;
+  std::array<T, Grid::spatial_dim> lxy;
+  Grid grid;
+  Mesh erode_mesh, dilate_mesh;
+
+  double clamped_frac;
+  std::map<int, std::vector<std::pair<int, T>>> bc;
+  std::set<int> protected_verts, void_verts;
 };
 
 template <typename T, int Np_1d, bool use_finite_cell_mesh>
@@ -212,9 +331,9 @@ class LbracketMesh final
     // Set top verts as bc verts and constrain all DOFs
     for (int ix = 0; ix < nxy[0] + 1; ix++) {
       int vert = this->grid.get_coords_vert(ix, nxy[0]);
-      std::array<bool, Grid::spatial_dim> bc_dim;
-      bc_dim.fill(true);  // constrain all DOFs
-      bc[vert] = bc_dim;
+      for (int d = 0; d < Grid::spatial_dim; d++) {
+        bc[vert].push_back({d, 0.0});
+      }
     }
 
     // Find protected verts
@@ -273,7 +392,7 @@ class LbracketMesh final
   std::set<int> get_non_design_verts() { return {}; }  // TODO: delete
   std::set<int> get_protected_verts() { return protected_verts; }
 
-  std::map<int, std::array<bool, Grid::spatial_dim>> get_bc() { return bc; }
+  std::map<int, std::vector<std::pair<int, T>>> get_bc() { return bc; }
 
   // TODO: delete
   std::vector<T> expand(std::vector<T> xr, T _) { return xr; }
@@ -316,7 +435,7 @@ class LbracketMesh final
   Grid grid;
   Mesh erode_mesh, dilate_mesh;
   double loaded_frac, domain_area;
-  std::map<int, std::array<bool, Grid::spatial_dim>> bc;
+  std::map<int, std::vector<std::pair<int, T>>> bc;
   std::set<int> loaded_cells, loaded_verts, protected_verts;
   std::set<int> non_design_verts;
   int N, Nr;
@@ -401,9 +520,9 @@ class LbracketGridMesh final
     // Set top verts as bc verts and constrain all DOFs
     for (int ix = 0; ix < nx2 + 1; ix++) {
       int vert = this->grid.get_coords_vert(ix, ny1 + ny2);
-      std::array<bool, Grid::spatial_dim> bc_dim;
-      bc_dim.fill(true);  // constrain all DOFs
-      bc[vert] = bc_dim;
+      for (int d = 0; d < Grid::spatial_dim; d++) {
+        bc[vert].push_back({d, 0.0});
+      }
     }
   }
 
@@ -416,7 +535,7 @@ class LbracketGridMesh final
   std::set<int> get_non_design_verts() { return {}; }
   std::set<int> get_protected_verts() { return protected_verts; }
 
-  std::map<int, std::array<bool, Grid::spatial_dim>> get_bc() { return bc; }
+  std::map<int, std::vector<std::pair<int, T>>> get_bc() { return bc; }
 
   // Dummy methods, since we don't have non-design nodes for this mesh
   std::vector<T> expand(std::vector<T> xr, T _) { return xr; }
@@ -435,7 +554,7 @@ class LbracketGridMesh final
   Grid grid;
   Mesh erode_mesh, dilate_mesh;
   double loaded_frac, domain_area;
-  std::map<int, std::array<bool, Grid::spatial_dim>> bc;
+  std::map<int, std::vector<std::pair<int, T>>> bc;
   std::set<int> loaded_cells, loaded_verts, protected_verts;
 };
 
@@ -630,6 +749,22 @@ class TopoAnalysis {
                offset;
       dvs[i] = dvs[i] / (1.0 + offset) / 2.0 +
                0.5;  // scale dvs uniformly so it's in [0, 1]
+    }
+    return dvs;
+  }
+
+  // create a quarter of ellipse centered at (0, 0)
+  // a: semi-major axis
+  // b: semi-minor axis
+  std::vector<T> create_initial_topology_anchor(double a, double b) {
+    int nverts = grid.get_num_verts();
+    std::vector<T> dvs(nverts, 0.0);
+    for (int i = 0; i < nverts; i++) {
+      T xloc[Mesh::spatial_dim];
+      grid.get_vert_xloc(i, xloc);
+      T x = xloc[0];
+      T y = xloc[1];
+      dvs[i] = x * x / a / a + y * y / b / b - 1.0;
     }
     return dvs;
   }
@@ -853,40 +988,50 @@ class TopoAnalysis {
 
     // Update bc dof for elastic
     bc_dof.clear();
-    std::map<int, std::array<bool, Grid::spatial_dim>> bc = prob_mesh.get_bc();
+    bc_vals.clear();
+    std::map<int, std::vector<std::pair<int, T>>> bc = prob_mesh.get_bc();
 
     auto& bc_mesh = elastic->get_mesh();
 
-    for (auto& [v, bc_dim] : bc) {
-      for (int d = 0; d < spatial_dim; d++) {
-        if (bc_dim[d]) {
-          if constexpr (two_material_method == TwoMaterial::OFF) {
-            if (bc_mesh.get_vert_nodes().count(v)) {
-              int n = bc_mesh.get_vert_nodes().at(v);
-              bc_dof.push_back(spatial_dim * n + d);
-            }
-          } else if constexpr (two_material_method == TwoMaterial::ERSATZ) {
-            bc_dof.push_back(spatial_dim * v + d);
-          } else if constexpr (two_material_method == TwoMaterial::NITSCHE) {
-            auto bc_mesh_ersatz = elastic->get_mesh_ersatz();
-            int node_offset = bc_mesh.get_num_nodes();
-
-            if (bc_mesh.get_vert_nodes().count(v)) {
-              int n = bc_mesh.get_vert_nodes().at(v);
-              bc_dof.push_back(spatial_dim * n + d);
-            }
-
-            if (bc_mesh_ersatz.get_vert_nodes().count(v)) {
-              int n = bc_mesh_ersatz.get_vert_nodes().at(v) + node_offset;
-              bc_dof.push_back(spatial_dim * n + d);
-            }
-
-          } else {
-            throw std::runtime_error("unknown two_material_method");
+    for (auto& [vert, dim_val_v] : bc) {
+      for (auto& dim_val : dim_val_v) {
+        int d = dim_val.first;
+        T val = dim_val.second;
+        if constexpr (two_material_method == TwoMaterial::OFF) {
+          if (bc_mesh.get_vert_nodes().count(vert)) {
+            int n = bc_mesh.get_vert_nodes().at(vert);
+            bc_dof.push_back(spatial_dim * n + d);
+            bc_vals.push_back(val);
           }
+        } else if constexpr (two_material_method == TwoMaterial::ERSATZ) {
+          bc_dof.push_back(spatial_dim * vert + d);
+          bc_vals.push_back(val);
+        } else if constexpr (two_material_method == TwoMaterial::NITSCHE) {
+          auto bc_mesh_ersatz = elastic->get_mesh_ersatz();
+          int node_offset = bc_mesh.get_num_nodes();
+
+          if (bc_mesh.get_vert_nodes().count(vert)) {
+            int n = bc_mesh.get_vert_nodes().at(vert);
+            bc_dof.push_back(spatial_dim * n + d);
+            bc_vals.push_back(val);
+          }
+
+          if (bc_mesh_ersatz.get_vert_nodes().count(vert)) {
+            int n = bc_mesh_ersatz.get_vert_nodes().at(vert) + node_offset;
+            bc_dof.push_back(spatial_dim * n + d);
+            bc_vals.push_back(val);
+          }
+
+        } else {
+          throw std::runtime_error("unknown two_material_method");
         }
       }
     }
+
+    xcgd_assert(bc_dof.size() == bc_vals.size(),
+                "bc_dof and bc_vals have different sizes (" +
+                    std::to_string(bc_dof.size()) + ", " +
+                    std::to_string(bc_vals.size()) + ")");
 
     return HFx;
   }
@@ -918,14 +1063,14 @@ class TopoAnalysis {
         LoadQuadratureTop load_quadrature(elastic_mesh, load_elements);
         LoadAnalysisTop load_analysis(elastic_mesh, load_quadrature,
                                       elastic->get_basis(), load_physics);
-        sol = elastic->solve(bc_dof, std::vector<T>(bc_dof.size(), T(0.0)),
+        sol = elastic->solve(bc_dof, bc_vals,
                              std::tuple<LoadAnalysisTop>(load_analysis), chol);
       } else {
         LoadQuadratureRight load_quadrature(elastic_mesh, load_elements);
         LoadAnalysisRight load_analysis(elastic_mesh, load_quadrature,
                                         elastic->get_basis(), load_physics);
         sol =
-            elastic->solve(bc_dof, std::vector<T>(bc_dof.size(), T(0.0)),
+            elastic->solve(bc_dof, bc_vals,
                            std::tuple<LoadAnalysisRight>(load_analysis), chol);
       }
 
@@ -1429,6 +1574,7 @@ class TopoAnalysis {
     j["cfg"] = parser.get_options();
     j["phi_blueprint"] = phi_blueprint;
     j["bc_dof"] = bc_dof;
+    j["bc_vals"] = bc_vals;
     j["loaded_cells"] = loaded_cells;
     j["dvs"] = x;
     write_json(json_path, j);
@@ -1477,6 +1623,7 @@ class TopoAnalysis {
   std::vector<T> phi_blueprint;
 
   std::vector<int> bc_dof;
+  std::vector<T> bc_vals;
 
   std::set<int> loaded_cells;
 
@@ -1643,7 +1790,13 @@ class TopoProb {
         x0 = topo.create_initial_topology_lbracket(
             parser.get_int_option("init_topology_lbracket_nholes_1d"),
             parser.get_double_option("init_topology_lbracket_r"));
-      } else {
+      } else if (init_topology_method == "anchor") {
+        x0 = topo.create_initial_topology_anchor(
+            parser.get_double_option("init_topology_anchor_a"),
+            parser.get_double_option("init_topology_anchor_b"));
+      }
+
+      else {
         throw std::runtime_error("init_topology_method = " +
                                  init_topology_method + " is not supported");
       }
@@ -1667,9 +1820,19 @@ class TopoProb {
     for (int i : protected_verts) {
       int ir = prob_mesh.reduce_index(i);
       if (ir >= 0) {
-        ub[i] =
-            0.5;  // we prescribe x to be sufficient low for protected
-                  // verts such that material will be placed at those locations
+        ub[i] = 0.499;  // we prescribe x to be sufficient low for protected
+                        // verts such that material will be placed at those
+                        // locations
+      }
+    }
+
+    const auto& void_verts = topo.get_prob_mesh().get_void_verts();
+    for (int i : void_verts) {
+      int ir = prob_mesh.reduce_index(i);
+      if (ir >= 0) {
+        lb[i] = 0.501;  // we prescribe x to be sufficient high for void
+                        // verts such that material will not be placed at
+                        // those locations
       }
     }
   }
@@ -2340,14 +2503,15 @@ void execute(int argc, char* argv[]) {
 
   // Set up analysis
   std::string instance = parser.get_str_option("instance");
-  if (!(instance == "lbracket" or instance == "cantilever")) {
+  if (!(instance == "lbracket" or instance == "cantilever" or
+        instance == "anchor")) {
     throw std::runtime_error(
         "expect lbracket or cantilever for option instance, got " + instance);
   }
 
   std::shared_ptr<ProbMeshBase<T, Np_1d, Grid, use_finite_cell_mesh>> prob_mesh;
-  double loaded_frac = parser.get_double_option("loaded_frac");
   if constexpr (use_lbracket_grid) {
+    double loaded_frac = parser.get_double_option("loaded_frac");
     double lbracket_frac = parser.get_double_option("lbracket_frac");
     bool load_top = parser.get_bool_option("load_top");
     if (load_top) {
@@ -2361,10 +2525,17 @@ void execute(int argc, char* argv[]) {
     }
   } else {
     if (instance == "cantilever") {
+      double loaded_frac = parser.get_double_option("loaded_frac");
       prob_mesh =
           std::make_shared<CantileverMesh<T, Np_1d, use_finite_cell_mesh>>(
               nxy, lxy, loaded_frac);
+    } else if (instance == "anchor") {
+      double clamped_frac = parser.get_double_option("anchor_clamped_frac");
+      double D_ux = parser.get_double_option("anchor_D_ux");
+      prob_mesh = std::make_shared<AnchorMesh<T, Np_1d, use_finite_cell_mesh>>(
+          nxy, lxy, clamped_frac, D_ux);
     } else if (instance == "lbracket") {
+      double loaded_frac = parser.get_double_option("loaded_frac");
       double lbracket_frac = parser.get_double_option("lbracket_frac");
       prob_mesh =
           std::make_shared<LbracketMesh<T, Np_1d, use_finite_cell_mesh>>(
@@ -2470,7 +2641,11 @@ int main(int argc, char* argv[]) {
               "unknown two_material_method");
   TwoMaterial two_material_method = two_material_map[two_material_method_str];
 
-  bool use_lbracket_grid = parser.get_bool_option("use_lbracket_grid");
+  bool use_lbracket_grid = false;
+  if (parser.get_str_option("instance") == "lbracket") {
+    use_lbracket_grid = parser.get_bool_option("use_lbracket_grid");
+  }
+
   bool use_finite_cell_mesh = parser.get_bool_option("use_finite_cell_mesh");
 
   if (Np_1d % 2) {
