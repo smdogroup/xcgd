@@ -582,6 +582,8 @@ class TopoAnalysis {
   using Mesh = typename ProbMesh::Mesh;
   using Quadrature =
       GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER, Grid, Np_1d, Mesh>;
+  using SurfQuadrature =
+      GDLSFQuadrature2D<T, Np_1d, QuadPtType::SURFACE, Grid, Np_1d, Mesh>;
   using Basis = GDBasis2D<T, Mesh>;
   using HFilter = HelmholtzFilter<T, Np_1d_filter, Grid>;
   using CFilter = ConvolutionFilter<T, Grid>;
@@ -613,17 +615,25 @@ class TopoAnalysis {
   using Penalization = GradPenalization<T, Basis::spatial_dim>;
   using Stress = LinearElasticity2DVonMisesStress<T>;
   using StressKS = LinearElasticity2DVonMisesStressAggregation<T>;
+  using SurfStress = LinearElasticity2DSurfStress<T>;
+  using SurfStressKS = LinearElasticity2DSurfStressAggregation<T>;
   using VolAnalysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Volume>;
   using PenalizationAnalysis =
       GalerkinAnalysis<T, typename HFilter::Mesh, typename HFilter::Quadrature,
                        typename HFilter::Basis, Penalization>;
   using StressAnalysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Stress>;
+  using SurfStressAnalysis =
+      GalerkinAnalysis<T, Mesh, SurfQuadrature, Basis, SurfStress>;
 
   static constexpr bool from_to_grid_mesh =
       (two_material_method == TwoMaterial::ERSATZ);
 
   using StressKSAnalysis =
       GalerkinAnalysis<T, Mesh, Quadrature, Basis, StressKS, from_to_grid_mesh>;
+  using SurfStressKSAnalysis =
+      GalerkinAnalysis<T, Mesh, SurfQuadrature, Basis, SurfStressKS,
+                       from_to_grid_mesh>;
+
   using StrainStress = LinearElasticity2DStrainStress<T>;
   using StrainStressAnalysis =
       GalerkinAnalysis<T, Mesh, Quadrature, Basis, StrainStress,
@@ -656,6 +666,7 @@ class TopoAnalysis {
         dilate_mesh(prob_mesh.get_dilate_mesh()),
         erode_quadrature(erode_mesh),
         dilate_quadrature(dilate_mesh),
+        erode_surf_quadrature(erode_mesh),
         erode_basis(erode_mesh),
         dilate_basis(dilate_mesh),
         projector_blueprint(parser.get_double_option("robust_proj_beta"), 0.5,
@@ -681,6 +692,17 @@ class TopoAnalysis {
                   parser.get_bool_option("stress_use_discrete_ks")),
         stress_ks_analysis(erode_mesh, erode_quadrature, erode_basis,
                            stress_ks),
+        surf_stress(parser.get_double_option("E"),
+                    parser.get_double_option("nu"), SurfStressType::normal),
+        surf_stress_analysis(erode_mesh, erode_surf_quadrature, erode_basis,
+                             surf_stress),
+        surf_stress_ks(parser.get_double_option("stress_ksrho_init"),
+                       parser.get_double_option("E"),
+                       parser.get_double_option("nu"),
+                       parser.get_double_option("surf_yield_stress"), 1.0,
+                       SurfStressType::normal),
+        surf_stress_ks_analysis(erode_mesh, erode_surf_quadrature, erode_basis,
+                                surf_stress_ks),
         bulk_int_analysis(erode_mesh, erode_quadrature, erode_basis, bulk_int),
         phi_erode(erode_mesh.get_lsf_dof()),
         phi_dilate(dilate_mesh.get_lsf_dof()),
@@ -1104,6 +1126,8 @@ class TopoAnalysis {
     T pterm = pen_analysis.energy(nullptr, phi_blueprint.data());
 
     auto [xloc_q, stress_q] = eval_stress(sol);
+    xcgd_assert(stress_q.size() > 0,
+                "error has occured on quadrature stress evaluation");
     T max_stress = *std::max_element(stress_q.begin(), stress_q.end());
     T max_stress_ratio = max_stress / stress_ks.get_yield_stress();
     stress_ks.set_max_stress_ratio(max_stress_ratio);
@@ -1121,6 +1145,19 @@ class TopoAnalysis {
                                  stress_ks.get_ksrho();
     }
 
+    auto [xloc_surf_q, stress_surf_q] = eval_surf_stress(sol);
+    xcgd_assert(stress_surf_q.size() > 0,
+                "error has occured on surface quadrature stress evaluation");
+    T max_surf_stress =
+        *std::max_element(stress_surf_q.begin(), stress_surf_q.end());
+    T max_surf_stress_ratio =
+        max_surf_stress / surf_stress_ks.get_yield_stress();
+
+    T surf_ks_energy = surf_stress_ks_analysis.energy(nullptr, sol.data());
+
+    T surf_ks_stress_ratio = max_surf_stress_ratio +
+                             log(surf_ks_energy) / surf_stress_ks.get_ksrho();
+
     // Save information
     cache["x"] = x;
     cache["sol"] = sol;
@@ -1129,7 +1166,8 @@ class TopoAnalysis {
     cache["ks_energy"] = ks_energy;
 
     return std::make_tuple(HFx, comp, area, pterm, max_stress, max_stress_ratio,
-                           ks_stress_ratio, sol, xloc_q, stress_q);
+                           ks_stress_ratio, surf_ks_stress_ratio, sol, xloc_q,
+                           stress_q, xloc_surf_q, stress_surf_q);
   }
 
   // only useful if ersatz material is used
@@ -1183,7 +1221,26 @@ class TopoAnalysis {
           grid_dof_to_cut_dof<spatial_dim>(stress_analysis.get_mesh(), u)
               .data());
     } else {
-      return stress_analysis.interpolate_energy(u.data());
+      return stress_analysis.interpolate_energy(
+          u.data());  // FIXME: this is hacky, if two_material_method ==
+                      // TwoMaterial::NITSCHE, u is really concat(u_primary,
+                      // u_secondary), and we're effectly using the primary part
+                      // of it because pass-by-pointer does the trick
+    }
+  }
+
+  std::pair<std::vector<T>, std::vector<T>> eval_surf_stress(
+      const std::vector<T>& u) {
+    if constexpr (two_material_method == TwoMaterial::ERSATZ) {
+      return surf_stress_analysis.interpolate_energy(
+          grid_dof_to_cut_dof<spatial_dim>(surf_stress_analysis.get_mesh(), u)
+              .data());
+    } else {
+      return surf_stress_analysis.interpolate_energy(
+          u.data());  // FIXME: this is hacky, if two_material_method ==
+                      // TwoMaterial::NITSCHE, u is really concat(u_primary,
+                      // u_secondary), and we're effectly using the primary part
+                      // of it because pass-by-pointer does the trick
     }
   }
 
@@ -1610,6 +1667,7 @@ class TopoAnalysis {
   Mesh& erode_mesh;
   Mesh& dilate_mesh;
   Quadrature erode_quadrature, dilate_quadrature;
+  SurfQuadrature erode_surf_quadrature;
   Basis erode_basis, dilate_basis;
 
   RobustProjection<T> projector_blueprint, projector_dilate, projector_erode;
@@ -1628,6 +1686,12 @@ class TopoAnalysis {
 
   StressKS stress_ks;
   StressKSAnalysis stress_ks_analysis;
+
+  SurfStress surf_stress;
+  SurfStressAnalysis surf_stress_analysis;
+
+  SurfStressKS surf_stress_ks;
+  SurfStressKSAnalysis surf_stress_ks_analysis;
 
   BulkInt bulk_int;
   BulkIntAnalysis bulk_int_analysis;
@@ -1918,7 +1982,8 @@ class TopoProb {
     }
 
     auto [HFx, comp, area, pterm, max_stress, max_stress_ratio, ks_stress_ratio,
-          u, xloc_q, stress_q] = topo.eval_obj_con(x);
+          surf_ks_stress_ratio, u, xloc_q, stress_q, xloc_surf_q,
+          stress_surf_q] = topo.eval_obj_con(x);
 
     // Evaluate the design change ||phi_new - phi_old||_infty
     std::transform(
@@ -2011,14 +2076,28 @@ class TopoProb {
                            {{"displacement", u_secondary}}, {});
       }
 
-      // Write quadrature-level data
-      vtk_path =
-          fspath(prefix) / fspath("quad_" + std::to_string(counter) + ".vtk");
-      FieldToVTKNew<T, TopoAnalysis::get_spatial_dim()> field_vtk(vtk_path);
-      field_vtk.add_mesh(xloc_q);
-      field_vtk.write_mesh();
-      field_vtk.add_sol("VonMises", stress_q);
-      field_vtk.write_sol("VonMises");
+      // Write bulk quadrature-level data
+      {
+        vtk_path =
+            fspath(prefix) / fspath("quad_" + std::to_string(counter) + ".vtk");
+        FieldToVTKNew<T, TopoAnalysis::get_spatial_dim()> field_vtk(vtk_path);
+        field_vtk.add_mesh(xloc_q);
+        field_vtk.write_mesh();
+        field_vtk.add_sol("VonMises", stress_q);
+        field_vtk.write_sol("VonMises");
+      }
+
+      // Write surface quadrature-level data
+      {
+        vtk_path = fspath(prefix) /
+                   fspath("surfquad_" + std::to_string(counter) + ".vtk");
+        FieldToVTKNew<T, TopoAnalysis::get_spatial_dim()> field_vtk(vtk_path);
+        field_vtk.add_mesh(xloc_surf_q);
+        field_vtk.write_mesh();
+
+        field_vtk.add_sol("SurfStress", stress_surf_q);
+        field_vtk.write_sol("SurfStress");
+      }
     }
 
     // write quadrature to vtk for gradient check

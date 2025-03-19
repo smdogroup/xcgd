@@ -16,7 +16,7 @@ class LinearElasticity2DVonMisesStress final : public PhysicsBase<T, 2, 0, 2> {
   LinearElasticity2DVonMisesStress(T E, T nu)
       : mu(0.5 * E / (1.0 + nu)), lambda(E * nu / ((1.0 + nu) * (1.0 - nu))) {}
 
-  T energy(T weight, T _, A2D::Vec<T, spatial_dim>& __,
+  T energy(T _____, T _, A2D::Vec<T, spatial_dim>& __,
            A2D::Vec<T, spatial_dim>& ___,
            A2D::Mat<T, spatial_dim, spatial_dim>& J,
            A2D::Vec<T, dof_per_node>& ____,
@@ -31,7 +31,7 @@ class LinearElasticity2DVonMisesStress final : public PhysicsBase<T, 2, 0, 2> {
     return von_mises;
   }
 
-  void residual(T weight, T _, A2D::Vec<T, spatial_dim>& xloc,
+  void residual(T _____, T _, A2D::Vec<T, spatial_dim>& xloc,
                 A2D::Vec<T, spatial_dim>& __,
                 A2D::Mat<T, spatial_dim, spatial_dim>& J,
                 A2D::Vec<T, dof_per_node>& u,
@@ -263,6 +263,8 @@ class LinearElasticity2DSurfStress final : public PhysicsBase<T, 2, 0, 2> {
     surf_stress_type = surf_stress_type_;
   }
 
+  SurfStressType get_type() { return surf_stress_type; }
+
   T energy(T weight, T _, A2D::Vec<T, spatial_dim>& __,
            A2D::Vec<T, spatial_dim>& nrm_ref,
            A2D::Mat<T, spatial_dim, spatial_dim>& J,
@@ -322,6 +324,8 @@ class LinearElasticity2DSurfStressAggregation final
   void set_type(SurfStressType surf_stress_type_) {
     surf_stress_type = surf_stress_type_;
   }
+
+  SurfStressType get_type() { return surf_stress_type; }
 
   // Does not effect result, but set a proper value can help preventing
   // floating-point overflow
