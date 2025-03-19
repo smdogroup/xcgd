@@ -227,11 +227,17 @@ class AnchorMesh final
         for (int d = 0; d < Grid::spatial_dim; d++) {
           bc[vert].push_back({d, 0.0});
         }
+      }
 
-        // Set protected verts
+      // Set protected verts
+      // 0.9 is a magic shrinking parameter
+      if (xloc[1] <= lxy[1] * clamped_frac * 0.9) {
         protected_verts.insert(vert);
-      } else {
-        // Set void verts
+      }
+
+      // Set void verts
+      // 1.1 is a magic expanding parameter
+      if (xloc[1] >= lxy[1] * clamped_frac * 1.1) {
         void_verts.insert(vert);
       }
     }
@@ -759,13 +765,21 @@ class TopoAnalysis {
   std::vector<T> create_initial_topology_anchor(double a, double b) {
     int nverts = grid.get_num_verts();
     std::vector<T> dvs(nverts, 0.0);
+    const T* lxy = grid.get_lxy();
+
+    T dv_max = lxy[0] * lxy[0] / a / a + lxy[1] * lxy[1] / b / b - 1.0;
+    T t = dv_max > 1.0 ? dv_max : 1.0;
+    t = 2.01 * t;
+
     for (int i = 0; i < nverts; i++) {
       T xloc[Mesh::spatial_dim];
       grid.get_vert_xloc(i, xloc);
       T x = xloc[0];
       T y = xloc[1];
-      dvs[i] = x * x / a / a + y * y / b / b - 1.0;
+      dvs[i] = (x * x / a / a + y * y / b / b - 1.0) / t +
+               0.5;  // in [0, 1] and dvs == 0.5 is the cut boundary
     }
+
     return dvs;
   }
 
@@ -1448,12 +1462,62 @@ class TopoAnalysis {
     }
   }
 
-  template <bool is_secondary_mesh = false>
   void write_cut_vtk(const std::string vtk_path, const std::vector<T>& x,
                      std::map<std::string, std::vector<T>&> node_sols = {},
                      std::map<std::string, std::vector<T>&> cell_sols = {},
                      std::map<std::string, std::vector<T>&> node_vecs = {},
                      std::map<std::string, std::vector<T>&> cell_vecs = {}) {}
+
+  void write_cut_vtk(Mesh& mesh, const std::string vtk_path,
+                     std::map<std::string, std::vector<T>&> node_sols = {},
+                     std::map<std::string, std::vector<T>&> cell_sols = {},
+                     std::map<std::string, std::vector<T>&> node_vecs = {},
+                     std::map<std::string, std::vector<T>&> cell_vecs = {}) {
+    ToVTK<T, Mesh> vtk(mesh, vtk_path);
+    vtk.write_mesh();
+
+    // Node solutions
+    {
+      for (auto [name, vals] : node_sols) {
+        xcgd_assert(vals.size() == mesh.get_num_nodes(),
+                    "node sol size doesn't match number of nodes");
+        vtk.write_sol(name, vals.data());
+      }
+
+      vtk.write_sol("phi_blueprint", mesh.get_lsf_nodes(phi_blueprint).data());
+      vtk.write_sol("phi_dilate", mesh.get_lsf_nodes(phi_dilate).data());
+      vtk.write_sol("phi_erode", mesh.get_lsf_nodes(phi_erode).data());
+    }
+
+    // Node vectors
+    {
+      for (auto [name, vals] : node_vecs) {
+        xcgd_assert(
+            vals.size() == spatial_dim * mesh.get_num_nodes(),
+            "node vec size doesn't match number of nodes * spatial_dim");
+        vtk.write_vec(name, vals.data());
+      }
+    }
+
+    // Cell solutions
+    {
+      for (auto [name, vals] : cell_sols) {
+        xcgd_assert(vals.size() == mesh.get_num_elements(),
+                    "cell sol size doesn't match number of elements");
+        vtk.write_cell_sol(name, vals.data());
+      }
+    }
+
+    // Cell vectors
+    {
+      for (auto [name, vals] : cell_vecs) {
+        xcgd_assert(
+            vals.size() == mesh.get_num_elements() * spatial_dim,
+            "cell vec size doesn't match numbre of elements * spatial_dim");
+        vtk.write_cell_vec(name, vals.data());
+      }
+    }
+  }
 
   template <bool is_secondary_mesh = false>
   void write_cut_vtk_deprecated(
@@ -1835,6 +1899,20 @@ class TopoProb {
                         // those locations
       }
     }
+
+    std::vector<T> lb_v(nvars), ub_v(nvars);
+    for (int i = 0; i < nvars; i++) {
+      lb_v[i] = (T)lb[i];
+      ub_v[i] = (T)ub[i];
+    }
+
+    std::vector<T> lb_expand_v =
+        prob_mesh.expand(lb_v, std::numeric_limits<T>::quiet_NaN());
+    std::vector<T> ub_expand_v =
+        prob_mesh.expand(ub_v, std::numeric_limits<T>::quiet_NaN());
+
+    topo.write_grid_vtk(fspath(prefix) / fspath("init_and_bounds.vtk"), x0,
+                        {{"lb", lb_expand_v}, {"ub", ub_expand_v}}, {}, {}, {});
   }
 
   int evalObjCon(T* xptr, T* fobj, T* cons) {
@@ -1974,11 +2052,12 @@ class TopoProb {
         xcgd_assert((u_primary.size() + u_secondary.size()) == u.size(),
                     "incompatible");
 
-        topo.write_cut_vtk(vtk_path_primary, x, {}, {},
-                           {{"displacement", u_primary}}, {});
+        topo.write_cut_vtk(topo.get_elastic()->get_mesh(), vtk_path_primary, {},
+                           {}, {{"displacement", u_primary}}, {});
 
-        topo.template write_cut_vtk<true>(vtk_path_secondary, x, {}, {},
-                                          {{"displacement", u_secondary}}, {});
+        topo.write_cut_vtk(topo.get_elastic()->get_mesh_ersatz(),
+                           vtk_path_secondary, {}, {},
+                           {{"displacement", u_secondary}}, {});
       }
 
       // Write quadrature-level data
@@ -2570,7 +2649,6 @@ void execute_1(int argc, char* argv[], int Np_1d) {
   // else if (Np_1d == 4) {
   //   execute<4, two_material_method, use_lbracket_grid, use_finite_cell_mesh>(
   //       argc, argv);
-  //
   // }
   // else if (Np_1d == 6) {
   //   execute<6, two_material_method, use_lbracket_grid, use_finite_cell_mesh>(
