@@ -43,133 +43,6 @@ class LinearElasticity2DVonMisesStress final : public PhysicsBase<T, 2, 0, 2> {
   T mu, lambda;  // Lame parameters
 };
 
-enum class StrainStressType { sx, sy, sxy, ex, ey, exy };
-
-template <typename T>
-class LinearElasticity2DStrainStress final : public PhysicsBase<T, 2, 0, 2> {
- private:
-  using PhysicsBase_s = PhysicsBase<T, 2, 0, 2>;
-
- public:
-  using PhysicsBase_s::data_per_node;
-  using PhysicsBase_s::dof_per_node;
-  using PhysicsBase_s::spatial_dim;
-
-  LinearElasticity2DStrainStress(
-      T E, T nu, StrainStressType strain_stress_type = StrainStressType::sx)
-      : mu(0.5 * E / (1.0 + nu)),
-        lambda(E * nu / ((1.0 + nu) * (1.0 - nu))),
-        strain_stress_type(strain_stress_type) {}
-
-  void set_type(StrainStressType strain_stress_type_) {
-    strain_stress_type = strain_stress_type_;
-  }
-
-  T energy(T weight, T _, A2D::Vec<T, spatial_dim>& __,
-           A2D::Vec<T, spatial_dim>& ___,
-           A2D::Mat<T, spatial_dim, spatial_dim>& J,
-           A2D::Vec<T, dof_per_node>& ____,
-           A2D::Mat<T, dof_per_node, spatial_dim>& grad) const {
-    T trS, detS, von_mises;
-    A2D::SymMat<T, spatial_dim> E, S;
-    A2D::MatGreenStrain<A2D::GreenStrainType::LINEAR>(grad, E);
-    A2D::SymIsotropic(mu, lambda, E, S);
-
-    switch (strain_stress_type) {
-      case StrainStressType::sx: {
-        return S(0, 0);
-      }
-      case StrainStressType::sy: {
-        return S(1, 1);
-      }
-      case StrainStressType::sxy: {
-        return S(0, 1);
-      }
-      case StrainStressType::ex: {
-        return E(0, 0);
-      }
-      case StrainStressType::ey: {
-        return E(1, 1);
-      }
-      case StrainStressType::exy: {
-        return E(0, 1);
-      }
-    }
-    return T(0.0);
-  }
-
-  void residual(T weight, T _, A2D::Vec<T, spatial_dim>& xloc,
-                A2D::Vec<T, spatial_dim>& __,
-                A2D::Mat<T, spatial_dim, spatial_dim>& J,
-                A2D::Vec<T, dof_per_node>& u,
-                A2D::Mat<T, dof_per_node, spatial_dim>& grad,
-                A2D::Vec<T, dof_per_node>& coef_u,
-                A2D::Mat<T, dof_per_node, spatial_dim>& coef_grad) const {}
-
- private:
-  T mu, lambda;  // Lame parameters
-  StrainStressType strain_stress_type;
-};
-
-// normal is outer normal
-// tangent is outer normal rotating 90 degrees counterclockwise
-enum class SurfStressType { normal, tangent };
-
-template <typename T>
-class LinearElasticity2DSurfStress final : public PhysicsBase<T, 2, 0, 2> {
- private:
-  using PhysicsBase_s = PhysicsBase<T, 2, 0, 2>;
-
- public:
-  using PhysicsBase_s::data_per_node;
-  using PhysicsBase_s::dof_per_node;
-  using PhysicsBase_s::spatial_dim;
-
-  LinearElasticity2DSurfStress(
-      T E, T nu, SurfStressType surf_stress_type = SurfStressType::normal)
-      : mu(0.5 * E / (1.0 + nu)),
-        lambda(E * nu / ((1.0 + nu) * (1.0 - nu))),
-        surf_stress_type(surf_stress_type) {}
-
-  void set_type(SurfStressType surf_stress_type_) {
-    surf_stress_type = surf_stress_type_;
-  }
-
-  T energy(T weight, T _, A2D::Vec<T, spatial_dim>& __,
-           A2D::Vec<T, spatial_dim>& nrm_ref,
-           A2D::Mat<T, spatial_dim, spatial_dim>& J,
-           A2D::Vec<T, dof_per_node>& ____,
-           A2D::Mat<T, dof_per_node, spatial_dim>& grad) const {
-    // Evaluate stress tensor in cartesian coordinates
-    T trS, detS, von_mises;
-    A2D::SymMat<T, spatial_dim> E, S;
-    A2D::MatGreenStrain<A2D::GreenStrainType::LINEAR>(grad, E);
-    A2D::SymIsotropic(mu, lambda, E, S);
-
-    // Compute sin and cos
-    A2D::Vec<T, spatial_dim> nrm;
-    A2D::MatVecMult(J, nrm_ref, nrm);
-    A2D::VecNormalize(nrm, nrm);
-    T Cos = nrm(0);
-    T Sin = nrm(1);
-
-    switch (surf_stress_type) {
-      case SurfStressType::normal: {
-        return S(0, 0) * Cos * Cos + S(1, 1) * Sin * Sin +
-               2.0 * S(0, 1) * Sin * Cos;
-      }
-      case SurfStressType::tangent: {
-        return (S(0, 0) - S(1, 1)) * Sin * Cos +
-               S(0, 1) * (Sin * Sin - Cos * Cos);
-      }
-    }
-  }
-
- private:
-  T mu, lambda;  // Lame parameters
-  SurfStressType surf_stress_type;
-};
-
 /*
  * Evaluates the approximated maximum Von Mises stress over a domain using
  * continuous KS aggregation:
@@ -296,4 +169,131 @@ class LinearElasticity2DVonMisesStressAggregation final
   const T yield_stress;
   T max_stress_ratio;  // maximum Von Mises stress / yield stress
   bool use_discrete_ks;
+};
+
+enum class StrainStressType { sx, sy, sxy, ex, ey, exy };
+
+template <typename T>
+class LinearElasticity2DStrainStress final : public PhysicsBase<T, 2, 0, 2> {
+ private:
+  using PhysicsBase_s = PhysicsBase<T, 2, 0, 2>;
+
+ public:
+  using PhysicsBase_s::data_per_node;
+  using PhysicsBase_s::dof_per_node;
+  using PhysicsBase_s::spatial_dim;
+
+  LinearElasticity2DStrainStress(
+      T E, T nu, StrainStressType strain_stress_type = StrainStressType::sx)
+      : mu(0.5 * E / (1.0 + nu)),
+        lambda(E * nu / ((1.0 + nu) * (1.0 - nu))),
+        strain_stress_type(strain_stress_type) {}
+
+  void set_type(StrainStressType strain_stress_type_) {
+    strain_stress_type = strain_stress_type_;
+  }
+
+  T energy(T weight, T _, A2D::Vec<T, spatial_dim>& __,
+           A2D::Vec<T, spatial_dim>& ___,
+           A2D::Mat<T, spatial_dim, spatial_dim>& J,
+           A2D::Vec<T, dof_per_node>& ____,
+           A2D::Mat<T, dof_per_node, spatial_dim>& grad) const {
+    T trS, detS, von_mises;
+    A2D::SymMat<T, spatial_dim> E, S;
+    A2D::MatGreenStrain<A2D::GreenStrainType::LINEAR>(grad, E);
+    A2D::SymIsotropic(mu, lambda, E, S);
+
+    switch (strain_stress_type) {
+      case StrainStressType::sx: {
+        return S(0, 0);
+      }
+      case StrainStressType::sy: {
+        return S(1, 1);
+      }
+      case StrainStressType::sxy: {
+        return S(0, 1);
+      }
+      case StrainStressType::ex: {
+        return E(0, 0);
+      }
+      case StrainStressType::ey: {
+        return E(1, 1);
+      }
+      case StrainStressType::exy: {
+        return E(0, 1);
+      }
+    }
+    return T(0.0);
+  }
+
+  void residual(T weight, T _, A2D::Vec<T, spatial_dim>& xloc,
+                A2D::Vec<T, spatial_dim>& __,
+                A2D::Mat<T, spatial_dim, spatial_dim>& J,
+                A2D::Vec<T, dof_per_node>& u,
+                A2D::Mat<T, dof_per_node, spatial_dim>& grad,
+                A2D::Vec<T, dof_per_node>& coef_u,
+                A2D::Mat<T, dof_per_node, spatial_dim>& coef_grad) const {}
+
+ private:
+  T mu, lambda;  // Lame parameters
+  StrainStressType strain_stress_type;
+};
+
+// normal is outer normal
+// tangent is outer normal rotating 90 degrees counterclockwise
+enum class SurfStressType { normal, tangent };
+
+template <typename T>
+class LinearElasticity2DSurfStress final : public PhysicsBase<T, 2, 0, 2> {
+ private:
+  using PhysicsBase_s = PhysicsBase<T, 2, 0, 2>;
+
+ public:
+  using PhysicsBase_s::data_per_node;
+  using PhysicsBase_s::dof_per_node;
+  using PhysicsBase_s::spatial_dim;
+
+  LinearElasticity2DSurfStress(
+      T E, T nu, SurfStressType surf_stress_type = SurfStressType::normal)
+      : mu(0.5 * E / (1.0 + nu)),
+        lambda(E * nu / ((1.0 + nu) * (1.0 - nu))),
+        surf_stress_type(surf_stress_type) {}
+
+  void set_type(SurfStressType surf_stress_type_) {
+    surf_stress_type = surf_stress_type_;
+  }
+
+  T energy(T weight, T _, A2D::Vec<T, spatial_dim>& __,
+           A2D::Vec<T, spatial_dim>& nrm_ref,
+           A2D::Mat<T, spatial_dim, spatial_dim>& J,
+           A2D::Vec<T, dof_per_node>& ____,
+           A2D::Mat<T, dof_per_node, spatial_dim>& grad) const {
+    // Evaluate stress tensor in cartesian coordinates
+    T trS, detS, von_mises;
+    A2D::SymMat<T, spatial_dim> E, S;
+    A2D::MatGreenStrain<A2D::GreenStrainType::LINEAR>(grad, E);
+    A2D::SymIsotropic(mu, lambda, E, S);
+
+    // Compute sin and cos
+    A2D::Vec<T, spatial_dim> nrm;
+    A2D::MatVecMult(J, nrm_ref, nrm);
+    A2D::VecNormalize(nrm, nrm);
+    T Cos = nrm(0);
+    T Sin = nrm(1);
+
+    switch (surf_stress_type) {
+      case SurfStressType::normal: {
+        return S(0, 0) * Cos * Cos + S(1, 1) * Sin * Sin +
+               2.0 * S(0, 1) * Sin * Cos;
+      }
+      case SurfStressType::tangent: {
+        return (S(0, 0) - S(1, 1)) * Sin * Cos +
+               S(0, 1) * (Sin * Sin - Cos * Cos);
+      }
+    }
+  }
+
+ private:
+  T mu, lambda;  // Lame parameters
+  SurfStressType surf_stress_type;
 };

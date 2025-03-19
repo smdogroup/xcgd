@@ -689,19 +689,6 @@ class TopoAnalysis {
                   parser.get_bool_option("stress_use_discrete_ks")),
         stress_ks_analysis(erode_mesh, erode_quadrature, erode_basis,
                            stress_ks),
-        strain_stress_sx(parser.get_double_option("E"),
-                         parser.get_double_option("nu"), StrainStressType::sx),
-        strain_stress_sy(parser.get_double_option("E"),
-                         parser.get_double_option("nu"), StrainStressType::sy),
-        strain_stress_sxy(parser.get_double_option("E"),
-                          parser.get_double_option("nu"),
-                          StrainStressType::sxy),
-        strain_stress_sx_analysis(erode_mesh, erode_quadrature, erode_basis,
-                                  strain_stress_sx),
-        strain_stress_sy_analysis(erode_mesh, erode_quadrature, erode_basis,
-                                  strain_stress_sy),
-        strain_stress_sxy_analysis(erode_mesh, erode_quadrature, erode_basis,
-                                   strain_stress_sxy),
         bulk_int_analysis(erode_mesh, erode_quadrature, erode_basis, bulk_int),
         spr_stress(erode_mesh, erode_basis, parser.get_double_option("E"),
                    parser.get_double_option("nu")),
@@ -1666,19 +1653,22 @@ class TopoAnalysis {
   HFilter hfilter;
   CFilter cfilter;
   std::shared_ptr<Elastic> elastic;
+
   Volume vol;
   VolAnalysis vol_analysis;
+
   Penalization pen;
   PenalizationAnalysis pen_analysis;
+
   Stress stress;
   StressAnalysis stress_analysis;
+
   StressKS stress_ks;
   StressKSAnalysis stress_ks_analysis;
-  StrainStress strain_stress_sx, strain_stress_sy, strain_stress_sxy;
-  StrainStressAnalysis strain_stress_sx_analysis, strain_stress_sy_analysis,
-      strain_stress_sxy_analysis;
+
   BulkInt bulk_int;
   BulkIntAnalysis bulk_int_analysis;
+
   SPRStress spr_stress;
 
   // level-set values for blueprint, dilate and erode design
