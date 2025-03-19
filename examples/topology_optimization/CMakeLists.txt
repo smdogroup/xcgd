@@ -7,6 +7,9 @@ configure_file(${CMAKE_SOURCE_DIR}/examples/topology_optimization/grad_check_ste
 configure_file(${CMAKE_SOURCE_DIR}/examples/topology_optimization/plot_optimization_history.py
     plot_optimization_history.py COPYONLY)
 
+file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/cfg)
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/cfg/tiny_test_cantilever.cfg ${CMAKE_CURRENT_BINARY_DIR}/cfg/tiny_test_cantilever.cfg COPYONLY)
+
 add_executable(topo topo.cpp)
 add_executable(test_topo test_topo.cpp)
 add_executable(paropt_example paropt_example.cpp)
