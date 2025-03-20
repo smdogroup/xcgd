@@ -1146,6 +1146,24 @@ class TopoAnalysis {
     }
 
     auto [xloc_surf_q, stress_surf_q] = eval_surf_stress(sol);
+
+    // // TODO: delete
+    // std::vector<T> xloc_surf_secondary_q, stress_surf_secondary_q;
+    // if constexpr (two_material_method == TwoMaterial::NITSCHE) {
+    //   SurfQuadrature erode_surf_quadrature_secondary(
+    //       elastic->get_mesh_ersatz());
+    //   SurfStressAnalysis surf_stress_analysis_secondary(
+    //       elastic->get_mesh_ersatz(), erode_surf_quadrature_secondary,
+    //       elastic->get_basis_ersatz(), surf_stress);
+    //
+    //   int dof_offset = elastic->get_mesh().get_num_nodes() * dof_per_node;
+    //   std::vector<T> sol_secondary(sol.begin() + dof_offset, sol.end());
+    //
+    //   std::tie(xloc_surf_secondary_q, stress_surf_secondary_q) =
+    //       surf_stress_analysis_secondary.interpolate_energy(
+    //           sol_secondary.data());
+    // }
+
     xcgd_assert(stress_surf_q.size() > 0,
                 "error has occured on surface quadrature stress evaluation");
     T max_surf_stress =
@@ -1673,7 +1691,6 @@ class TopoAnalysis {
   RobustProjection<T> projector_blueprint, projector_dilate, projector_erode;
   HFilter hfilter;
   CFilter cfilter;
-  std::shared_ptr<Elastic> elastic;
 
   Volume vol;
   VolAnalysis vol_analysis;
@@ -1710,6 +1727,8 @@ class TopoAnalysis {
            std::variant<T, std::vector<T>,
                         std::shared_ptr<SparseUtils::SparseCholesky<T>>>>
       cache;
+
+  std::shared_ptr<Elastic> elastic;
 };
 
 template <typename T, class TopoAnalysis>
@@ -2089,8 +2108,8 @@ class TopoProb {
 
       // Write surface quadrature-level data
       {
-        vtk_path = fspath(prefix) /
-                   fspath("surfquad_" + std::to_string(counter) + ".vtk");
+        vtk_path = fspath(prefix) / fspath("surfquad_primary_" +
+                                           std::to_string(counter) + ".vtk");
         FieldToVTKNew<T, TopoAnalysis::get_spatial_dim()> field_vtk(vtk_path);
         field_vtk.add_mesh(xloc_surf_q);
         field_vtk.write_mesh();
@@ -2098,6 +2117,18 @@ class TopoProb {
         field_vtk.add_sol("SurfStress", stress_surf_q);
         field_vtk.write_sol("SurfStress");
       }
+
+      // if constexpr (TopoAnalysis::two_material_method ==
+      // TwoMaterial::NITSCHE) {
+      //   vtk_path = fspath(prefix) / fspath("surfquad_secondary_" +
+      //                                      std::to_string(counter) + ".vtk");
+      //   FieldToVTKNew<T, TopoAnalysis::get_spatial_dim()>
+      //   field_vtk(vtk_path); field_vtk.add_mesh(xloc_surf_secondary_q);
+      //   field_vtk.write_mesh();
+      //
+      //   field_vtk.add_sol("SurfStress", stress_surf_secondary_q);
+      //   field_vtk.write_sol("SurfStress");
+      // }
     }
 
     // write quadrature to vtk for gradient check
@@ -2675,11 +2706,10 @@ void execute_1(int argc, char* argv[], int Np_1d) {
   if (Np_1d == 2) {
     execute<2, two_material_method, use_lbracket_grid, use_finite_cell_mesh>(
         argc, argv);
+  } else if (Np_1d == 4) {
+    execute<4, two_material_method, use_lbracket_grid, use_finite_cell_mesh>(
+        argc, argv);
   }
-  // else if (Np_1d == 4) {
-  //   execute<4, two_material_method, use_lbracket_grid, use_finite_cell_mesh>(
-  //       argc, argv);
-  // }
   // else if (Np_1d == 6) {
   //   execute<6, two_material_method, use_lbracket_grid, use_finite_cell_mesh>(
   //       argc, argv);

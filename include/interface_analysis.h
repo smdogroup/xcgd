@@ -545,11 +545,6 @@ class InterfaceGalerkinAnalysis final {
         static_assert(spatial_dim == 2,
                       "InterfaceGalerkinAnalysis is only implemented for 2D");
         // Prepare passive quantities: Evaluate dt
-        A2D::Vec<T, spatial_dim> tan_ref;
-        A2D::Mat<T, spatial_dim, spatial_dim> rot;
-        rot(0, 1) = -1.0;
-        rot(1, 0) = 1.0;
-        A2D::MatVecMult(rot, nrm_ref, tan_ref);
 
         T dummy_x = 0.0;
         physics.residual(1.0, dummy_x, xloc, nrm_ref, J, uq_primary,
