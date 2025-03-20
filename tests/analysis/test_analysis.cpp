@@ -140,7 +140,8 @@ T two_sided_LSF_jacobian_adjoint_product_fd_check(
   Grid grid(nxy, lxy);
 
   auto lsf_primary = [](T x[]) {
-    T n = 0.21;
+    // T n = 0.201;  // bad
+    T n = 0.199;  // good
     return (x[0] - 0.5) + n * (x[1] - 0.5);
     // return 1.0 - (x[0] - pt0[0]) * (x[0] - pt0[0]) / 3.5 / 3.5 -
     //        (x[1] - pt0[1]) * (x[1] - pt0[1]) / 2.0 / 2.0;  // <= 0
@@ -194,17 +195,21 @@ T two_sided_LSF_jacobian_adjoint_product_fd_check(
     psi_neg[i] = -psi[i];
   }
 
+  analysis_primary_surf.LSF_jacobian_adjoint_product(dof.data(), psi.data(),
+                                                     dfdphi.data());
+
   // analysis_primary.LSF_jacobian_adjoint_product(dof.data(), psi.data(),
   //                                               dfdphi.data());
   // analysis_secondary.LSF_jacobian_adjoint_product(dof.data(), psi_neg.data(),
   //                                                 dfdphi.data(),
   //                                                 node_offset);
-  analysis_interface.LSF_jacobian_adjoint_product(dof.data(), psi.data(),
-                                                  dfdphi.data());
+  // analysis_interface.LSF_jacobian_adjoint_product(dof.data(), psi.data(),
+  //                                                 dfdphi.data());
 
+  analysis_primary_surf.residual(nullptr, dof.data(), res1.data());
   // analysis_primary.residual(nullptr, dof.data(), res1.data());
   // analysis_secondary.residual(nullptr, dof.data(), res1.data(), node_offset);
-  analysis_interface.residual(nullptr, dof.data(), res1.data());
+  // analysis_interface.residual(nullptr, dof.data(), res1.data());
 
   if (dh > 5e-9 and dh < 5e-8) {
     save_mesh(
@@ -330,9 +335,10 @@ T two_sided_LSF_jacobian_adjoint_product_fd_check(
     }
   }
 
+  analysis_primary_surf.residual(nullptr, dof.data(), res2.data());
   // analysis_primary.residual(nullptr, dof.data(), res2.data());
   // analysis_secondary.residual(nullptr, dof.data(), res2.data(), node_offset);
-  analysis_interface.residual(nullptr, dof.data(), res2.data());
+  // analysis_interface.residual(nullptr, dof.data(), res2.data());
 
   T fd = 0.0, exact = 0.0;
 
@@ -518,8 +524,8 @@ TEST(analysis, AdjJacProductElasticityInterface) {
   double eta = 12.345;
   PhysicsInterface physics_interface(eta, E1, nu1, E2, nu2);
 
-  // test_two_sided_LSF_jacobian_adjoint_product<2>(
-  //     physics_primary, physics_secondary, physics_interface, 1e-5);
+  test_two_sided_LSF_jacobian_adjoint_product<2>(
+      physics_primary, physics_secondary, physics_interface, 1e-5);
   test_two_sided_LSF_jacobian_adjoint_product<4>(
       physics_primary, physics_secondary, physics_interface, 1e-5);
   // test_two_sided_LSF_jacobian_adjoint_product<6>(
