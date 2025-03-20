@@ -1182,6 +1182,7 @@ class TopoAnalysis {
     cache["chol"] = chol;
     cache["area"] = area;
     cache["ks_energy"] = ks_energy;
+    cache["surf_ks_energy"] = surf_ks_energy;
 
     return std::make_tuple(HFx, comp, area, pterm, max_stress, max_stress_ratio,
                            ks_stress_ratio, surf_ks_stress_ratio, sol, xloc_q,
@@ -1264,7 +1265,8 @@ class TopoAnalysis {
 
   void eval_obj_con_gradient(const std::vector<T>& x, std::vector<T>& gcomp,
                              std::vector<T>& garea, std::vector<T>& gpen,
-                             std::vector<T>& gstress) {
+                             std::vector<T>& gstress,
+                             std::vector<T>& gstress_surf) {
     // Get options
     bool use_helmholtz_filter = parser.get_bool_option("use_helmholtz_filter");
     int num_conv_filter_apply = parser.get_int_option("num_conv_filter_apply");
@@ -1273,7 +1275,7 @@ class TopoAnalysis {
     bool stress_use_discrete_ks =
         parser.get_bool_option("stress_use_discrete_ks");
 
-    T ks_energy = 0.0;
+    T ks_energy = 0.0, surf_ks_energy = 0.0;
     std::vector<T> sol;
     std::shared_ptr<SparseUtils::SparseCholesky<T>> chol;
     if (x == std::get<std::vector<T>>(cache["x"])) {
@@ -1281,10 +1283,12 @@ class TopoAnalysis {
       chol = std::get<std::shared_ptr<SparseUtils::SparseCholesky<T>>>(
           cache["chol"]);
       ks_energy = std::get<T>(cache["ks_energy"]);
+      surf_ks_energy = std::get<T>(cache["surf_ks_energy"]);
     } else {
       std::vector<T> HFx;
       sol = update_mesh_and_solve(x, HFx, &chol);
       ks_energy = stress_ks_analysis.energy(nullptr, sol.data());
+      surf_ks_energy = surf_stress_ks_analysis.energy(nullptr, sol.data());
       std::vector<T> vol_dummy(vol_analysis.get_mesh().get_num_nodes(), 0.0);
     }
 
@@ -1295,23 +1299,32 @@ class TopoAnalysis {
     // Evaluate the rhs of the adjoint equation for stress
     // adjoint equation is K * psi = -∂s/∂u
     std::vector<T> psi_stress(sol.size(), T(0.0));
+    std::vector<T> psi_stress_surf(sol.size(), T(0.0));
     stress_ks_analysis.residual(nullptr, sol.data(), psi_stress.data());
+    surf_stress_ks_analysis.residual(nullptr, sol.data(),
+                                     psi_stress_surf.data());
 
     // Apply boundary conditions to the rhs
     for (int i : bc_dof) {
       psi_stress[i] = 0.0;
+      psi_stress_surf[i] = 0.0;
     }
 
     // Compute stress adjoints
     chol->solve(psi_stress.data());
+    chol->solve(psi_stress_surf.data());
 
     // Apply boundary conditions again to the adjoint variables
     for (int i : bc_dof) {
       psi_stress[i] = 0.0;
+      psi_stress_surf[i] = 0.0;
     }
 
     std::vector<T> psi_stress_neg = psi_stress;
+    std::vector<T> psi_stress_surf_neg = psi_stress_neg;
+
     for (T& p : psi_stress) p *= -1.0;
+    for (T& p : psi_stress_surf) p *= -1.0;
 
     gcomp.resize(x.size());
     std::fill(gcomp.begin(), gcomp.end(), 0.0);
@@ -1380,36 +1393,63 @@ class TopoAnalysis {
       }
     }
 
+    /* Bulk and Surf KS stress*/
+
     gstress.resize(x.size());
     std::fill(gstress.begin(), gstress.end(), 0.0);
+
+    gstress_surf.resize(x.size());
+    std::fill(gstress_surf.begin(), gstress_surf.end(), 0.0);
 
     // Explicit partials
     stress_ks_analysis.LSF_energy_derivatives(sol.data(), gstress.data(),
                                               stress_use_discrete_ks);
+    surf_stress_ks_analysis.LSF_energy_derivatives(
+        sol.data(),
+        gstress_surf.data());  // TODO: changes needed inside this function to
+                               // encounter gradient of nrm_ref
 
     // Implicit derivatives via the adjoint variables
     elastic->get_analysis().LSF_jacobian_adjoint_product(
         sol.data(), psi_stress.data(), gstress.data());
+    elastic->get_analysis().LSF_jacobian_adjoint_product(
+        sol.data(), psi_stress_surf.data(), gstress_surf.data());
+
     if constexpr (two_material_method == TwoMaterial::ERSATZ) {
       elastic->get_analysis_ersatz().LSF_jacobian_adjoint_product(
           sol.data(), psi_stress_neg.data(), gstress.data());
+      elastic->get_analysis_ersatz().LSF_jacobian_adjoint_product(
+          sol.data(), psi_stress_surf_neg.data(), gstress_surf.data());
     } else if constexpr (two_material_method == TwoMaterial::NITSCHE) {
       int node_offset = elastic->get_mesh().get_num_nodes();
+
       elastic->get_analysis_ersatz().LSF_jacobian_adjoint_product(
           sol.data(), psi_stress_neg.data(), gstress.data(), node_offset);
+      elastic->get_analysis_ersatz().LSF_jacobian_adjoint_product(
+          sol.data(), psi_stress_surf_neg.data(), gstress_surf.data(),
+          node_offset);
+
       elastic->get_analysis_interface().LSF_jacobian_adjoint_product(
           sol.data(), psi_stress.data(), gstress.data());
+      elastic->get_analysis_interface().LSF_jacobian_adjoint_product(
+          sol.data(), psi_stress_surf.data(), gstress_surf.data());
     }
 
     design_mapping_apply_gradient(gstress.data(), gstress.data());
+    design_mapping_apply_gradient(gstress_surf.data(), gstress_surf.data());
+
     if (use_robust_projection) {
       projector_erode.applyGradient(Fx.data(), gstress.data(), gstress.data());
+      projector_erode.applyGradient(Fx.data(), gstress_surf.data(),
+                                    gstress_surf.data());
     }
     if (use_helmholtz_filter) {
       hfilter.applyGradient(gstress.data(), gstress.data());
+      hfilter.applyGradient(gstress_surf.data(), gstress_surf.data());
     } else {
       for (int i = 0; i < num_conv_filter_apply; i++) {
         cfilter.applyGradient(gstress.data(), gstress.data());
+        cfilter.applyGradient(gstress_surf.data(), gstress_surf.data());
       }
     }
 
@@ -1417,6 +1457,11 @@ class TopoAnalysis {
     double denom = ks_energy * stress_ks.get_ksrho();
     for (int i = 0; i < gstress.size(); i++) {
       gstress[i] /= denom;
+    }
+
+    double denom_surf = surf_ks_energy * surf_stress_ks.get_ksrho();
+    for (int i = 0; i < gstress_surf.size(); i++) {
+      gstress_surf[i] /= denom_surf;
     }
   }
 
@@ -1763,12 +1808,18 @@ class TopoProb {
         compliance_constraint_upper_bound(
             parser.get_double_option("compliance_constraint_upper_bound")),
         has_stress_objective(parser.get_bool_option("has_stress_objective")),
+        compliance_objective_coeff(
+            parser.get_double_option("compliance_objective_coeff")),
         compliance_objective_scalar(
             parser.get_double_option("compliance_objective_scalar")),
+        stress_objective_coeff(
+            parser.get_double_option("stress_objective_coeff")),
         stress_objective_scalar(
             parser.get_double_option("stress_objective_scalar")),
-        stress_objective_theta(
-            parser.get_double_option("stress_objective_theta")),
+        surf_stress_objective_coeff(
+            parser.get_double_option("surf_stress_objective_coeff")),
+        surf_stress_objective_scalar(
+            parser.get_double_option("surf_stress_objective_scalar")),
         is_volume_objective(parser.get_bool_option("is_volume_objective")),
         nvars(topo.get_prob_mesh().get_nvars()),
         ncon(0),
@@ -2013,8 +2064,10 @@ class TopoProb {
 
     if (has_stress_objective) {
       *fobj =
-          (1.0 - stress_objective_theta) * compliance_objective_scalar * comp +
-          stress_objective_theta * stress_objective_scalar * ks_stress_ratio +
+          compliance_objective_coeff * compliance_objective_scalar * comp +
+          stress_objective_coeff * stress_objective_scalar * ks_stress_ratio +
+          surf_stress_objective_coeff * surf_stress_objective_scalar *
+              surf_ks_stress_ratio +
           pterm + reg;
     } else if (is_volume_objective) {
       *fobj = area / domain_area + pterm + reg;
@@ -2188,16 +2241,17 @@ class TopoProb {
     std::vector<T> x =
         topo.get_prob_mesh().expand(xr, 1.0);  // set non-design values to 1.0
 
-    std::vector<T> gcomp, garea, gpen, gstress;
-    topo.eval_obj_con_gradient(x, gcomp, garea, gpen, gstress);
+    std::vector<T> gcomp, garea, gpen, gstress, gstress_surf;
+    topo.eval_obj_con_gradient(x, gcomp, garea, gpen, gstress, gstress_surf);
 
     std::vector<T> gcompr = topo.get_prob_mesh().reduce(gcomp);
     std::vector<T> garear = topo.get_prob_mesh().reduce(garea);
     std::vector<T> gpenr = topo.get_prob_mesh().reduce(gpen);
-    std::vector<T> gstressr;
+    std::vector<T> gstressr, gstressr_surf;
 
     if (has_stress_objective or has_stress_constraint) {
       gstressr = topo.get_prob_mesh().reduce(gstress);
+      gstressr_surf = topo.get_prob_mesh().reduce(gstress_surf);
     }
 
     std::vector<T> greg(nvars, 0.0);
@@ -2208,10 +2262,12 @@ class TopoProb {
 
     // Populate objective gradients
     if (has_stress_objective) {
-      T a = (1.0 - stress_objective_theta) * compliance_objective_scalar;
-      T b = stress_objective_theta * stress_objective_scalar;
+      T a = compliance_objective_coeff * compliance_objective_scalar;
+      T b = stress_objective_coeff * stress_objective_scalar;
+      T c = surf_stress_objective_coeff * surf_stress_objective_scalar;
       for (int i = 0; i < nvars; i++) {
-        g[i] = a * gcompr[i] + b * gstressr[i] + gpenr[i] + greg[i];
+        g[i] = a * gcompr[i] + b * gstressr[i] + c * gstressr_surf[i] +
+               gpenr[i] + greg[i];
       }
     } else if (is_volume_objective) {
       for (int i = 0; i < nvars; i++) {
@@ -2276,9 +2332,12 @@ class TopoProb {
   bool has_compliance_constraint = false;
   double compliance_constraint_upper_bound = 0.0;
   bool has_stress_objective = false;
+  double compliance_objective_coeff = 0.0;
   double compliance_objective_scalar = 0.0;
+  double stress_objective_coeff = 0.0;
   double stress_objective_scalar = 0.0;
-  double stress_objective_theta = 0.0;
+  double surf_stress_objective_coeff = 0.0;
+  double surf_stress_objective_scalar = 0.0;
   bool is_volume_objective = false;
   int nvars = -1;
   int ncon = -1;
