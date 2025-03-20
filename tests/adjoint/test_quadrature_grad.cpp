@@ -210,15 +210,18 @@ void test_surf(double tol = 1e-8, double h = 1e-6) {
       typename std::conditional<use_finite_cell_mesh, FiniteCellMesh<T, Np_1d>,
                                 CutMesh<T, Np_1d>>::type;
   using Basis = GDBasis2D<T, Mesh>;
-  using LSF = Line;
   using Quadrature =
       GDLSFQuadrature2D<T, Np_1d, QuadPtType::SURFACE, Grid, Np_1d, Mesh>;
 
   int nxy[2] = {5, 5};
   T lxy[2] = {1.0, 1.0};
-  LSF lsf;
-
   Grid grid(nxy, lxy);
+
+  auto lsf = [](T x[]) {
+    T n = 0.21;
+    return (x[0] - 0.5) + n * (x[1] - 0.5);
+  };
+
   Mesh mesh(grid, lsf);
   Basis basis(mesh);
   Quadrature quadrature(mesh);

@@ -1094,6 +1094,53 @@ class GalerkinAnalysis final {
     return {xloc_q_map, energy_q_map};
   }
 
+  // Get the normal vector for surface quadrature points, intended to be used
+  // for debug or post-process
+  auto get_quadrature_normals() const {
+    static_assert(Quadrature::quad_type == QuadPtType::SURFACE,
+                  "get_quadrature_normals only works with surface quadrature");
+
+    std::vector<T> xloc_q, normal_ref_q, normal_q;
+
+    for (int i = 0; i < mesh.get_num_elements(); i++) {
+      // Get the element node locations
+      T element_xloc[spatial_dim * max_nnodes_per_element];
+      get_element_xloc<T, Mesh, Basis>(mesh, i, element_xloc);
+
+      std::vector<T> pts, wts, ns;
+      int num_quad_pts = quadrature.get_quadrature_pts(i, pts, wts, ns);
+
+      std::vector<T> N, Nxi;
+      basis.eval_basis_grad(i, pts, N, Nxi);
+
+      for (int j = 0; j < num_quad_pts; j++) {
+        int offset_n = j * max_nnodes_per_element;
+        int offset_nxi = j * max_nnodes_per_element * spatial_dim;
+
+        A2D::Vec<T, spatial_dim> xloc, nrm_ref;
+        A2D::Mat<T, spatial_dim, spatial_dim> J;
+        interp_val_grad<T, spatial_dim, max_nnodes_per_element, spatial_dim>(
+            element_xloc, &N[offset_n], &Nxi[offset_nxi], get_ptr(xloc),
+            get_ptr(J));
+
+        for (int d = 0; d < spatial_dim; d++) {
+          nrm_ref[d] = ns[spatial_dim * j + d];
+        }
+
+        A2D::Vec<T, spatial_dim> nrm;
+        A2D::MatVecMult(J, nrm_ref, nrm);
+        A2D::VecNormalize(nrm, nrm);
+
+        for (int d = 0; d < spatial_dim; d++) {
+          xloc_q.push_back(xloc(d));
+          normal_ref_q.push_back(nrm_ref(d));
+          normal_q.push_back(nrm(d));
+        }
+      }
+    }
+    return std::make_tuple(xloc_q, normal_ref_q, normal_q);
+  }
+
   const Mesh& get_mesh() { return mesh; }
   const Quadrature& get_quadrature() { return quadrature; }
   const Basis& get_basis() { return basis; }

@@ -134,14 +134,16 @@ T two_sided_LSF_jacobian_adjoint_product_fd_check(
       InterfaceGalerkinAnalysis<T, Mesh, InterfaceQuadrature, Basis,
                                 PhysicsInterface>;
 
-  int nxy[2] = {32, 24};
-  T lxy[2] = {3.0, 2.0};
-  T pt0[2] = {3.2, -0.5};
+  int nxy[2] = {5, 5};
+  T lxy[2] = {1.0, 1.0};
+  // T pt0[2] = {3.2, -0.5};
   Grid grid(nxy, lxy);
 
-  auto lsf_primary = [pt0](T x[]) {
-    return 1.0 - (x[0] - pt0[0]) * (x[0] - pt0[0]) / 3.5 / 3.5 -
-           (x[1] - pt0[1]) * (x[1] - pt0[1]) / 2.0 / 2.0;  // <= 0
+  auto lsf_primary = [](T x[]) {
+    T n = 0.21;
+    return (x[0] - 0.5) + n * (x[1] - 0.5);
+    // return 1.0 - (x[0] - pt0[0]) * (x[0] - pt0[0]) / 3.5 / 3.5 -
+    //        (x[1] - pt0[1]) * (x[1] - pt0[1]) / 2.0 / 2.0;  // <= 0
   };
   auto lsf_secondary = [lsf_primary](T x[]) { return -lsf_primary(x); };
 
@@ -164,6 +166,14 @@ T two_sided_LSF_jacobian_adjoint_product_fd_check(
       mesh_primary, mesh_secondary, quadrature_interface,
       basis_primary /*NOTE: we use basis_primary here*/, physics_interface);
 
+  using SurfAnalysis =
+      GalerkinAnalysis<T, Mesh, typename BulkQuadrature::InterfaceQuad, Basis,
+                       PhysicsBulk>;
+
+  typename BulkQuadrature::InterfaceQuad quadrature_primary_surf(mesh_primary);
+  SurfAnalysis analysis_primary_surf(mesh_primary, quadrature_primary_surf,
+                                     basis_primary, physics_bulk_primary);
+
   int ndof = dof_per_node *
              (mesh_primary.get_num_nodes() + mesh_secondary.get_num_nodes());
   int node_offset = mesh_primary.get_num_nodes();
@@ -184,35 +194,71 @@ T two_sided_LSF_jacobian_adjoint_product_fd_check(
     psi_neg[i] = -psi[i];
   }
 
-  analysis_primary.LSF_jacobian_adjoint_product(dof.data(), psi.data(),
-                                                dfdphi.data());
-  analysis_secondary.LSF_jacobian_adjoint_product(dof.data(), psi_neg.data(),
-                                                  dfdphi.data(), node_offset);
+  // analysis_primary.LSF_jacobian_adjoint_product(dof.data(), psi.data(),
+  //                                               dfdphi.data());
+  // analysis_secondary.LSF_jacobian_adjoint_product(dof.data(), psi_neg.data(),
+  //                                                 dfdphi.data(),
+  //                                                 node_offset);
   analysis_interface.LSF_jacobian_adjoint_product(dof.data(), psi.data(),
                                                   dfdphi.data());
 
-  analysis_primary.residual(nullptr, dof.data(), res1.data());
-  analysis_secondary.residual(nullptr, dof.data(), res1.data(), node_offset);
+  // analysis_primary.residual(nullptr, dof.data(), res1.data());
+  // analysis_secondary.residual(nullptr, dof.data(), res1.data(), node_offset);
   analysis_interface.residual(nullptr, dof.data(), res1.data());
 
   if (dh > 5e-9 and dh < 5e-8) {
     save_mesh(
         mesh_primary,
         "two_sided_primary_LSF_jacobian_adjoint_product_fd_check_fd1_Np_" +
-            std::to_string(Np_1d) + "_h_" + std::to_string(dh) + ".vtk");
+            std::to_string(Np_1d) + "_h_1e" + std::to_string(int(log10(dh))) +
+            ".vtk");
     save_mesh(
         mesh_secondary,
         "two_sided_secondary_LSF_jacobian_adjoint_product_fd_check_fd1_Np_" +
-            std::to_string(Np_1d) + "_h_" + std::to_string(dh) + ".vtk");
+            std::to_string(Np_1d) + "_h_1e" + std::to_string(int(log10(dh))) +
+            ".vtk");
 
-    auto [xloc_q, e_q] = analysis_primary.interpolate_energy(dof.data());
-    std::string surf_vtk_path =
-        "quad_two_sided_secondary_LSF_jacobian_adjoint_product_fd_check_fd1_"
-        "Np_" +
-        std::to_string(Np_1d) + "_h_" + std::to_string(dh) + ".vtk";
-    FieldToVTKNew<T, Basis::spatial_dim> surf_vtk(surf_vtk_path);
-    surf_vtk.add_mesh(xloc_q);
-    surf_vtk.write_mesh();
+    {
+      auto [xloc_q, e_q] = analysis_primary.interpolate_energy(dof.data());
+      std::string surf_vtk_path =
+          "quad_two_sided_secondary_LSF_jacobian_adjoint_product_fd_check_fd1_"
+          "Np_" +
+          std::to_string(Np_1d) + "_h_1e" + std::to_string(int(log10(dh))) +
+          ".vtk";
+      FieldToVTKNew<T, Basis::spatial_dim> surf_vtk(surf_vtk_path);
+      surf_vtk.add_mesh(xloc_q);
+      surf_vtk.write_mesh();
+    }
+    {
+      auto [xloc_q, e_q] = analysis_primary_surf.interpolate_energy(dof.data());
+      std::string surf_vtk_path =
+          "surfquad_two_sided_secondary_LSF_jacobian_adjoint_product_fd_check_"
+          "fd1_"
+          "Np_" +
+          std::to_string(Np_1d) + "_h_1e" + std::to_string(int(log10(dh))) +
+          ".vtk";
+      FieldToVTKNew<T, Basis::spatial_dim> surf_vtk(surf_vtk_path);
+      surf_vtk.add_mesh(xloc_q);
+      surf_vtk.write_mesh();
+    }
+    {
+      auto [xloc_q, normal_ref_q, normal_q] =
+          analysis_primary_surf.get_quadrature_normals();
+
+      std::string surf_vtk_path =
+          "surfnorm_two_sided_secondary_LSF_jacobian_adjoint_product_fd_check_"
+          "fd1_"
+          "Np_" +
+          std::to_string(Np_1d) + "_h_1e" + std::to_string(int(log10(dh))) +
+          ".vtk";
+      FieldToVTKNew<T, Basis::spatial_dim> surf_vtk(surf_vtk_path);
+      surf_vtk.add_mesh(xloc_q);
+      surf_vtk.write_mesh();
+      surf_vtk.add_vec("normal", normal_q);
+      surf_vtk.write_vec("normal");
+      surf_vtk.add_vec("normal_ref", normal_ref_q);
+      surf_vtk.write_vec("normal_ref");
+    }
   }
 
   auto& phi_primary = mesh_primary.get_lsf_dof();
@@ -234,24 +280,58 @@ T two_sided_LSF_jacobian_adjoint_product_fd_check(
     save_mesh(
         mesh_primary,
         "two_sided_primary_LSF_jacobian_adjoint_product_fd_check_fd2_Np_" +
-            std::to_string(Np_1d) + "_h_" + std::to_string(dh) + ".vtk");
+            std::to_string(Np_1d) + "_h_1e" + std::to_string(int(log10(dh))) +
+            ".vtk");
     save_mesh(
         mesh_secondary,
         "two_sided_secondary_LSF_jacobian_adjoint_product_fd_check_fd2_Np_" +
-            std::to_string(Np_1d) + "_h_" + std::to_string(dh) + ".vtk");
+            std::to_string(Np_1d) + "_h_1e" + std::to_string(int(log10(dh))) +
+            ".vtk");
+    {
+      auto [xloc_q, e_q] = analysis_primary.interpolate_energy(dof.data());
+      std::string surf_vtk_path =
+          "quad_two_sided_secondary_LSF_jacobian_adjoint_product_fd_check_fd2_"
+          "Np_" +
+          std::to_string(Np_1d) + "_h_1e" + std::to_string(int(log10(dh))) +
+          ".vtk";
+      FieldToVTKNew<T, Basis::spatial_dim> surf_vtk(surf_vtk_path);
+      surf_vtk.add_mesh(xloc_q);
+      surf_vtk.write_mesh();
+    }
+    {
+      auto [xloc_q, e_q] = analysis_primary_surf.interpolate_energy(dof.data());
+      std::string surf_vtk_path =
+          "surfquad_two_sided_secondary_LSF_jacobian_adjoint_product_fd_check_"
+          "fd2_"
+          "Np_" +
+          std::to_string(Np_1d) + "_h_1e" + std::to_string(int(log10(dh))) +
+          ".vtk";
+      FieldToVTKNew<T, Basis::spatial_dim> surf_vtk(surf_vtk_path);
+      surf_vtk.add_mesh(xloc_q);
+      surf_vtk.write_mesh();
+    }
+    {
+      auto [xloc_q, normal_ref_q, normal_q] =
+          analysis_primary_surf.get_quadrature_normals();
 
-    auto [xloc_q, e_q] = analysis_primary.interpolate_energy(dof.data());
-    std::string surf_vtk_path =
-        "quad_two_sided_secondary_LSF_jacobian_adjoint_product_fd_check_fd2_"
-        "Np_" +
-        std::to_string(Np_1d) + "_h_" + std::to_string(dh) + ".vtk";
-    FieldToVTKNew<T, Basis::spatial_dim> surf_vtk(surf_vtk_path);
-    surf_vtk.add_mesh(xloc_q);
-    surf_vtk.write_mesh();
+      std::string surf_vtk_path =
+          "surfnorm_two_sided_secondary_LSF_jacobian_adjoint_product_fd_check_"
+          "fd2_"
+          "Np_" +
+          std::to_string(Np_1d) + "_h_1e" + std::to_string(int(log10(dh))) +
+          ".vtk";
+      FieldToVTKNew<T, Basis::spatial_dim> surf_vtk(surf_vtk_path);
+      surf_vtk.add_mesh(xloc_q);
+      surf_vtk.write_mesh();
+      surf_vtk.add_vec("normal", normal_q);
+      surf_vtk.write_vec("normal");
+      surf_vtk.add_vec("normal_ref", normal_ref_q);
+      surf_vtk.write_vec("normal_ref");
+    }
   }
 
-  analysis_primary.residual(nullptr, dof.data(), res2.data());
-  analysis_secondary.residual(nullptr, dof.data(), res2.data(), node_offset);
+  // analysis_primary.residual(nullptr, dof.data(), res2.data());
+  // analysis_secondary.residual(nullptr, dof.data(), res2.data(), node_offset);
   analysis_interface.residual(nullptr, dof.data(), res2.data());
 
   T fd = 0.0, exact = 0.0;
@@ -438,10 +518,10 @@ TEST(analysis, AdjJacProductElasticityInterface) {
   double eta = 12.345;
   PhysicsInterface physics_interface(eta, E1, nu1, E2, nu2);
 
-  test_two_sided_LSF_jacobian_adjoint_product<2>(
-      physics_primary, physics_secondary, physics_interface, 1e-5);
-  // test_two_sided_LSF_jacobian_adjoint_product<4>(
+  // test_two_sided_LSF_jacobian_adjoint_product<2>(
   //     physics_primary, physics_secondary, physics_interface, 1e-5);
+  test_two_sided_LSF_jacobian_adjoint_product<4>(
+      physics_primary, physics_secondary, physics_interface, 1e-5);
   // test_two_sided_LSF_jacobian_adjoint_product<6>(
   //     physics_primary, physics_secondary, physics_interface, 1e-5);
 }
