@@ -195,31 +195,17 @@ T two_sided_LSF_jacobian_adjoint_product_fd_check(
     psi_neg[i] = -psi[i];
   }
 
-  // auto [debug_xloc_q, debug_dajp_q] =
-  //     analysis_primary_surf.LSF_jacobian_adjoint_product(dof.data(),
-  //     psi.data(),
-  //                                                        dfdphi.data(), 0,
-  //                                                        p);
-  auto [debug_xloc_q, debug_dajp_q] =
-      analysis_primary.LSF_jacobian_adjoint_product(dof.data(), psi.data(),
-                                                    dfdphi.data(), 0, p);
-
   // analysis_primary.LSF_jacobian_adjoint_product(dof.data(), psi.data(),
   //                                               dfdphi.data());
   // analysis_secondary.LSF_jacobian_adjoint_product(dof.data(), psi_neg.data(),
   //                                                 dfdphi.data(),
   //                                                 node_offset);
-  // analysis_interface.LSF_jacobian_adjoint_product(dof.data(), psi.data(),
-  //                                                 dfdphi.data());
+  analysis_interface.LSF_jacobian_adjoint_product(dof.data(), psi.data(),
+                                                  dfdphi.data());
 
-  // auto [debug_xloc_q_1, debug_rTp_q_1] =
-  //     analysis_primary_surf.residual(nullptr, dof.data(), res1.data(), 0,
-  //     psi);
-  auto [debug_xloc_q_1, debug_rTp_q_1] =
-      analysis_primary.residual(nullptr, dof.data(), res1.data(), 0, psi);
   // analysis_primary.residual(nullptr, dof.data(), res1.data());
   // analysis_secondary.residual(nullptr, dof.data(), res1.data(), node_offset);
-  // analysis_interface.residual(nullptr, dof.data(), res1.data());
+  analysis_interface.residual(nullptr, dof.data(), res1.data());
 
   if (dh > 5e-9 and dh < 5e-8) {
     save_mesh(
@@ -345,14 +331,9 @@ T two_sided_LSF_jacobian_adjoint_product_fd_check(
     }
   }
 
-  // auto [debug_xloc_q_2, debug_rTp_q_2] =
-  //     analysis_primary_surf.residual(nullptr, dof.data(), res2.data(), 0,
-  //     psi);
-  auto [debug_xloc_q_2, debug_rTp_q_2] =
-      analysis_primary.residual(nullptr, dof.data(), res2.data(), 0, psi);
   // analysis_primary.residual(nullptr, dof.data(), res2.data());
   // analysis_secondary.residual(nullptr, dof.data(), res2.data(), node_offset);
-  // analysis_interface.residual(nullptr, dof.data(), res2.data());
+  analysis_interface.residual(nullptr, dof.data(), res2.data());
 
   T fd = 0.0, exact = 0.0;
 
@@ -369,52 +350,6 @@ T two_sided_LSF_jacobian_adjoint_product_fd_check(
   std::printf(
       "Np_1d: %d, dh: %.5e, FD: %30.20e, Actual: %30.20e, Rel err: %20.10e\n",
       Np_1d, dh, fd, exact, relerr);
-
-  // TODO: delete
-  {
-    if (debug_rTp_q_1.size() != debug_rTp_q_2.size() or
-        debug_rTp_q_1.size() != debug_dajp_q.size()) {
-      std::printf("[q]number of quad pts changes through FD, skipping...\n");
-    } else {
-      int num_quads = debug_rTp_q_1.size();
-
-      // // Check maximum quad diff
-      // {
-      //   T pt_max_diff = 0.0;
-      //   for (int j = 0; j < num_quads; j++) {
-      //     T diff = hard_max<T>({abs(debug_xloc_q_1[j] - debug_xloc_q_2[j]),
-      //                           abs(debug_xloc_q_1[j] - debug_xloc_q[j]),
-      //                           abs(debug_xloc_q[j] - debug_xloc_q_2[j])});
-      //     if (diff > pt_max_diff) pt_max_diff = diff;
-      //   }
-      //   xcgd_assert(pt_max_diff < 1e-10, "pt diff");
-      // }
-
-      for (int j = 0; j < num_quads; j++) {
-        T fd_q = (debug_rTp_q_2[j] - debug_rTp_q_1[j]) / dh;
-        T exact_q = debug_dajp_q[j];
-        T relerr_q = fabs(fd_q - exact_q) / fabs(exact_q);
-
-        T dx = hard_max<T>({abs(debug_xloc_q_1[2 * j] - debug_xloc_q_2[2 * j]),
-                            abs(debug_xloc_q_1[2 * j] - debug_xloc_q[2 * j]),
-                            abs(debug_xloc_q[2 * j] - debug_xloc_q_2[2 * j])});
-        T dy = hard_max<T>(
-            {abs(debug_xloc_q_1[2 * j + 1] - debug_xloc_q_2[2 * j + 1]),
-             abs(debug_xloc_q_1[2 * j + 1] - debug_xloc_q[2 * j + 1]),
-             abs(debug_xloc_q[2 * j + 1] - debug_xloc_q_2[2 * j + 1])});
-
-        std::printf(
-            "[q](%10f/%10f/%10f,%10f/%10f/%10f)Np_1d: %d, dh: %.5e, FD: "
-            "%30.20e, Actual: %30.20e, "
-            "Rel "
-            "err: %20.10e, d_xy: (%15.5e, %15.5e)\n",
-            debug_xloc_q[2 * j], debug_xloc_q_1[2 * j], debug_xloc_q_2[2 * j],
-            debug_xloc_q[2 * j + 1], debug_xloc_q_1[2 * j + 1],
-            debug_xloc_q_2[2 * j + 1], Np_1d, dh, fd_q, exact_q, relerr_q, dx,
-            dy);
-      }
-    }
-  }
 
   return relerr;
 }
@@ -595,33 +530,4 @@ TEST(analysis, AdjJacProductElasticityInterface) {
 TEST(analysis, EnergyPartialStressKS) {
   test_LSF_energy_derivatives<2>(1e-5);
   test_LSF_energy_derivatives<4>(1e-5);
-}
-
-TEST(analysis, playground) {
-  constexpr int Np_1d = 2;
-
-  using Grid = StructuredGrid2D<T>;
-  using Mesh = FiniteCellMesh<T, Np_1d>;
-  using Basis = GDBasis2D<T, Mesh>;
-
-  int nxy[2] = {5, 5};
-  T lxy[2] = {1.0, 1.0};
-  Grid grid(nxy, lxy);
-
-  Mesh mesh(grid);
-
-  Basis basis(mesh);
-
-  std::vector<T> pts = {0.0, 1.0};
-
-  std::vector<T> N, Nxi, Nxixi;
-  basis.eval_basis_grad(12, pts, N, Nxi, Nxixi);
-
-  for (int n = 0; n < Basis::max_nnodes_per_element; n++) {
-    printf(
-        "[node %d]N: %20.10e, Nx: %20.10e, Ny: %20.10e, Nxx: %20.10e, Nxy: "
-        "%20.10e, Nyx: %20.10e, Nyy: %20.10e\n",
-        n, N[n], Nxi[2 * n], Nxi[2 * n + 1], Nxixi[4 * n], Nxixi[4 * n + 1],
-        Nxixi[4 * n + 2], Nxixi[4 * n + 3]);
-  }
 }

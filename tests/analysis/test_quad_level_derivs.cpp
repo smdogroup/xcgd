@@ -1,4 +1,8 @@
+#include <limits>
+
 #include "analysis.h"
+#include "elements/gd_mesh.h"
+#include "elements/gd_vandermonde.h"
 #include "physics/linear_elasticity.h"
 #include "test_commons.h"
 
@@ -20,7 +24,54 @@ class SingleQuadAnalysis {
                      const Basis& basis, const Physics& physics)
       : mesh(mesh), quadrature(quadrature), basis(basis), physics(physics) {}
 
-  // TODO: revert
+  auto weight(int elem, int quad) const {
+    std::vector<T> debug_xloc_q;
+    std::vector<T> debug_e_q;
+
+    T xq = 0.0;
+    std::vector<T> element_x = std::vector<T>(max_nnodes_per_element);
+
+    // for (int i = 0; i < mesh.get_num_elements(); i++)
+    {
+      int i = elem;
+      // Get nodes associated to this element
+      int nodes[Mesh::max_nnodes_per_element];
+      int nnodes = mesh.get_elem_dof_nodes(i, nodes);
+
+      // Get the element node locations
+      T element_xloc[spatial_dim * max_nnodes_per_element];
+      get_element_xloc<T, Mesh, Basis>(mesh, i, element_xloc);
+
+      std::vector<T> pts, wts, ns;
+      int num_quad_pts = quadrature.get_quadrature_pts(i, pts, wts, ns);
+
+      std::vector<T> N, Nxi;
+      basis.eval_basis_grad(i, pts, N, Nxi);
+
+      // for (int j = 0; j < num_quad_pts; j++)
+      {
+        int j = quad;
+        int offset_n = j * max_nnodes_per_element;
+        int offset_nxi = j * max_nnodes_per_element * spatial_dim;
+
+        // Evaluate the derivative of the spatial dof in the computational
+        // coordinates
+        A2D::Vec<T, spatial_dim> xloc, nrm_ref;
+        A2D::Mat<T, spatial_dim, spatial_dim> J;
+        interp_val_grad<T, spatial_dim, max_nnodes_per_element, spatial_dim>(
+            element_xloc, &N[offset_n], &Nxi[offset_nxi], get_ptr(xloc),
+            get_ptr(J));
+
+        for (int d = 0; d < spatial_dim; d++) {
+          debug_xloc_q.push_back(xloc(d));
+        }
+
+        debug_e_q.push_back(wts[j]);
+      }
+    }
+    return std::make_tuple(debug_xloc_q, debug_e_q);
+  }
+
   auto residual(int elem, int quad, const T x[], const T dof[],
                 std::vector<T> debug_psi = {}) const {
     T xq = 0.0;
@@ -285,6 +336,76 @@ class SingleQuadAnalysis {
     return std::make_tuple(debug_xloc_q, debug_dajp_q);
   }
 
+  // dedphi
+  auto weight_deriv(int elem, int quad, std::vector<T> debug_p) const {
+    std::vector<T> debug_xloc_q;
+    std::vector<T> debug_dw_q;
+
+    // for (int i = 0; i < mesh.get_num_elements(); i++)
+    {
+      int i = elem;
+      // Get nodes associated to this element
+      int nodes[Mesh::max_nnodes_per_element];
+      int nnodes = mesh.get_elem_dof_nodes(i, nodes);
+
+      // Get the element node locations
+      T element_xloc[spatial_dim * max_nnodes_per_element];
+      get_element_xloc<T, Mesh, Basis>(mesh, i, element_xloc);
+
+      // Create the element dfdphi
+      std::vector<T> element_dw(max_nnodes_per_element, 0.0);
+
+      std::vector<T> pts, wts, ns, pts_grad, wts_grad;
+      int num_quad_pts = quadrature.get_quadrature_pts_grad(i, pts, wts, ns,
+                                                            pts_grad, wts_grad);
+
+      std::vector<T> N, Nxi, Nxixi;
+      basis.eval_basis_grad(i, pts, N, Nxi, Nxixi);
+
+      // for (int j = 0; j < num_quad_pts; j++)
+      {
+        int j = quad;
+        int offset_n = j * max_nnodes_per_element;
+        int offset_nxi = j * max_nnodes_per_element * spatial_dim;
+        int offset_nxixi =
+            j * max_nnodes_per_element * spatial_dim * spatial_dim;
+
+        A2D::Vec<T, spatial_dim> xloc, nrm_ref;
+        A2D::Mat<T, spatial_dim, spatial_dim> J;
+        interp_val_grad<T, spatial_dim, max_nnodes_per_element, spatial_dim>(
+            element_xloc, &N[offset_n], &Nxi[offset_nxi], get_ptr(xloc),
+            get_ptr(J));
+
+        int offset_wts = j * max_nnodes_per_element;
+        int offset_pts = j * max_nnodes_per_element * spatial_dim;
+
+        for (int n = 0; n < max_nnodes_per_element; n++) {
+          element_dw[n] = wts_grad[offset_wts + n];
+        }
+
+        // TODO delete
+        std::vector<T> element_p(max_nnodes_per_element, 0.0);
+        const auto& lsf_mesh = mesh.get_lsf_mesh();
+        int c = mesh.get_elem_cell(i);
+        get_element_dfdphi<T, decltype(lsf_mesh), Basis>(
+            lsf_mesh, c, debug_p.data(), element_p.data());
+
+        T dw = 0.0;
+        for (int ii = 0; ii < max_nnodes_per_element; ii++) {
+          dw += element_p[ii] * element_dw[ii];
+        }
+
+        debug_dw_q.push_back(dw);
+
+        for (int d = 0; d < spatial_dim; d++) {
+          debug_xloc_q.push_back(xloc(d));
+        }
+      }
+    }
+
+    return std::make_tuple(debug_xloc_q, debug_dw_q);
+  }
+
  private:
   const Mesh& mesh;
   const Quadrature& quadrature;
@@ -292,10 +413,8 @@ class SingleQuadAnalysis {
   const Physics& physics;
 };
 
-template <int Np_1d>
-void finite_difference_check(double dh = 1e-6) {
-  using T = double;
-
+template <typename T, int Np_1d>
+T finite_difference_check(double dh = 1e-6) {
   using Grid = StructuredGrid2D<T>;
   using Mesh = CutMesh<T, Np_1d>;
   using Quadrature =
@@ -353,12 +472,14 @@ void finite_difference_check(double dh = 1e-6) {
   int quad = 0;
 
   // Exact
-  auto [debug_xloc_q, debug_dajp_q] = analysis.LSF_jacobian_adjoint_product(
-      elem, quad, dof.data(), psi.data(), p);
+  // auto [debug_xloc_q, debug_grad_q] = analysis.LSF_jacobian_adjoint_product(
+  //     elem, quad, dof.data(), psi.data(), p);
+  auto [debug_xloc_q, debug_grad_q] = analysis.weight_deriv(elem, quad, p);
 
   // FD
-  auto [debug_xloc_q_1, debug_rTp_q_1] =
-      analysis.residual(elem, quad, nullptr, dof.data(), psi);
+  // auto [debug_xloc_q_1, debug_grad_q_1] =
+  //     analysis.residual(elem, quad, nullptr, dof.data(), psi);
+  auto [debug_xloc_q_1, debug_grad_q_1] = analysis.weight(elem, quad);
 
   auto& phi = mesh.get_lsf_dof();
   for (int i = 0; i < ndv; i++) {
@@ -366,46 +487,48 @@ void finite_difference_check(double dh = 1e-6) {
   }
   mesh.update_mesh();
 
-  auto [debug_xloc_q_2, debug_rTp_q_2] =
-      analysis.residual(elem, quad, nullptr, dof.data(), psi);
+  // auto [debug_xloc_q_2, debug_grad_q_2] =
+  //     analysis.residual(elem, quad, nullptr, dof.data(), psi);
+  auto [debug_xloc_q_2, debug_grad_q_2] = analysis.weight(elem, quad);
 
-  {
-    if (debug_rTp_q_1.size() != debug_rTp_q_2.size() or
-        debug_rTp_q_1.size() != debug_dajp_q.size()) {
-      std::printf("number of quad pts changes through FD, skipping...\n");
-    } else {
-      int num_quads = debug_rTp_q_1.size();
+  double relerr = std::numeric_limits<T>::infinity();
+  int num_quads = debug_grad_q_1.size();
+  xcgd_assert(num_quads == 1, "");
 
-      for (int j = 0; j < num_quads; j++) {
-        T fd_q = (debug_rTp_q_2[j] - debug_rTp_q_1[j]) / dh;
-        T exact_q = debug_dajp_q[j];
-        T relerr_q = fabs(fd_q - exact_q) / fabs(exact_q);
+  int j = 0;
+  T fd_q = (debug_grad_q_2[j] - debug_grad_q_1[j]) / dh;
+  T exact_q = debug_grad_q[j];
+  relerr = fabs(fd_q - exact_q) / fabs(exact_q);
 
-        T dx = hard_max<T>({abs(debug_xloc_q_1[2 * j] - debug_xloc_q_2[2 * j]),
-                            abs(debug_xloc_q_1[2 * j] - debug_xloc_q[2 * j]),
-                            abs(debug_xloc_q[2 * j] - debug_xloc_q_2[2 * j])});
-        T dy = hard_max<T>(
-            {abs(debug_xloc_q_1[2 * j + 1] - debug_xloc_q_2[2 * j + 1]),
-             abs(debug_xloc_q_1[2 * j + 1] - debug_xloc_q[2 * j + 1]),
-             abs(debug_xloc_q[2 * j + 1] - debug_xloc_q_2[2 * j + 1])});
+  T dx = hard_max<T>({abs(debug_xloc_q_1[2 * j] - debug_xloc_q_2[2 * j]),
+                      abs(debug_xloc_q_1[2 * j] - debug_xloc_q[2 * j]),
+                      abs(debug_xloc_q[2 * j] - debug_xloc_q_2[2 * j])});
+  T dy =
+      hard_max<T>({abs(debug_xloc_q_1[2 * j + 1] - debug_xloc_q_2[2 * j + 1]),
+                   abs(debug_xloc_q_1[2 * j + 1] - debug_xloc_q[2 * j + 1]),
+                   abs(debug_xloc_q[2 * j + 1] - debug_xloc_q_2[2 * j + 1])});
 
-        std::printf(
-            "[cell:%d][q:%d(%10.8f,%10.8f)]Np_1d: %d, dh: %.5e, FD: "
-            "%30.20e, Actual: %30.20e, "
-            "Rel "
-            "err: %20.10e\n",
-            cell, quad, debug_xloc_q[2 * j], debug_xloc_q[2 * j + 1], Np_1d, dh,
-            fd_q, exact_q, relerr_q);
-      }
-    }
-  }
+  std::printf(
+      "[cell:%d][q:%d(%10.8f,%10.8f)]Np_1d: %d, dh: %.5e, FD: "
+      "%30.20e, Actual: %30.20e, "
+      "Rel "
+      "err: %20.10e\n",
+      cell, quad, debug_xloc_q[2 * j], debug_xloc_q[2 * j + 1], Np_1d, dh, fd_q,
+      exact_q, relerr);
+
+  return relerr;
 }
 
 TEST(quad_level, playground) {
-  int constexpr Np_1d = 4;
+  int constexpr Np_1d = 2;
+  double tol = 1e-6;
+
+  double min_err = 1e20;
   for (double dh :
        std::vector<double>{1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9,
                            1e-10, 1e-11, 1e-12, 1e-13, 1e-14, 1e-15}) {
-    finite_difference_check<Np_1d>(dh);
+    double err = finite_difference_check<double, Np_1d>(dh);
+    if (err < min_err) min_err = err;
   }
+  EXPECT_LE(min_err, tol);
 }
