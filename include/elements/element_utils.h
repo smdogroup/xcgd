@@ -252,23 +252,22 @@ void add_element_dfdphi(const Mesh &lsf_mesh, int c, const T element_dfdphi[],
   }
 }
 
-template <typename T, class Mesh, class Basis>
-void get_element_dfdphi(const Mesh &lsf_mesh, int c, const T dfdphi[],
-                        T element_dfdphi[]) {
-  int constexpr max_nnodes_per_element = Basis::max_nnodes_per_element;
-  int nodes[max_nnodes_per_element];
-  int nnodes = lsf_mesh.get_elem_dof_nodes(c, nodes);
-
-  for (int j = 0; j < nnodes; j++) {
-    element_dfdphi[j] = dfdphi[nodes[j]];
-  }
-}
-
 template <typename T>
 void add_element_dfdphi(int nnodes, int *nodes, const T element_dfdphi[],
                         T dfdphi[]) {
   for (int j = 0; j < nnodes; j++) {
     dfdphi[nodes[j]] += element_dfdphi[j];
+  }
+}
+
+template <typename T, class Mesh, int max_nnodes_per_element>
+void get_element_dfdphi(const Mesh &lsf_mesh, int c, const T dfdphi[],
+                        T element_dfdphi[]) {
+  int nodes[max_nnodes_per_element];
+  int nnodes = lsf_mesh.get_elem_dof_nodes(c, nodes);
+
+  for (int j = 0; j < nnodes; j++) {
+    element_dfdphi[j] = dfdphi[nodes[j]];
   }
 }
 
