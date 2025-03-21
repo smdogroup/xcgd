@@ -44,11 +44,7 @@ class GalerkinAnalysis final {
   // Constructor for regular analysis
   GalerkinAnalysis(const Mesh& mesh, const Quadrature& quadrature,
                    const Basis& basis, const Physics& physics)
-      : mesh(mesh),
-        mesh_s(mesh),
-        quadrature(quadrature),
-        basis(basis),
-        physics(physics) {}
+      : mesh(mesh), quadrature(quadrature), basis(basis), physics(physics) {}
 
   T energy(const T x[], const T dof[], int node_offset = 0) const {
     T total_energy = 0.0;
@@ -1148,7 +1144,6 @@ class GalerkinAnalysis final {
 
  private:
   const Mesh& mesh;
-  const Mesh& mesh_s;
   const Quadrature& quadrature;
   const Basis& basis;
   const Physics& physics;
