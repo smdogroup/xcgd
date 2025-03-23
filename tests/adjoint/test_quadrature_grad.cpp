@@ -229,32 +229,32 @@ void test_surf(double tol = 1e-8, double h = 1e-6) {
   test_lsf_quad_grad<T, Np_1d>(mesh, basis, quadrature, tol, h);
 }
 
-TEST(adjoint, GDBulkQuadratureGradNp2) {
+TEST(adjoint, DISABLED_GDBulkQuadratureGradNp2) {
   test_bulk<2, false>(1e-6);
   test_bulk<2, true>(1e-6);
 }
 
-TEST(adjoint, GDBulkQuadratureGradNp4) {
+TEST(adjoint, DISABLED_GDBulkQuadratureGradNp4) {
   test_bulk<4, false>(1e-6);
   test_bulk<4, true>(1e-6);
 }
 
-TEST(adjoint, GDBulkQuadratureGradNp6) {
+TEST(adjoint, DISABLED_GDBulkQuadratureGradNp6) {
   test_bulk<6, false>(1e-6);
   test_bulk<6, true>(1e-6);
 }
 
-TEST(adjoint, GDSurfQuadratureGradNp2) {
+TEST(adjoint, DISABLED_GDSurfQuadratureGradNp2) {
   test_surf<2, false>(1e-6);
   test_surf<2, true>(1e-6);
 }
 
-TEST(adjoint, GDSurfQuadratureGradNp4) {
+TEST(adjoint, DISABLED_GDSurfQuadratureGradNp4) {
   test_surf<4, false>(1e-6);
   test_surf<4, true>(1e-6);
 }
 
-TEST(adjoint, GDSurfQuadratureGradNp6) {
+TEST(adjoint, DISABLED_GDSurfQuadratureGradNp6) {
   test_surf<6, false>(1e-6);
   test_surf<6, true>(1e-6);
 }

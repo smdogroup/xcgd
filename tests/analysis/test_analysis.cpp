@@ -519,12 +519,12 @@ TEST(analysis, AdjJacProductElasticityInterface) {
   double eta = 12.345;
   PhysicsInterface physics_interface(eta, E1, nu1, E2, nu2);
 
-  // test_two_sided_LSF_jacobian_adjoint_product<2>(
-  //     physics_primary, physics_secondary, physics_interface, 1e-5);
+  test_two_sided_LSF_jacobian_adjoint_product<2>(
+      physics_primary, physics_secondary, physics_interface, 1e-5);
   test_two_sided_LSF_jacobian_adjoint_product<4>(
       physics_primary, physics_secondary, physics_interface, 1e-5);
-  // test_two_sided_LSF_jacobian_adjoint_product<6>(
-  //     physics_primary, physics_secondary, physics_interface, 1e-5);
+  test_two_sided_LSF_jacobian_adjoint_product<6>(
+      physics_primary, physics_secondary, physics_interface, 1e-5);
 }
 
 TEST(analysis, EnergyPartialStressKS) {

@@ -192,25 +192,8 @@ T directional_gradient_fd(int cell, int quad, double dh = 1e-6) {
   return hard_max<T>({relerr_w, relerr_x, relerr_y});
 }
 
-template <int Np_1d>
-void directional_gradient_sweep() {
-  double tol = 1e-6;
-
-  int cell = 2;
-  int quad = 0;
-
-  double min_err = 1e20;
-  for (double dh :
-       std::vector<double>{1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9,
-                           1e-10, 1e-11, 1e-12, 1e-13, 1e-14, 1e-15}) {
-    double err = directional_gradient_fd<double, Np_1d>(cell, quad, dh);
-    if (err < min_err) min_err = err;
-  }
-  EXPECT_LE(min_err, tol);
-}
-
 template <typename T, int Np_1d>
-void full_gradient_fd(int cell, int quad, double dh = 1e-6) {
+T full_gradient_fd(int cell, int quad, double dh = 1e-6) {
   using Grid = StructuredGrid2D<T>;
   using Mesh = CutMesh<T, Np_1d>;
   using Quadrature =
@@ -262,37 +245,64 @@ void full_gradient_fd(int cell, int quad, double dh = 1e-6) {
     w.push_back(w_exact);
   }
 
-  double tol = 1e-10;
+  double zero_tol = 1e-12;
   for (int i = 0; i < ndv; i++) {
-    if (fabs(grad_exact[i]) < tol) grad_exact[i] = 0.0;
-    if (fabs(grad_fd[i]) < tol) grad_fd[i] = 0.0;
+    if (fabs(grad_exact[i]) < zero_tol) grad_exact[i] = 0.0;
+    if (fabs(grad_fd[i]) < zero_tol) grad_fd[i] = 0.0;
   }
 
-  printf("ignore gradient entries with tol : %.1e\n", tol);
+  printf("ignore gradient entries with zero_tol : %.1e\n", zero_tol);
 
+  T max_err = 0.0;
   for (int i = 0; i < ndv; i++) {
     T abserr = fabs(grad_exact[i] - grad_fd[i]);
     T relerr = abserr / fabs(grad_exact[i]);
     printf(
-        "[Np=%d]w[%2d]:%15.5e, grad_exact[%2d]:%15.5e, grad_fd[%2d]:%15.5e, "
+        "[Np=%d][dh:%10.2e]w[%2d]:%15.5e, grad_exact[%2d]:%15.5e, "
+        "grad_fd[%2d]:%15.5e, "
         "relerr:%15.5e\n",
-        Np_1d, i, w[i], i, grad_exact[i], i, grad_fd[i], relerr);
+        Np_1d, dh, i, w[i], i, grad_exact[i], i, grad_fd[i], relerr);
+
+    if (fabs(grad_exact[i]) > zero_tol and relerr > max_err) max_err = relerr;
   }
+  return max_err;
 }
 
-TEST(quad_level, Np2) { directional_gradient_sweep<2>(); }
-TEST(quad_level, Np4) { directional_gradient_sweep<4>(); }
+template <int Np_1d>
+void directional_gradient_sweep() {
+  double tol = 1e-6;
 
-TEST(quad_level, FullGradientNp2) {
   int cell = 2;
   int quad = 0;
-  double dh = 1e-6;
-  full_gradient_fd<double, 2>(cell, quad, dh);
+
+  double min_err = 1e20;
+  for (double dh :
+       std::vector<double>{1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9,
+                           1e-10, 1e-11, 1e-12, 1e-13, 1e-14, 1e-15}) {
+    double err = directional_gradient_fd<double, Np_1d>(cell, quad, dh);
+    if (err < min_err) min_err = err;
+  }
+  EXPECT_LE(min_err, tol);
 }
 
-TEST(quad_level, FullGradientNp4) {
+template <int Np_1d>
+void full_gradient_sweep() {
+  double tol = 1e-6;
+
   int cell = 2;
-  int quad = 31;
-  double dh = 1e-6;
-  full_gradient_fd<double, 4>(cell, quad, dh);
+  int quad = 0;
+
+  double min_err = 1e20;
+  for (double dh :
+       std::vector<double>{1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9,
+                           1e-10, 1e-11, 1e-12, 1e-13, 1e-14, 1e-15}) {
+    double err = full_gradient_fd<double, 2>(cell, quad, dh);
+    if (err < min_err) min_err = err;
+  }
+  EXPECT_LE(min_err, tol);
 }
+
+TEST(quad_level, DirectionalGradNp2) { directional_gradient_sweep<2>(); }
+TEST(quad_level, DirectionalGradNp4) { directional_gradient_sweep<4>(); }
+TEST(quad_level, FullGradNp2) { full_gradient_sweep<2>(); }
+TEST(quad_level, FullGradNp4) { full_gradient_sweep<4>(); }

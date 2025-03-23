@@ -205,12 +205,15 @@ class GDLSFQuadrature2D final : public QuadratureBase<T, quad_type> {
   }
 
  private:
+  // Somehow this gradient is not always precise, we use finite difference
+  // instead
   template <bool compute_ns_grad>
-  int get_quadrature_pts_grad_impl(int elem, std::vector<T>& pts,
-                                   std::vector<T>& wts, std::vector<T>& ns,
-                                   std::vector<T>& pts_grad,
-                                   std::vector<T>& wts_grad,
-                                   std::vector<T>& wns_grad) const {
+  int get_quadrature_pts_grad_impl_deprecated(int elem, std::vector<T>& pts,
+                                              std::vector<T>& wts,
+                                              std::vector<T>& ns,
+                                              std::vector<T>& pts_grad,
+                                              std::vector<T>& wts_grad,
+                                              std::vector<T>& wns_grad) const {
     if (elements.size() and !elements.count(elem)) {
       return 0;
     }
@@ -274,6 +277,81 @@ class GDLSFQuadrature2D final : public QuadratureBase<T, quad_type> {
           pts_grad[index * spatial_dim + d] = dpts[q * spatial_dim + d];
           if constexpr (compute_ns_grad) {
             wns_grad[index * spatial_dim + d] = dwns[q * spatial_dim + d];
+          }
+        }
+      }
+    }
+
+    return num_quad_pts;
+  }
+
+  template <bool compute_ns_grad>
+  int get_quadrature_pts_grad_impl(int elem, std::vector<T>& pts,
+                                   std::vector<T>& wts, std::vector<T>& ns,
+                                   std::vector<T>& pts_grad,
+                                   std::vector<T>& wts_grad,
+                                   std::vector<T>& ns_grad) const {
+    if (elements.size() and !elements.count(elem)) {
+      return 0;
+    }
+
+    // this is the element index in lsf mesh
+    int cell = mesh.get_elem_cell(elem);
+
+    // Create the functor that evaluates the interpolation given an arbitrary
+    // point within the computational coordinates
+    VandermondeEvaluator<T, GridMesh_> eval(lsf_mesh, cell);
+
+    // Get element LSF dofs
+    const std::vector<T>& lsf_dof = mesh.get_lsf_dof();
+    T element_lsf[max_nnodes_per_element];
+    constexpr int lsf_dim = 1;
+    get_element_vars<T, lsf_dim, GridMesh_, Basis>(lsf_mesh, cell,
+                                                   lsf_dof.data(), element_lsf);
+
+    // Get quadrature points and weights
+    getQuadrature(element_lsf, eval, pts, wts, ns);
+
+    int num_quad_pts = wts.size();
+
+    // Get quadrature gradients
+    pts_grad.clear();
+    wts_grad.clear();
+    pts_grad.resize(num_quad_pts * spatial_dim * max_nnodes_per_element);
+    wts_grad.resize(num_quad_pts * max_nnodes_per_element);
+
+    if constexpr (compute_ns_grad) {
+      ns_grad.clear();
+      ns_grad.resize(num_quad_pts * spatial_dim * max_nnodes_per_element);
+    }
+
+    for (int i = 0; i < max_nnodes_per_element; i++) {
+      T dh = 1e-8 * abs(element_lsf[i]);
+
+      element_lsf[i] += dh;
+      std::vector<T> pts1, wts1, ns1;
+      getQuadrature(element_lsf, eval, pts1, wts1, ns1);
+      element_lsf[i] -= dh;
+
+      if (wts1.size() != num_quad_pts) {
+        char msg[256];
+        std::snprintf(
+            msg, 256,
+            "number of quadrature points for ∂pt/∂φ_%d is inconsistent. Got "
+            "%ld, expect %d.",
+            i, wts1.size(), num_quad_pts);
+        throw std::runtime_error(msg);
+      }
+
+      for (int q = 0; q < num_quad_pts; q++) {
+        int index = q * max_nnodes_per_element + i;
+        wts_grad[index] = (wts1[q] - wts[q]) / dh;  // ∂w/∂phi
+        for (int d = 0; d < spatial_dim; d++) {
+          pts_grad[index * spatial_dim + d] =
+              (pts1[q * spatial_dim + d] - pts[q * spatial_dim + d]) / dh;
+          if constexpr (compute_ns_grad) {
+            ns_grad[index * spatial_dim + d] =
+                (ns1[q * spatial_dim + d] - ns[q * spatial_dim + d]) / dh;
           }
         }
       }
