@@ -304,13 +304,13 @@ class GDLSFQuadrature2D final : public QuadratureBase<T, quad_type> {
 
     // Get element LSF dofs
     const std::vector<T>& lsf_dof = mesh.get_lsf_dof();
-    T element_lsf[max_nnodes_per_element];
+    std::vector<T> element_lsf(max_nnodes_per_element, 0.0);
     constexpr int lsf_dim = 1;
-    get_element_vars<T, lsf_dim, GridMesh_, Basis>(lsf_mesh, cell,
-                                                   lsf_dof.data(), element_lsf);
+    get_element_vars<T, lsf_dim, GridMesh_, Basis>(
+        lsf_mesh, cell, lsf_dof.data(), element_lsf.data());
 
     // Get quadrature points and weights
-    getQuadrature(element_lsf, eval, pts, wts, ns);
+    getQuadrature(element_lsf.data(), eval, pts, wts, ns);
 
     int num_quad_pts = wts.size();
 
@@ -325,12 +325,17 @@ class GDLSFQuadrature2D final : public QuadratureBase<T, quad_type> {
       ns_grad.resize(num_quad_pts * spatial_dim * max_nnodes_per_element);
     }
 
-    for (int i = 0; i < max_nnodes_per_element; i++) {
-      T dh = 1e-8 * abs(element_lsf[i]);
+    // Get the step size
+    T diff = hard_max(element_lsf) - hard_min(element_lsf);
+    T dh = 1e-8 * diff;
+    if (fabs(diff) < 1e-14) {
+      dh = 1e-8;
+    }
 
+    for (int i = 0; i < max_nnodes_per_element; i++) {
       element_lsf[i] += dh;
       std::vector<T> pts1, wts1, ns1;
-      getQuadrature(element_lsf, eval, pts1, wts1, ns1);
+      getQuadrature(element_lsf.data(), eval, pts1, wts1, ns1);
       element_lsf[i] -= dh;
 
       if (wts1.size() != num_quad_pts) {

@@ -378,7 +378,7 @@ class LinearElasticity2DSurfStressAggregation final
       }
     }
 
-    return weight * detJ *
+    return weight * detJ *  // FIXME: use cq instead of detJ
            exp(ksrho * (stress / yield_stress - max_stress_ratio));
   }
 
