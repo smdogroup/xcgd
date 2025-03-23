@@ -657,6 +657,54 @@ void execute_interface_elasticity(std::string prefix, int nxy,
     return ret;
   };
 
+  auto surf_stress_general_fun =
+      [lsf_grad_fun](T E, T nu, const A2D::Vec<T, Basis::spatial_dim>& xloc) {
+        constexpr int spatial_dim = Basis::spatial_dim;
+        constexpr int dof_per_node = Basis::spatial_dim;
+
+        T mu = 0.5 * E / (1.0 + nu);
+        T lambda = E * nu / ((1.0 + nu) * (1.0 - nu));
+
+        double k2 = k * k;
+
+        A2D::Mat<T, dof_per_node, spatial_dim> grad;
+        T ux = k * cos(k * xloc(0)) * sin(k * xloc(1));
+        T uy = k * sin(k * xloc(0)) * cos(k * xloc(1));
+        T vx = -k * sin(k * xloc(0)) * cos(k * xloc(1));
+        T vy = -k * cos(k * xloc(0)) * sin(k * xloc(1));
+
+        grad(0, 0) = ux;
+        grad(0, 1) = uy;
+        grad(1, 0) = vx;
+        grad(1, 1) = vy;
+
+        A2D::SymMat<T, spatial_dim> Etensor, Stensor;
+
+        A2D::MatGreenStrain<A2D::GreenStrainType::LINEAR>(grad, Etensor);
+        A2D::SymIsotropic(mu, lambda, Etensor, Stensor);
+
+        A2D::Vec<T, spatial_dim> S_surf;
+
+        std::vector<T> lsf_grad = lsf_grad_fun(get_data(xloc));
+        A2D::Vec<T, spatial_dim> nrm;
+        nrm(0) = lsf_grad[0];
+        nrm(1) = lsf_grad[1];
+
+        A2D::VecNormalize(nrm, nrm);
+        T Cos = nrm(0);
+        T Sin = nrm(1);
+
+        // Normal stress
+        S_surf(0) = Stensor(0, 0) * Cos * Cos + Stensor(1, 1) * Sin * Sin +
+                    2.0 * Stensor(0, 1) * Sin * Cos;
+
+        // Tangent stress
+        S_surf(1) = (Stensor(0, 0) - Stensor(1, 1)) * Sin * Cos +
+                    Stensor(0, 1) * (Sin * Sin - Cos * Cos);
+
+        return S_surf;
+      };
+
   T E1 = 10.0, nu1 = 0.3;
   T E2 = 10.0, nu2 = 0.3;
   auto elasticity_intf_fun = [E1, nu1, E2, nu2, lsf_fun, intf_general_fun](
@@ -686,6 +734,16 @@ void execute_interface_elasticity(std::string prefix, int nxy,
   auto stress_fun_r = [E2, nu2, stress_general_fun](
                           const A2D::Vec<T, Basis::spatial_dim>& xloc) {
     return stress_general_fun(E2, nu2, xloc);
+  };
+
+  auto surf_stress_fun_l = [E1, nu1, surf_stress_general_fun](
+                               const A2D::Vec<T, Basis::spatial_dim>& xloc) {
+    return surf_stress_general_fun(E1, nu1, xloc);
+  };
+
+  auto surf_stress_fun_r = [E2, nu2, surf_stress_general_fun](
+                               const A2D::Vec<T, Basis::spatial_dim>& xloc) {
+    return surf_stress_general_fun(E2, nu2, xloc);
   };
 
   using PhysicsBulk =
