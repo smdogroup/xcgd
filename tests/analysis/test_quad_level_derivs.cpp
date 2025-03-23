@@ -1,11 +1,9 @@
 #include <limits>
 
 #include "analysis.h"
-#include "dual.hpp"
 #include "elements/gd_mesh.h"
 #include "elements/gd_vandermonde.h"
 #include "physics/linear_elasticity.h"
-#include "quadrature_multipoly.hpp"
 #include "test_commons.h"
 
 constexpr int spatial_dim = 2;
