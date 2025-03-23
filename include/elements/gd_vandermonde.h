@@ -269,7 +269,7 @@ class GDLSFQuadrature2D final : public QuadratureBase<T, quad_type> {
 
       for (int q = 0; q < num_quad_pts; q++) {
         int index = q * max_nnodes_per_element + i;
-        wts_grad[index] = dwts[q];
+        wts_grad[index] = dwts[q];  // ∂w/∂phi
         for (int d = 0; d < spatial_dim; d++) {
           pts_grad[index * spatial_dim + d] = dpts[q * spatial_dim + d];
           if constexpr (compute_ns_grad) {
