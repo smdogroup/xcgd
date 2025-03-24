@@ -487,10 +487,11 @@ class LinearElasticity2DSurfStressAggregation final
     A2D::ADObj<T> stress_obj, output_obj;
 
     auto stack = A2D::MakeStack(
+        A2D::MatVecMult(rot, nrm_ref_obj, tan_ref_obj),
         A2D::MatVecMult(J, tan_ref_obj, Jdt_obj), A2D::VecNorm(Jdt_obj, cq_obj),
         A2D::MatVecMult(J, nrm_ref_obj, nrm_obj),
         A2D::VecNormalize(nrm_obj, nrm_normalized_obj),
-        A2D::MatVecMult(select, nrm_obj, left_obj),
+        A2D::MatVecMult(select, nrm_normalized_obj, left_obj),
         A2D::MatGreenStrain<A2D::GreenStrainType::LINEAR>(grad_obj, E_obj),
         A2D::SymIsotropic(mu, lambda, E_obj, S_obj),
         A2D::MatVecMult(S_obj, nrm_normalized_obj, Sn_obj),
