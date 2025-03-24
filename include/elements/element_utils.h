@@ -1103,8 +1103,8 @@ void add_jac_adj_product_interface(
  * @param elem_dfphi output, element vector of ∂e/∂φ
  */
 template <typename T, class GDBasis, int dim>
-void add_energy_partial_deriv(
-    T weight, T detJ, T energy, const T wts_grad[], const T pts_grad[],
+void add_bulk_energy_partial_deriv(
+    T weight, T energy, const T wts_grad[], const T pts_grad[],
     const A2D::Mat<T, dim, GDBasis::spatial_dim> &ugrad_ref,
     const A2D::Mat<T, dim, GDBasis::spatial_dim * GDBasis::spatial_dim>
         &uhess_ref,
@@ -1133,27 +1133,26 @@ void add_energy_partial_deriv(
     }
   }
 
-  T wdetJ = weight * detJ;
   for (int n = 0; n < max_nnodes_per_element; n++) {
     // dedphi_{1,n}
     if (wts_grad) {
-      elem_dfdphi[n] += detJ * energy * wts_grad[n];
+      elem_dfdphi[n] += energy * wts_grad[n] / weight;
     }
 
     // dedphi_{2,n} is assumed zero (dJdphi = 0)
 
     // dedphi_{3,n}
     for (int d = 0; d < spatial_dim; d++) {
-      elem_dfdphi[n] += wdetJ * (deduq_ugrad(d) + deduq_uhess(d)) *
-                        pts_grad[spatial_dim * n + d];
+      elem_dfdphi[n] +=
+          (deduq_ugrad(d) + deduq_uhess(d)) * pts_grad[spatial_dim * n + d];
     }
   }
 }
 
 // dim = 1
 template <typename T, class GDBasis>
-void add_energy_partial_deriv(
-    T weight, T detJ, T energy, const T wts_grad[], const T pts_grad[],
+void add_bulk_energy_partial_deriv(
+    T weight, T energy, const T wts_grad[], const T pts_grad[],
     const A2D::Vec<T, GDBasis::spatial_dim> &ugrad_ref,
     const A2D::Vec<T, GDBasis::spatial_dim * GDBasis::spatial_dim> &uhess_ref,
     T coef_uq, const A2D::Vec<T, GDBasis::spatial_dim> &coef_ugrad_ref,
@@ -1175,19 +1174,18 @@ void add_energy_partial_deriv(
     }
   }
 
-  T wdetJ = weight * detJ;
   for (int n = 0; n < max_nnodes_per_element; n++) {
     // dedphi_{1,n}
     if (wts_grad) {
-      elem_dfdphi[n] += detJ * energy * wts_grad[n];
+      elem_dfdphi[n] += energy * wts_grad[n] / weight;
     }
 
     // dedphi_{2,n} is assumed zero (dJdphi = 0)
 
     // dedphi_{3,n}
     for (int d = 0; d < spatial_dim; d++) {
-      elem_dfdphi[n] += wdetJ * (deduq_ugrad(d) + deduq_uhess(d)) *
-                        pts_grad[spatial_dim * n + d];
+      elem_dfdphi[n] +=
+          (deduq_ugrad(d) + deduq_uhess(d)) * pts_grad[spatial_dim * n + d];
     }
   }
 }

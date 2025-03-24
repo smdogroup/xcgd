@@ -817,6 +817,12 @@ class GalerkinAnalysis final {
         A2D::Vec<T, spatial_dim> xloc, nrm_ref;
         A2D::Mat<T, spatial_dim, spatial_dim> J;
 
+        if constexpr (Quadrature::quad_type == QuadPtType::SURFACE) {
+          for (int d = 0; d < spatial_dim; d++) {
+            nrm_ref[d] = ns[spatial_dim * j + d];
+          }
+        }
+
         interp_val_grad<T, spatial_dim, max_nnodes_per_element, spatial_dim>(
             element_xloc, &N[offset_n], &Nxi[offset_nxi], get_ptr(xloc),
             get_ptr(J));
@@ -836,11 +842,8 @@ class GalerkinAnalysis final {
         typename Physics::dof_t coef_uq{};      // ∂e/∂uq
         typename Physics::grad_t coef_ugrad{};  // ∂e/∂(∇_x)uq
 
-        T detJ;
-        A2D::MatDet(J, detJ);
-
-        T energy = physics.energy(1.0 / detJ, 0.0, xloc, nrm_ref, J, uq, ugrad);
-        physics.residual(1.0 / detJ, 0.0, xloc, nrm_ref, J, uq, ugrad, coef_uq,
+        T energy = physics.energy(wts[j], 0.0, xloc, nrm_ref, J, uq, ugrad);
+        physics.residual(wts[j], 0.0, xloc, nrm_ref, J, uq, ugrad, coef_uq,
                          coef_ugrad);
 
         typename Physics::grad_t coef_ugrad_ref{};  // ∂e/∂(∇_ξ)uq
@@ -853,14 +856,14 @@ class GalerkinAnalysis final {
         int offset_pts = j * max_nnodes_per_element * spatial_dim;
 
         if (unity_quad_wts) {
-          add_energy_partial_deriv<T, Basis>(
-              1.0, 1.0, energy, nullptr, &pts_grad[offset_pts], ugrad_ref,
-              uhess_ref, coef_uq, coef_ugrad_ref, element_dfdphi.data());
+          add_bulk_energy_partial_deriv<T, Basis>(
+              1.0, energy, nullptr, &pts_grad[offset_pts], ugrad_ref, uhess_ref,
+              coef_uq, coef_ugrad_ref, element_dfdphi.data());
         } else {
-          add_energy_partial_deriv<T, Basis>(
-              wts[j], detJ, energy, &wts_grad[offset_wts],
-              &pts_grad[offset_pts], ugrad_ref, uhess_ref, coef_uq,
-              coef_ugrad_ref, element_dfdphi.data());
+          add_bulk_energy_partial_deriv<T, Basis>(
+              wts[j], energy, &wts_grad[offset_wts], &pts_grad[offset_pts],
+              ugrad_ref, uhess_ref, coef_uq, coef_ugrad_ref,
+              element_dfdphi.data());
         }
       }
 
@@ -1004,10 +1007,24 @@ class GalerkinAnalysis final {
           }
         }
 
-        T detJ;
-        A2D::MatDet(J, detJ);
+        // Compute the frame transform scaling
+        T cq = 0.0;
+        if constexpr (Quadrature::quad_type == QuadPtType::SURFACE) {
+          A2D::Vec<T, spatial_dim> tan_ref;
+          A2D::Mat<T, spatial_dim, spatial_dim> rot;
+          rot(0, 1) = -1.0;
+          rot(1, 0) = 1.0;
+          A2D::MatVecMult(rot, nrm_ref, tan_ref);
+
+          A2D::Vec<T, spatial_dim> Jdt;
+          A2D::MatVecMult(J, tan_ref, Jdt);
+          A2D::VecNorm(Jdt, cq);
+        } else {
+          A2D::MatDet(J, cq);
+        }
+
         energy_q.push_back(
-            physics.energy(1.0 / detJ, 0.0, xloc, nrm_ref, J, vals, grad));
+            physics.energy(1.0 / cq, 0.0, xloc, nrm_ref, J, vals, grad));
       }
     }
     return {xloc_q, energy_q};

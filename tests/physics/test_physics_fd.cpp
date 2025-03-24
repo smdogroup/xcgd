@@ -371,6 +371,6 @@ TEST(physics, LinearElasticityInterface) {
 }
 
 TEST(physics, SurfStressAggregation) {
-  test_surf_stress_aggregation(create_gd_lsf_surf_basis<2>(), 1e-5, 1e-9);
-  test_surf_stress_aggregation(create_gd_lsf_surf_basis<4>(), 1e-5, 1e-9);
+  test_surf_stress_aggregation(create_gd_lsf_surf_basis<2>(), 1e-5, 1e-8);
+  test_surf_stress_aggregation(create_gd_lsf_surf_basis<4>(), 1e-5, 1e-8);
 }

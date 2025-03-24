@@ -343,8 +343,17 @@ class LinearElasticity2DSurfStressAggregation final
            A2D::Mat<T, spatial_dim, spatial_dim>& J,
            A2D::Vec<T, dof_per_node>& ___,
            A2D::Mat<T, dof_per_node, spatial_dim>& grad) const {
-    T detJ;
-    A2D::MatDet(J, detJ);
+    // Prepare passive quantities: Evaluate dt
+    A2D::Vec<T, spatial_dim> tan_ref;
+    A2D::Mat<T, spatial_dim, spatial_dim> rot;
+    rot(0, 1) = -1.0;
+    rot(1, 0) = 1.0;
+    A2D::MatVecMult(rot, nrm_ref, tan_ref);
+
+    T cq;  // frame transform scaling
+    A2D::Vec<T, spatial_dim> Jdt;
+    A2D::MatVecMult(J, tan_ref, Jdt);
+    A2D::VecNorm(Jdt, cq);
 
     // Evaluate stress tensor in cartesian coordinates
     A2D::SymMat<T, spatial_dim> E, S;
@@ -378,7 +387,7 @@ class LinearElasticity2DSurfStressAggregation final
       }
     }
 
-    return weight * detJ *  // FIXME: use cq instead of detJ
+    return weight * cq *
            exp(ksrho * (stress / yield_stress - max_stress_ratio));
   }
 
@@ -389,8 +398,17 @@ class LinearElasticity2DSurfStressAggregation final
                 A2D::Mat<T, dof_per_node, spatial_dim>& grad,
                 A2D::Vec<T, dof_per_node>& ____,
                 A2D::Mat<T, dof_per_node, spatial_dim>& coef_grad) const {
-    T detJ;
-    A2D::MatDet(J, detJ);
+    // Prepare passive quantities: Evaluate dt
+    A2D::Vec<T, spatial_dim> tan_ref;
+    A2D::Mat<T, spatial_dim, spatial_dim> rot;
+    rot(0, 1) = -1.0;
+    rot(1, 0) = 1.0;
+    A2D::MatVecMult(rot, nrm_ref, tan_ref);
+
+    T cq;  // frame transform scaling
+    A2D::Vec<T, spatial_dim> Jdt;
+    A2D::MatVecMult(J, tan_ref, Jdt);
+    A2D::VecNorm(Jdt, cq);
 
     A2D::ADObj<A2D::Mat<T, dof_per_node, spatial_dim>&> grad_obj(grad,
                                                                  coef_grad);
@@ -422,7 +440,7 @@ class LinearElasticity2DSurfStressAggregation final
         A2D::MatVecMult(S_obj, nrm, Sn_obj),
         A2D::VecDot(left, Sn_obj, stress_obj),
         A2D::Eval(
-            weight * detJ *
+            weight * cq *
                 exp(ksrho * (stress_obj / yield_stress - max_stress_ratio)),
             output_obj));
     output_obj.bvalue() = 1.0;
