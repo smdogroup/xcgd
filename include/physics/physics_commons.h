@@ -78,6 +78,14 @@ class PhysicsBase {
     throw NotImplemented("residual() for your physics is not implemented");
   }
 
+  // Similar to residual, with an extra output ∂e/∂n_ξ
+  virtual void extended_residual(T weight, dv_t dv, xloc_t& xloc,
+                                 nrm_t& nrm_ref, J_t& J, dof_t& vals,
+                                 grad_t& grad, dof_t& coef_vals,
+                                 grad_t& coef_grad, nrm_t& coef_nrm_ref) const {
+    throw NotImplemented("residual() for your physics is not implemented");
+  }
+
   /**
    * @brief At a quadrature point, evaluate the matrix-vector product of second
    * order derivatives of the energy functional

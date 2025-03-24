@@ -801,9 +801,15 @@ class GalerkinAnalysis final {
       // Create the element dfdphi
       std::vector<T> element_dfdphi(max_nnodes_per_element, 0.0);
 
-      std::vector<T> pts, wts, ns, pts_grad, wts_grad;
-      int num_quad_pts = quadrature.get_quadrature_pts_grad(i, pts, wts, ns,
-                                                            pts_grad, wts_grad);
+      std::vector<T> pts, wts, ns, pts_grad, wts_grad, ns_grad;
+      int num_quad_pts = -1;
+      if constexpr (Quadrature::quad_type == QuadPtType::SURFACE) {
+        num_quad_pts = quadrature.get_quadrature_pts_grad(
+            i, pts, wts, ns, pts_grad, wts_grad, ns_grad);
+      } else {
+        num_quad_pts = quadrature.get_quadrature_pts_grad(i, pts, wts, ns,
+                                                          pts_grad, wts_grad);
+      }
 
       std::vector<T> N, Nxi, Nxixi;
       basis.eval_basis_grad(i, pts, N, Nxi, Nxixi);
@@ -841,10 +847,17 @@ class GalerkinAnalysis final {
 
         typename Physics::dof_t coef_uq{};      // ∂e/∂uq
         typename Physics::grad_t coef_ugrad{};  // ∂e/∂(∇_x)uq
+        typename Physics::nrm_t coef_nrm_ref;
 
         T energy = physics.energy(wts[j], 0.0, xloc, nrm_ref, J, uq, ugrad);
-        physics.residual(wts[j], 0.0, xloc, nrm_ref, J, uq, ugrad, coef_uq,
-                         coef_ugrad);
+
+        if constexpr (Quadrature::quad_type == QuadPtType::SURFACE) {
+          physics.extended_residual(wts[j], 0.0, xloc, nrm_ref, J, uq, ugrad,
+                                    coef_uq, coef_ugrad, coef_nrm_ref);
+        } else {
+          physics.residual(wts[j], 0.0, xloc, nrm_ref, J, uq, ugrad, coef_uq,
+                           coef_ugrad);
+        }
 
         typename Physics::grad_t coef_ugrad_ref{};  // ∂e/∂(∇_ξ)uq
 
@@ -854,16 +867,23 @@ class GalerkinAnalysis final {
 
         int offset_wts = j * max_nnodes_per_element;
         int offset_pts = j * max_nnodes_per_element * spatial_dim;
+        int offset_ns = j * max_nnodes_per_element * spatial_dim;
+
+        T* ns_grad_ptr_j = nullptr;
+        if constexpr (Quadrature::quad_type == QuadPtType::SURFACE) {
+          ns_grad_ptr_j = &ns_grad[offset_ns];
+        }
 
         if (unity_quad_wts) {
-          add_bulk_energy_partial_deriv<T, Basis>(
-              1.0, energy, nullptr, &pts_grad[offset_pts], ugrad_ref, uhess_ref,
-              coef_uq, coef_ugrad_ref, element_dfdphi.data());
-        } else {
-          add_bulk_energy_partial_deriv<T, Basis>(
-              wts[j], energy, &wts_grad[offset_wts], &pts_grad[offset_pts],
-              ugrad_ref, uhess_ref, coef_uq, coef_ugrad_ref,
+          add_energy_partial_deriv<T, Basis>(
+              1.0, energy, nullptr, &pts_grad[offset_pts], ns_grad_ptr_j,
+              ugrad_ref, uhess_ref, coef_uq, coef_ugrad_ref, coef_nrm_ref,
               element_dfdphi.data());
+        } else {
+          add_energy_partial_deriv<T, Basis>(
+              wts[j], energy, &wts_grad[offset_wts], &pts_grad[offset_pts],
+              ns_grad_ptr_j, ugrad_ref, uhess_ref, coef_uq, coef_ugrad_ref,
+              coef_nrm_ref, element_dfdphi.data());
         }
       }
 

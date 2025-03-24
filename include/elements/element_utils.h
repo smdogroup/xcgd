@@ -1103,14 +1103,14 @@ void add_jac_adj_product_interface(
  * @param elem_dfphi output, element vector of ∂e/∂φ
  */
 template <typename T, class GDBasis, int dim>
-void add_bulk_energy_partial_deriv(
+void add_energy_partial_deriv(
     T weight, T energy, const T wts_grad[], const T pts_grad[],
-    const A2D::Mat<T, dim, GDBasis::spatial_dim> &ugrad_ref,
+    const T ns_grad[], const A2D::Mat<T, dim, GDBasis::spatial_dim> &ugrad_ref,
     const A2D::Mat<T, dim, GDBasis::spatial_dim * GDBasis::spatial_dim>
         &uhess_ref,
     const A2D::Vec<T, dim> &coef_uq,
     const A2D::Mat<T, dim, GDBasis::spatial_dim> &coef_ugrad_ref,
-    T elem_dfdphi[]) {
+    const A2D::Vec<T, GDBasis::spatial_dim> &coef_nrm_ref, T elem_dfdphi[]) {
   static_assert(GDBasis::is_gd_basis, "This method only works with GD Basis");
 
   static constexpr int spatial_dim = GDBasis::spatial_dim;
@@ -1146,12 +1146,18 @@ void add_bulk_energy_partial_deriv(
       elem_dfdphi[n] +=
           (deduq_ugrad(d) + deduq_uhess(d)) * pts_grad[spatial_dim * n + d];
     }
+
+    if (ns_grad) {
+      for (int d = 0; d < spatial_dim; d++) {
+        elem_dfdphi[n] += coef_nrm_ref(d) * ns_grad[spatial_dim * n + d];
+      }
+    }
   }
 }
 
 // dim = 1
 template <typename T, class GDBasis>
-void add_bulk_energy_partial_deriv(
+void add_energy_partial_deriv(
     T weight, T energy, const T wts_grad[], const T pts_grad[],
     const A2D::Vec<T, GDBasis::spatial_dim> &ugrad_ref,
     const A2D::Vec<T, GDBasis::spatial_dim * GDBasis::spatial_dim> &uhess_ref,

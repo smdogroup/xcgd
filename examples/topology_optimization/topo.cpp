@@ -1516,10 +1516,8 @@ class TopoAnalysis {
       std::fill(gstress_surf.begin(), gstress_surf.end(), 0.0);
 
       // Explicit partials ∂f/∂phi
-      surf_stress_ks_analysis.LSF_energy_derivatives(
-          sol.data(),
-          gstress_surf.data());  // TODO: changes needed inside this function to
-                                 // encounter gradient of nrm_ref
+      surf_stress_ks_analysis.LSF_energy_derivatives(sol.data(),
+                                                     gstress_surf.data());
 
       // Implicit derivatives via the adjoint variables
       elastic->get_analysis().LSF_jacobian_adjoint_product(

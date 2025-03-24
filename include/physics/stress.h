@@ -447,6 +447,62 @@ class LinearElasticity2DSurfStressAggregation final
     stack.reverse();
   }
 
+  void extended_residual(T weight, T _, A2D::Vec<T, spatial_dim>& __,
+                         A2D::Vec<T, spatial_dim>& nrm_ref,
+                         A2D::Mat<T, spatial_dim, spatial_dim>& J,
+                         A2D::Vec<T, dof_per_node>& ___,
+                         A2D::Mat<T, dof_per_node, spatial_dim>& grad,
+                         A2D::Vec<T, dof_per_node>& ____,
+                         A2D::Mat<T, dof_per_node, spatial_dim>& coef_grad,
+                         A2D::Vec<T, spatial_dim>& coef_nrm_ref) const {
+    // Passive matrices
+
+    // Rotation matrix
+    A2D::Mat<T, spatial_dim, spatial_dim> rot;
+    rot(0, 1) = -1.0;
+    rot(1, 0) = 1.0;
+
+    // Selection matrix
+    A2D::Mat<T, spatial_dim, spatial_dim> select;
+    if (surf_stress_type == SurfStressType::normal) {
+      // Identity matrix
+      select(0, 0) = 1.0;
+      select(1, 1) = 1.0;
+    } else {
+      // Clockwise rotation matrix
+      select(0, 1) = 1.0;
+      select(1, 0) = -1.0;
+    }
+
+    A2D::ADObj<A2D::Mat<T, dof_per_node, spatial_dim>&> grad_obj(grad,
+                                                                 coef_grad);
+    A2D::ADObj<A2D::Vec<T, spatial_dim>&> nrm_ref_obj(nrm_ref, coef_nrm_ref);
+    A2D::ADObj<T> cq_obj;
+    A2D::ADObj<A2D::Vec<T, spatial_dim>> tan_ref_obj;
+    A2D::ADObj<A2D::Vec<T, spatial_dim>> Jdt_obj;
+    A2D::ADObj<A2D::Vec<T, spatial_dim>> nrm_obj, nrm_normalized_obj, left_obj;
+
+    A2D::ADObj<A2D::SymMat<T, spatial_dim>> E_obj, S_obj;
+    A2D::ADObj<A2D::Vec<T, spatial_dim>> Sn_obj;
+    A2D::ADObj<T> stress_obj, output_obj;
+
+    auto stack = A2D::MakeStack(
+        A2D::MatVecMult(J, tan_ref_obj, Jdt_obj), A2D::VecNorm(Jdt_obj, cq_obj),
+        A2D::MatVecMult(J, nrm_ref_obj, nrm_obj),
+        A2D::VecNormalize(nrm_obj, nrm_normalized_obj),
+        A2D::MatVecMult(select, nrm_obj, left_obj),
+        A2D::MatGreenStrain<A2D::GreenStrainType::LINEAR>(grad_obj, E_obj),
+        A2D::SymIsotropic(mu, lambda, E_obj, S_obj),
+        A2D::MatVecMult(S_obj, nrm_normalized_obj, Sn_obj),
+        A2D::VecDot(left_obj, Sn_obj, stress_obj),
+        A2D::Eval(
+            weight * cq_obj *
+                exp(ksrho * (stress_obj / yield_stress - max_stress_ratio)),
+            output_obj));
+    output_obj.bvalue() = 1.0;
+    stack.reverse();
+  }
+
   void jacobian_product(
       T weight, T _, A2D::Vec<T, spatial_dim>& __,
       A2D::Vec<T, spatial_dim>& ___, A2D::Mat<T, spatial_dim, spatial_dim>& J,
