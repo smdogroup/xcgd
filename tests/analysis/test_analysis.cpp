@@ -354,10 +354,9 @@ T two_sided_LSF_jacobian_adjoint_product_fd_check(
   return relerr;
 }
 
-template <int Np_1d, class Quadrature, class Physics>
+template <class Mesh, class Quadrature, class Physics>
 T LSF_energy_derivatives_fd_check(Physics& physics, double dh = 1e-6) {
   using Grid = StructuredGrid2D<T>;
-  using Mesh = CutMesh<T, Np_1d>;
   using Basis = GDBasis2D<T, Mesh>;
 
   using Analysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, Physics>;
@@ -411,9 +410,8 @@ T LSF_energy_derivatives_fd_check(Physics& physics, double dh = 1e-6) {
 
   T relerr = fabs(fd - exact) / fabs(exact);
 
-  std::printf(
-      "Np_1d: %d, dh: %.5e, FD: %30.20e, Actual: %30.20e, Rel err: %20.10e\n",
-      Np_1d, dh, fd, exact, relerr);
+  std::printf("dh: %.5e, FD: %30.20e, Actual: %30.20e, Rel err: %20.10e\n", dh,
+              fd, exact, relerr);
 
   return relerr;
 }
@@ -448,14 +446,14 @@ void test_two_sided_LSF_jacobian_adjoint_product(
   EXPECT_LE(relerr_min, tol);
 }
 
-template <int Np_1d, class Quadrature, class Physics>
+template <class Mesh, class Quadrature, class Physics>
 void test_LSF_energy_derivatives(Physics& physics, double tol = 1e-6) {
   T relerr_min = 1.0;
   for (double dh :
        std::vector<double>{1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9,
                            1e-10, 1e-11, 1e-12, 1e-13, 1e-14, 1e-15}) {
-    T ret = LSF_energy_derivatives_fd_check<Np_1d, Quadrature, Physics>(physics,
-                                                                        dh);
+    T ret =
+        LSF_energy_derivatives_fd_check<Mesh, Quadrature, Physics>(physics, dh);
     if (ret < relerr_min) relerr_min = ret;
   }
 
@@ -515,48 +513,84 @@ TEST(analysis, AdjJacProductElasticityInterface) {
 
 TEST(analysis, EnergyPartialStressKSNp2) {
   int constexpr Np_1d = 2;
-  using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
+  using Mesh = CutMesh<T, Np_1d>;
+  using Quadrature = GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER,
+                                       typename Mesh::Grid, Np_1d, Mesh>;
   using Physics = LinearElasticity2DVonMisesStressAggregation<T>;
   double ksrho = 1.0;
   T E = 10.0, nu = 0.3;
   T yield_stress = 100.0;
   Physics physics(ksrho, E, nu, yield_stress);
 
-  test_LSF_energy_derivatives<Np_1d, Quadrature, Physics>(physics, 1e-5);
+  test_LSF_energy_derivatives<Mesh, Quadrature, Physics>(physics, 1e-5);
 }
 
 TEST(analysis, EnergyPartialStressKSNp4) {
   int constexpr Np_1d = 4;
-  using Quadrature = GDLSFQuadrature2D<T, Np_1d>;
+  using Mesh = CutMesh<T, Np_1d>;
+  using Quadrature = GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER,
+                                       typename Mesh::Grid, Np_1d, Mesh>;
   using Physics = LinearElasticity2DVonMisesStressAggregation<T>;
   double ksrho = 1.0;
   T E = 10.0, nu = 0.3;
   T yield_stress = 100.0;
   Physics physics(ksrho, E, nu, yield_stress);
 
-  test_LSF_energy_derivatives<Np_1d, Quadrature, Physics>(physics, 1e-5);
+  test_LSF_energy_derivatives<Mesh, Quadrature, Physics>(physics, 1e-5);
+}
+
+TEST(analysis, EnergyPartialStressKSNp4FCMesh) {
+  int constexpr Np_1d = 4;
+  using Mesh = FiniteCellMesh<T, Np_1d>;
+  using Quadrature = GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER,
+                                       typename Mesh::Grid, Np_1d, Mesh>;
+  using Physics = LinearElasticity2DVonMisesStressAggregation<T>;
+  double ksrho = 1.0;
+  T E = 10.0, nu = 0.3;
+  T yield_stress = 100.0;
+  Physics physics(ksrho, E, nu, yield_stress);
+
+  test_LSF_energy_derivatives<Mesh, Quadrature, Physics>(physics, 1e-5);
 }
 
 TEST(analysis, EnergyPartialStressKSSurfNp2) {
   int constexpr Np_1d = 2;
-  using Quadrature = GDLSFQuadrature2D<T, Np_1d, QuadPtType::SURFACE>;
+  using Mesh = CutMesh<T, Np_1d>;
+  using Quadrature = GDLSFQuadrature2D<T, Np_1d, QuadPtType::SURFACE,
+                                       typename Mesh::Grid, Np_1d, Mesh>;
   using Physics = LinearElasticity2DSurfStressAggregation<T>;
   double ksrho = 1.0;
   T E = 10.0, nu = 0.3;
   T yield_stress = 100.0;
   Physics physics(ksrho, E, nu, yield_stress);
 
-  test_LSF_energy_derivatives<Np_1d, Quadrature, Physics>(physics, 1e-5);
+  test_LSF_energy_derivatives<Mesh, Quadrature, Physics>(physics, 1e-5);
 }
 
 TEST(analysis, EnergyPartialStressKSSurfNp4) {
   int constexpr Np_1d = 4;
-  using Quadrature = GDLSFQuadrature2D<T, Np_1d, QuadPtType::SURFACE>;
+  using Mesh = CutMesh<T, Np_1d>;
+  using Quadrature = GDLSFQuadrature2D<T, Np_1d, QuadPtType::SURFACE,
+                                       typename Mesh::Grid, Np_1d, Mesh>;
   using Physics = LinearElasticity2DSurfStressAggregation<T>;
   double ksrho = 1.0;
   T E = 10.0, nu = 0.3;
   T yield_stress = 100.0;
   Physics physics(ksrho, E, nu, yield_stress);
 
-  test_LSF_energy_derivatives<Np_1d, Quadrature, Physics>(physics, 1e-5);
+  test_LSF_energy_derivatives<Mesh, Quadrature, Physics>(physics, 1e-5);
+}
+
+TEST(analysis, EnergyPartialStressKSSurfNp4FCMesh) {
+  int constexpr Np_1d = 4;
+  using Mesh = FiniteCellMesh<T, Np_1d>;
+  using Quadrature = GDLSFQuadrature2D<T, Np_1d, QuadPtType::SURFACE,
+                                       typename Mesh::Grid, Np_1d, Mesh>;
+  using Physics = LinearElasticity2DSurfStressAggregation<T>;
+  double ksrho = 1.0;
+  T E = 10.0, nu = 0.3;
+  T yield_stress = 100.0;
+  Physics physics(ksrho, E, nu, yield_stress);
+
+  test_LSF_energy_derivatives<Mesh, Quadrature, Physics>(physics, 1e-5);
 }

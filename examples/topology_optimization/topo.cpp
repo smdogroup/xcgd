@@ -2,10 +2,12 @@
 #include <sys/types.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <limits>
+#include <numeric>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -1509,8 +1511,6 @@ class TopoAnalysis {
       // Flip the sign so we get the acutal adjoint variable
       for (T& p : psi_stress_surf) p *= -1.0;
 
-      /* Bulk and Surf KS stress*/
-
       // Prepare the output
       gstress_surf.resize(x.size());
       std::fill(gstress_surf.begin(), gstress_surf.end(), 0.0);
@@ -1522,7 +1522,6 @@ class TopoAnalysis {
       // Implicit derivatives via the adjoint variables
       elastic->get_analysis().LSF_jacobian_adjoint_product(
           sol.data(), psi_stress_surf.data(), gstress_surf.data());
-
       if constexpr (two_material_method == TwoMaterial::ERSATZ) {
         elastic->get_analysis_ersatz().LSF_jacobian_adjoint_product(
             sol.data(), psi_stress_surf_neg.data(), gstress_surf.data());
@@ -1808,7 +1807,10 @@ class TopoAnalysis {
   std::vector<T>& get_rhs() { return elastic->get_rhs(); }
   ProbMesh& get_prob_mesh() { return prob_mesh; }
 
-  void set_stress_ksrho(double ksrho) { stress_ks.set_ksrho(ksrho); }
+  void set_stress_ksrho(double ksrho) {
+    surf_stress_ks.set_ksrho(ksrho);
+    stress_ks.set_ksrho(ksrho);
+  }
 
   auto& get_elastic() { return elastic; }
 

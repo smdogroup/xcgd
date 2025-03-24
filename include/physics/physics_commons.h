@@ -83,7 +83,8 @@ class PhysicsBase {
                                  nrm_t& nrm_ref, J_t& J, dof_t& vals,
                                  grad_t& grad, dof_t& coef_vals,
                                  grad_t& coef_grad, nrm_t& coef_nrm_ref) const {
-    throw NotImplemented("residual() for your physics is not implemented");
+    throw NotImplemented(
+        "extended_residual() for your physics is not implemented");
   }
 
   /**
