@@ -1156,7 +1156,7 @@ void add_energy_partial_deriv(
 }
 
 // dim = 1
-// TODO: added coef_nrm_ref
+// FIXME: added coef_nrm_ref
 template <typename T, class GDBasis>
 void add_energy_partial_deriv(
     T weight, T energy, const T wts_grad[], const T pts_grad[],

@@ -11,6 +11,7 @@
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <variant>
 
 #include "ParOptOptimizer.h"
@@ -1218,9 +1219,10 @@ class TopoAnalysis {
     cache["ks_energy"] = ks_energy;
     cache["surf_ks_energy"] = surf_ks_energy;
 
-    return std::make_tuple(HFx, comp, area, pterm, max_stress, max_stress_ratio,
-                           ks_stress_ratio, surf_ks_stress_ratio, sol, xloc_q,
-                           stress_q, xloc_surf_q, stress_surf_q);
+    return std::make_tuple(HFx, comp, area, pterm, max_stress_ratio,
+                           ks_stress_ratio, max_surf_stress_ratio,
+                           surf_ks_stress_ratio, sol, xloc_q, stress_q,
+                           xloc_surf_q, stress_surf_q);
   }
 
   // only useful if ersatz material is used
@@ -1949,10 +1951,10 @@ class TopoProb {
   int get_nvars() { return nvars; }
   int get_ncon() { return ncon; }
 
-  void print_progress(T obj, T comp, T reg, T pterm, T vol_frac, T max_stress,
-                      T max_stress_ratio, double ksrho, T ks_stress_ratio,
-                      T ks_stress_ratio_ub, T HFx_change,
-                      int header_every = 10) {
+  void print_progress_deprecated(T obj, T comp, T reg, T pterm, T vol_frac,
+                                 T max_stress, T max_stress_ratio, double ksrho,
+                                 T ks_stress_ratio, T ks_stress_ratio_ub,
+                                 T HFx_change, int header_every = 10) {
     std::ofstream progress_file(fspath(prefix) / fspath("optimization.log"),
                                 std::ios::app);
     if (minor_counter % header_every == 0) {
@@ -1984,6 +1986,112 @@ class TopoProb {
         ks_stress_ratio_ub, HFx_change, watch.format_time(watch.lap()).c_str());
     std::cout << line;
     progress_file << line;
+    progress_file.close();
+  }
+
+  void print_progress(T obj, int ncon, T* cons, T comp, T reg, T pterm,
+                      T vol_frac, T max_stress_ratio, T max_surf_stress_ratio,
+                      double ksrho, T ks_stress_ratio, T surf_ks_stress_ratio,
+                      T stress_ratio_ub, T HFx_change, int header_every = 10) {
+    // Prepare printable data
+    // each entry is a (head, content) pair
+    std::vector<std::pair<std::string, std::string>> data;
+
+    auto add_entry = [&data](int strlen, std::string header,
+                             std::string content_format,
+                             std::variant<int, double, const char*> content) {
+      constexpr int N = 50;
+      char header_buf[N], content_buf[N];
+
+      std::snprintf(header_buf, N, ("%" + std::to_string(strlen) + "s").c_str(),
+                    header.c_str());
+      // we use visit to invoke the corrected overloaded function
+      std::visit(
+          [&](auto&& arg) {
+            std::snprintf(
+                content_buf, N,
+                ("%" + std::to_string(strlen) + content_format).c_str(), arg);
+          },
+          content);
+      data.push_back({header_buf, content_buf});
+    };
+
+    if (counter != prev_counter) {
+      add_entry(6, "major", "d", counter);
+    } else {
+      add_entry(6, "major", "s", "");
+    }
+    add_entry(6, "minor", "d", minor_counter);
+
+    add_entry(12, "xreg", ".3e", reg);
+    add_entry(8, "vol(\%)", ".2f", vol_frac * 100.0);
+    add_entry(8, "vub(\%)", ".2f", area_frac * 100.0);
+
+    // Add optionally evaluated functions of interest
+    {
+      auto foi_set = topo.get_foi_set();
+      if (foi_set.count(FOI::grad_penalization)) {
+        add_entry(12, "pterm", ".3e", pterm);
+      }
+      if (foi_set.count(FOI::compliance)) {
+        add_entry(12, "comp", ".3e", comp);
+      }
+      if (foi_set.count(FOI::bulk_stress) or foi_set.count(FOI::surf_stress)) {
+        add_entry(8, "ksrho", ".2f", ksrho);
+      }
+
+      if (foi_set.count(FOI::bulk_stress)) {
+        add_entry(12, "max(bs/y)", ".3e", max_stress_ratio);
+        add_entry(12, "ks(bs/y)", ".3e", ks_stress_ratio);
+        if (parser.get_bool_option("has_stress_constraint")) {
+          add_entry(12, "ub(bs/y)", ".3e", stress_ratio_ub);
+        }
+        add_entry(
+            9, "kserr(\%)", ".2f",
+            (ks_stress_ratio - max_stress_ratio) / max_stress_ratio * 100.0);
+      }
+      if (foi_set.count(FOI::surf_stress)) {
+        add_entry(12, "max(ss/y)", ".3e", max_surf_stress_ratio);
+        add_entry(12, "ks(ss/y)", ".3e", surf_ks_stress_ratio);
+        add_entry(9, "kserr(\%)", ".2f",
+                  (surf_ks_stress_ratio - max_surf_stress_ratio) /
+                      max_surf_stress_ratio * 100.0);
+      }
+    }
+
+    // raw optimization entries and misc stuff
+    {
+      add_entry(12, "obj", ".3e", obj);
+      for (int i = 0; i < ncon; i++) {
+        std::string name = "con[" + std::to_string(i) + "]";
+        add_entry(12, name, ".3e", cons[i]);
+      }
+
+      add_entry(12, "|dx|inf", ".3e", HFx_change);
+      double t_elapse = watch.lap();
+      add_entry(13, "uptime(hms)", "s", watch.format_time(t_elapse).c_str());
+      add_entry(9, "s/it", ".2f", t_elapse / minor_counter);
+    }
+
+    std::ofstream progress_file(fspath(prefix) / fspath("optimization.log"),
+                                std::ios::app);
+
+    if (minor_counter % header_every == 0) {
+      std::string line = "\n";
+      for (auto& [header, content] : data) {
+        line += header;
+      }
+      std::cout << line << "\n";
+      progress_file << line << "\n";
+    }
+
+    std::string line;
+    for (auto& [header, content] : data) {
+      line += content;
+    }
+    std::cout << line << "\n";
+    progress_file << line << "\n";
+
     progress_file.close();
   }
 
@@ -2155,9 +2263,9 @@ class TopoProb {
       topo.write_prob_json(json_path, parser, x);
     }
 
-    auto [HFx, comp, area, pterm, max_stress, max_stress_ratio, ks_stress_ratio,
-          surf_ks_stress_ratio, u, xloc_q, stress_q, xloc_surf_q,
-          stress_surf_q] = topo.eval_obj_con(x);
+    auto [HFx, comp, area, pterm, max_stress_ratio, ks_stress_ratio,
+          max_surf_stress_ratio, surf_ks_stress_ratio, u, xloc_q, stress_q,
+          xloc_surf_q, stress_surf_q] = topo.eval_obj_con(x);
 
     // Evaluate the design change ||phi_new - phi_old||_infty
     std::transform(
@@ -2349,8 +2457,10 @@ class TopoProb {
     }
 
     // print optimization progress
-    print_progress(*fobj, comp, reg, pterm, area / domain_area, max_stress,
-                   max_stress_ratio, ksrho, ks_stress_ratio, stress_ratio_ub,
+    int ncon = con_index;
+    print_progress(*fobj, ncon, cons, comp, reg, pterm, area / domain_area,
+                   max_stress_ratio, max_surf_stress_ratio, ksrho,
+                   ks_stress_ratio, surf_ks_stress_ratio, stress_ratio_ub,
                    HFx_change);
     minor_counter++;
     return 0;
@@ -2925,11 +3035,10 @@ void execute_1(int argc, char* argv[], int Np_1d) {
   if (Np_1d == 2) {
     execute<2, two_material_method, use_lbracket_grid, use_finite_cell_mesh>(
         argc, argv);
+  } else if (Np_1d == 4) {
+    execute<4, two_material_method, use_lbracket_grid, use_finite_cell_mesh>(
+        argc, argv);
   }
-  // else if (Np_1d == 4) {
-  //   execute<4, two_material_method, use_lbracket_grid, use_finite_cell_mesh>(
-  //       argc, argv);
-  // }
   // else if (Np_1d == 6) {
   //   execute<6, two_material_method, use_lbracket_grid, use_finite_cell_mesh>(
   //       argc, argv);

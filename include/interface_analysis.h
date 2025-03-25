@@ -49,8 +49,6 @@ class InterfaceGalerkinAnalysis final {
         physics(physics_interface),
         cell_primary_elems(mesh_primary.get_cell_elems()),
         cell_secondary_elems(mesh_secondary.get_cell_elems()) {
-    xcgd_assert(Mesh::is_finite_cell_mesh,
-                "InterfaceProblem only works with FiniteCellMesh for now");
     update_mesh();
   }
 
@@ -69,6 +67,8 @@ class InterfaceGalerkinAnalysis final {
   }
 
   T energy(const T x[], const T dof[]) const {
+    xcgd_assert(Mesh::is_finite_cell_mesh,
+                "InterfaceProblem only works with FiniteCellMesh for now");
     T total_energy = 0.0;
 
     for (int cell : interface_cells) {
@@ -130,6 +130,8 @@ class InterfaceGalerkinAnalysis final {
   }
 
   void residual(const T x[], const T dof[], T res[]) const {
+    xcgd_assert(Mesh::is_finite_cell_mesh,
+                "InterfaceProblem only works with FiniteCellMesh for now");
     for (int cell : interface_cells) {
       auto [nnodes_primary, nnodes_secondary, num_quad_pts, nodes_primary,
             nodes_secondary, element_xloc, N, Nxi, element_dof_primary,
@@ -217,6 +219,8 @@ class InterfaceGalerkinAnalysis final {
 
   void jacobian_product(const T x[], const T dof[], const T direct[],
                         T res[]) const {
+    xcgd_assert(Mesh::is_finite_cell_mesh,
+                "InterfaceProblem only works with FiniteCellMesh for now");
     for (int cell : interface_cells) {
       auto [nnodes_primary, nnodes_secondary, num_quad_pts, nodes_primary,
             nodes_secondary, element_xloc, N, Nxi, element_dof_primary,
@@ -339,6 +343,8 @@ class InterfaceGalerkinAnalysis final {
   void jacobian(const T x[], const T dof[],
                 GalerkinBSRMat<T, dof_per_node>* mat,
                 bool zero_jac = true) const {
+    xcgd_assert(Mesh::is_finite_cell_mesh,
+                "InterfaceProblem only works with FiniteCellMesh for now");
     if (zero_jac) {
       mat->zero();
     }
@@ -434,6 +440,8 @@ class InterfaceGalerkinAnalysis final {
 
   void LSF_jacobian_adjoint_product(const T dof[], const T psi[],
                                     T dfdphi[]) const {
+    xcgd_assert(Mesh::is_finite_cell_mesh,
+                "InterfaceProblem only works with FiniteCellMesh for now");
     static_assert(Basis::is_gd_basis, "This method only works with GD Basis");
     static_assert(Mesh::is_cut_mesh,
                   "This method requires a level-set-cut mesh");
