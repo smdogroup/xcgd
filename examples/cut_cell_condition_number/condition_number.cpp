@@ -14,7 +14,7 @@ enum class ErsatzMethod { None, Nitsche, Direct };
 template <int Np_1d, bool use_finite_cell_mesh = false,
           ErsatzMethod ersatz = ErsatzMethod::None>
 void generate_stiffness_matrix(int n, int l, double x0, double y0, double r,
-                               std::string prefix) {
+                               double nitsche_eta, std::string prefix) {
   using T = double;
   using Grid = StructuredGrid2D<T>;
   using Mesh = typename std::conditional<use_finite_cell_mesh,
@@ -90,7 +90,6 @@ void generate_stiffness_matrix(int n, int l, double x0, double y0, double r,
     using ElasticNitsche = NitscheTwoSidedApp<T, Mesh, Quadrature, Basis,
                                               PhysicsBulk, PhysicsInterface>;
 
-    double nitsche_eta = 1e5;
     PhysicsBulk physics_bulk_primary(E, nu, int_func);
     PhysicsBulk physics_bulk_secondary(E * ersatz_ratio, nu, int_func);
     PhysicsInterface physics_interface(nitsche_eta, E, nu, E * ersatz_ratio,
@@ -133,23 +132,23 @@ void generate_stiffness_matrix(int n, int l, double x0, double y0, double r,
 
 template <bool use_finite_cell_mesh, ErsatzMethod ersatz>
 void execute(int Np_1d, int n, int l, double x0, double y0, double r,
-             std::string prefix) {
+             double nitsche_eta, std::string prefix) {
   switch (Np_1d) {
     case 2:
-      generate_stiffness_matrix<2, use_finite_cell_mesh, ersatz>(n, l, x0, y0,
-                                                                 r, prefix);
+      generate_stiffness_matrix<2, use_finite_cell_mesh, ersatz>(
+          n, l, x0, y0, r, nitsche_eta, prefix);
       break;
     case 4:
-      generate_stiffness_matrix<4, use_finite_cell_mesh, ersatz>(n, l, x0, y0,
-                                                                 r, prefix);
+      generate_stiffness_matrix<4, use_finite_cell_mesh, ersatz>(
+          n, l, x0, y0, r, nitsche_eta, prefix);
       break;
     case 6:
-      generate_stiffness_matrix<6, use_finite_cell_mesh, ersatz>(n, l, x0, y0,
-                                                                 r, prefix);
+      generate_stiffness_matrix<6, use_finite_cell_mesh, ersatz>(
+          n, l, x0, y0, r, nitsche_eta, prefix);
       break;
     case 8:
-      generate_stiffness_matrix<8, use_finite_cell_mesh, ersatz>(n, l, x0, y0,
-                                                                 r, prefix);
+      generate_stiffness_matrix<8, use_finite_cell_mesh, ersatz>(
+          n, l, x0, y0, r, nitsche_eta, prefix);
       break;
     default:
       printf("Unsupported Np_1d (%d), exiting...\n", Np_1d);
@@ -165,6 +164,7 @@ int main(int argc, char* argv[]) {
   p.add_argument<double>("--x0", 0.45);
   p.add_argument<double>("--y0", 0.42);
   p.add_argument<double>("--r", 0.35);
+  p.add_argument<double>("--nitsche-eta", 1e5);
   p.add_argument<int>("--use-finite-cell-mesh", 0, {0, 1});
   p.add_argument<std::string>("--prefix", {});
   p.add_argument<std::string>("--ersatz-method", "none",
@@ -185,6 +185,7 @@ int main(int argc, char* argv[]) {
   double x0 = p.get<double>("x0");
   double y0 = p.get<double>("y0");
   double r = p.get<double>("r");
+  double nitsche_eta = p.get<double>("nitsche-eta");
   bool use_finite_cell_mesh = p.get<int>("use-finite-cell-mesh");
 
   ErsatzMethod ersatz = std::map<std::string, ErsatzMethod>{
@@ -194,20 +195,25 @@ int main(int argc, char* argv[]) {
 
   if (use_finite_cell_mesh) {
     if (ersatz == ErsatzMethod::None) {
-      execute<true, ErsatzMethod::None>(Np_1d, n, l, x0, y0, r, prefix);
+      execute<true, ErsatzMethod::None>(Np_1d, n, l, x0, y0, r, nitsche_eta,
+                                        prefix);
     } else if (ersatz == ErsatzMethod::Nitsche) {
-      execute<true, ErsatzMethod::Nitsche>(Np_1d, n, l, x0, y0, r, prefix);
+      execute<true, ErsatzMethod::Nitsche>(Np_1d, n, l, x0, y0, r, nitsche_eta,
+                                           prefix);
     } else if (ersatz == ErsatzMethod::Direct) {
-      execute<true, ErsatzMethod::Direct>(Np_1d, n, l, x0, y0, r, prefix);
+      execute<true, ErsatzMethod::Direct>(Np_1d, n, l, x0, y0, r, nitsche_eta,
+                                          prefix);
     }
   } else {
     if (ersatz == ErsatzMethod::Nitsche) {
-      throw std::runtime_error("cannot use Nitsche for cut mesh");
-
+      execute<false, ErsatzMethod::Nitsche>(Np_1d, n, l, x0, y0, r, nitsche_eta,
+                                            prefix);
     } else if (ersatz == ErsatzMethod::Direct) {
-      execute<false, ErsatzMethod::Direct>(Np_1d, n, l, x0, y0, r, prefix);
+      execute<false, ErsatzMethod::Direct>(Np_1d, n, l, x0, y0, r, nitsche_eta,
+                                           prefix);
     } else if (ersatz == ErsatzMethod::None) {
-      execute<false, ErsatzMethod::None>(Np_1d, n, l, x0, y0, r, prefix);
+      execute<false, ErsatzMethod::None>(Np_1d, n, l, x0, y0, r, nitsche_eta,
+                                         prefix);
     }
   }
 

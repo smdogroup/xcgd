@@ -8,6 +8,7 @@ import niceplots
 import os
 import json
 import matplotlib.patches as patches
+import argparse
 
 plt.style.use(niceplots.get_style())
 
@@ -158,6 +159,7 @@ def sweep(
     exp_min=-5.0,
     num_pts=10,
     nelems=33,
+    nitsche_eta=1e5,
     use_finite_cell_mesh=False,
     ersatz="none",
 ):
@@ -193,6 +195,7 @@ def sweep(
             "--x0=%.1f" % l,
             "--y0=0.0",
             "--r=%.10f" % r,
+            f"--nitsche-eta={nitsche_eta}",
             "--prefix=%s" % prefix,
             "--use-finite-cell-mesh=%d" % int(use_finite_cell_mesh),
             "--ersatz-method=%s" % ersatz,
@@ -218,34 +221,48 @@ def sweep(
 
 
 if __name__ == "__main__":
-    for use_finite_cell_mesh, ersatz in zip(
-        [True, True, True, False, False],
-        ["direct", "nitsche", "none", "none", "direct"],
-    ):
-        run_name = f'mesh_{"fc" if use_finite_cell_mesh else "cut"}_ersatz_{ersatz}'
+    p = argparse.ArgumentParser()
+    p.add_argument("--mesh", nargs="*", default=["fc", "cut"], choices=["fc", "cut"])
+    p.add_argument("--Np_1d", nargs="*", default=[2, 4, 6], choices=[2, 4, 6])
+    p.add_argument(
+        "--ersatz",
+        nargs="*",
+        default=["none", "direct", "nitsche"],
+        choices=["none", "direct", "nitsche"],
+    )
+    p.add_argument("--nitsche-eta", default=1e5, type=float)
 
-        fig, ax = plt.subplots()
-        for Np_1d in [2, 4, 6]:
-            sweep(
-                run_name=run_name,
-                ax=ax,
-                Np_1d=Np_1d,
-                exp_max=-1.0,
-                exp_min=-5.0,
-                num_pts=10,
-                nelems=10,
-                use_finite_cell_mesh=use_finite_cell_mesh,
-                ersatz=ersatz,
+    args = p.parse_args()
+
+    for use_finite_cell_mesh in [m == "fc" for m in args.mesh]:
+        for ersatz in args.ersatz:
+            run_name = f'mesh_{"fc" if use_finite_cell_mesh else "cut"}_ersatz_{ersatz}'
+            if ersatz == "nitsche":
+                run_name += f"_{args.nitsche_eta:.0e}"
+
+            fig, ax = plt.subplots()
+            for Np_1d in args.Np_1d:
+                sweep(
+                    run_name=run_name,
+                    ax=ax,
+                    Np_1d=Np_1d,
+                    exp_max=-1.0,
+                    exp_min=-5.0,
+                    num_pts=10,
+                    nelems=10,
+                    nitsche_eta=args.nitsche_eta,
+                    use_finite_cell_mesh=use_finite_cell_mesh,
+                    ersatz=ersatz,
+                )
+
+            ax.set_xlabel(r"$dh$")
+            ax.set_ylabel(r"condition number: $\kappa(K)$")
+
+            ax.invert_xaxis()
+            ax.legend()
+            plt.savefig(
+                os.path.join(
+                    run_name,
+                    f"condition_number_study_{'fcell' if use_finite_cell_mesh else 'cut'}.pdf",
+                )
             )
-
-        ax.set_xlabel(r"$dh$")
-        ax.set_ylabel(r"condition number: $\kappa(K)$")
-
-        ax.invert_xaxis()
-        ax.legend()
-        plt.savefig(
-            os.path.join(
-                run_name,
-                f"condition_number_study_{'fcell' if use_finite_cell_mesh else 'cut'}.pdf",
-            )
-        )
