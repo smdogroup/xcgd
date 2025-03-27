@@ -665,7 +665,8 @@ template <typename T, int spatial_dim, int max_nnodes_per_element, int dim>
 void add_interface_matrix(
     const T N1[], const T Nxi1[], const T N2[], const T Nxi2[],
     const A2D::Mat<T, dim, dim> &coef_vals,
-    const A2D::Mat<T, dim, spatial_dim * dim> &coef_mixed,
+    const A2D::Mat<T, dim, spatial_dim * dim> &coef_dudgrad,
+    const A2D::Mat<T, dim, spatial_dim * dim> &coef_dgraddu,
     const A2D::Mat<T, dim * spatial_dim, dim * spatial_dim> &coef_hess,
     T elem_jac[]) {
   constexpr int max_dof_per_element = dim * max_nnodes_per_element;
@@ -694,8 +695,8 @@ void add_interface_matrix(
           }
 
           for (int ll = 0; ll < spatial_dim; ll++) {
-            val += coef_mixed(ii, spatial_dim * jj + ll) * ni * nxj[ll] +
-                   coef_mixed(jj, spatial_dim * ii + ll) * nj * nxi[ll];
+            val += coef_dudgrad(ii, spatial_dim * jj + ll) * ni * nxj[ll] +
+                   coef_dgraddu(jj, spatial_dim * ii + ll) * nj * nxi[ll];
           }
 
           elem_jac[col + row * max_dof_per_element] +=

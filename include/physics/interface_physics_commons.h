@@ -165,8 +165,9 @@ class InterfacePhysicsBase {
                         dof_t& vals_m, dof_t& vals_s, grad_t& grad_m,
                         grad_t& grad_s, jac_t& jac_vals_mm, jac_t& jac_vals_ms,
                         jac_t& jac_vals_ss, jac_mixed_t& jac_mixed_mm,
-                        jac_mixed_t& jac_mixed_ms, jac_mixed_t& jac_mixed_ss,
-                        jac_grad_t& jac_grad_mm, jac_grad_t& jac_grad_ms,
+                        jac_mixed_t& jac_mixed_ms, jac_mixed_t& jac_mixed_sm,
+                        jac_mixed_t& jac_mixed_ss, jac_grad_t& jac_grad_mm,
+                        jac_grad_t& jac_grad_ms,
                         jac_grad_t& jac_grad_ss) const {
     throw NotImplemented("jacobian() for your physics is not implemented");
   }

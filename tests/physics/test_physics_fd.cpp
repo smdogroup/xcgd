@@ -370,13 +370,20 @@ TEST(physics, ElasticityExternalLoad) {
   test_elasticity_external_load(create_gd_lsf_surf_basis());
 }
 
-TEST(physics, LinearElasticityInterface) {
+TEST(physics, LinearElasticityInterfaceFiniteCell) {
+  constexpr bool use_finite_cell_mesh = true;
+  test_linear_elasticity_interface(
+      create_gd_lsf_surf_basis<2, use_finite_cell_mesh>());
+  test_linear_elasticity_interface(
+      create_gd_lsf_surf_basis<4, use_finite_cell_mesh>());
+}
+
+TEST(physics, LinearElasticityInterfaceCutCell) {
   constexpr bool use_finite_cell_mesh = false;
   test_linear_elasticity_interface(
       create_gd_lsf_surf_basis<2, use_finite_cell_mesh>());
-  // TODO: revert
-  // test_linear_elasticity_interface(
-  //     create_gd_lsf_surf_basis<4, use_finite_cell_mesh>());
+  test_linear_elasticity_interface(
+      create_gd_lsf_surf_basis<4, use_finite_cell_mesh>());
 }
 
 TEST(physics, SurfStressAggregation) {

@@ -403,9 +403,9 @@ class InterfaceGalerkinAnalysis final {
         // Evaluate the residuals at the quadrature points
         typename Physics::jac_t jac_vals_LL{}, jac_vals_LR{}, jac_vals_RR{};
         typename Physics::jac_mixed_t jac_mixed_LL{}, jac_mixed_LR{},
-            jac_mixed_RR{};
+            jac_mixed_RL{}, jac_mixed_RR{};
         typename Physics::jac_mixed_t jac_mixed_LL_ref{}, jac_mixed_LR_ref{},
-            jac_mixed_RR_ref{};
+            jac_mixed_RL_ref{}, jac_mixed_RR_ref{};
 
         typename Physics::jac_grad_t jac_grad_LL{}, jac_grad_LR{},
             jac_grad_RR{};
@@ -415,8 +415,8 @@ class InterfaceGalerkinAnalysis final {
         physics.jacobian(wts[j], xq, xloc, nrm_ref, J, vals_primary,
                          vals_secondary, grad_primary, grad_secondary,
                          jac_vals_LL, jac_vals_LR, jac_vals_RR, jac_mixed_LL,
-                         jac_mixed_LR, jac_mixed_RR, jac_grad_LL, jac_grad_LR,
-                         jac_grad_RR);
+                         jac_mixed_LR, jac_mixed_RL, jac_mixed_RR, jac_grad_LL,
+                         jac_grad_LR, jac_grad_RR);
 
         // Transform hessian from physical coordinates back to ref coordinates
         jtransform<T, dof_per_node, spatial_dim>(J, jac_grad_LL,
@@ -428,28 +428,33 @@ class InterfaceGalerkinAnalysis final {
 
         mtransform(J, jac_mixed_LL, jac_mixed_LL_ref);
         mtransform(J, jac_mixed_LR, jac_mixed_LR_ref);
+        mtransform(J, jac_mixed_RL, jac_mixed_RL_ref);
         mtransform(J, jac_mixed_RR, jac_mixed_RR_ref);
 
         // Add the contributions to the element Jacobian
         add_interface_matrix<T, spatial_dim, max_nnodes_per_element>(
             &N_primary[offset_n], &Nxi_primary[offset_nxi],
             &N_primary[offset_n], &Nxi_primary[offset_nxi], jac_vals_LL,
-            jac_mixed_LL_ref, jac_grad_LL_ref, element_jac_LL.data());
+            jac_mixed_LL_ref, jac_mixed_LL_ref, jac_grad_LL_ref,
+            element_jac_LL.data());
 
         add_interface_matrix<T, spatial_dim, max_nnodes_per_element>(
             &N_primary[offset_n], &Nxi_primary[offset_nxi],
             &N_secondary[offset_n], &Nxi_secondary[offset_nxi], jac_vals_LR,
-            jac_mixed_LR_ref, jac_grad_LR_ref, element_jac_LR.data());
+            jac_mixed_LR_ref, jac_mixed_RL_ref, jac_grad_LR_ref,
+            element_jac_LR.data());
 
         add_interface_matrix<T, spatial_dim, max_nnodes_per_element>(
             &N_secondary[offset_n], &Nxi_secondary[offset_nxi],
             &N_primary[offset_n], &Nxi_primary[offset_nxi], jac_vals_LR,
-            jac_mixed_LR_ref, jac_grad_LR_ref, element_jac_RL.data());
+            jac_mixed_RL_ref, jac_mixed_LR_ref, jac_grad_LR_ref,
+            element_jac_RL.data());
 
         add_interface_matrix<T, spatial_dim, max_nnodes_per_element>(
             &N_secondary[offset_n], &Nxi_secondary[offset_nxi],
             &N_secondary[offset_n], &Nxi_secondary[offset_nxi], jac_vals_RR,
-            jac_mixed_RR_ref, jac_grad_RR_ref, element_jac_RR.data());
+            jac_mixed_RR_ref, jac_mixed_RR_ref, jac_grad_RR_ref,
+            element_jac_RR.data());
       }
 
       mat->template add_block_values<max_nnodes_per_element>(

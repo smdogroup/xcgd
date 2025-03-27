@@ -762,6 +762,7 @@ class LinearElasticityInterface final
       A2D::Mat<T, dof_per_node, dof_per_node>& jac_u_RR,
       A2D::Mat<T, dof_per_node, dof_per_node * spatial_dim>& jac_mixed_LL,
       A2D::Mat<T, dof_per_node, dof_per_node * spatial_dim>& jac_mixed_LR,
+      A2D::Mat<T, dof_per_node, dof_per_node * spatial_dim>& jac_mixed_RL,
       A2D::Mat<T, dof_per_node, dof_per_node * spatial_dim>& jac_mixed_RR,
       A2D::Mat<T, dof_per_node * spatial_dim, dof_per_node * spatial_dim>&
           jac_grad_LL,
@@ -885,6 +886,10 @@ class LinearElasticityInterface final
     populate_jac(up_primary, uh_primary, hgrad_primary, jac_u_LL, jac_mixed_LL);
     populate_jac(up_primary, uh_secondary, hgrad_secondary, jac_u_LR,
                  jac_mixed_LR);
+    populate_jac(
+        up_secondary, uh_primary, hgrad_primary,
+        jac_u_LR /*this is already evaluated and seves as a dummy placeholder*/,
+        jac_mixed_RL);
     populate_jac(up_secondary, uh_secondary, hgrad_secondary, jac_u_RR,
                  jac_mixed_RR);
   }
