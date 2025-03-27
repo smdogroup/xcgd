@@ -620,7 +620,10 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
 
       algoim::ImplicitPolyQuadrature<spatial_dim, T> ipquad(phi);
 
-      bool has_interface = (ipquad.k != spatial_dim);
+      T max_val = *std::max_element(data, data + Np_1d * Np_1d);
+      T min_val = *std::min_element(data, data + Np_1d * Np_1d);
+      bool has_interface = (max_val * min_val < 0.0);
+
       if (has_interface) {
         cut_elems.insert(elem);
       }
