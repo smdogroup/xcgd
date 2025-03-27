@@ -2376,8 +2376,10 @@ class TopoProb {
                            {{"displacement", u_secondary}}, {});
       }
 
+      auto foi_set = topo.get_foi_set();
+
       // Write bulk quadrature-level data
-      {
+      if (foi_set.count(FOI::bulk_stress)) {
         vtk_path =
             fspath(prefix) / fspath("quad_" + std::to_string(counter) + ".vtk");
         FieldToVTKNew<T, TopoAnalysis::get_spatial_dim()> field_vtk(vtk_path);
@@ -2388,7 +2390,7 @@ class TopoProb {
       }
 
       // Write surface quadrature-level data
-      {
+      if (foi_set.count(FOI::surf_stress)) {
         vtk_path = fspath(prefix) / fspath("surfquad_primary_" +
                                            std::to_string(counter) + ".vtk");
         FieldToVTKNew<T, TopoAnalysis::get_spatial_dim()> field_vtk(vtk_path);

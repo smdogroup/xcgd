@@ -598,12 +598,12 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
     }
   }
 
-  void populate_cut_elems() {
-    cut_elems.clear();
+  auto get_cut_cells_active_cells() {
+    std::set<int> active_cells;
+    std::set<int> cut_cells;
 
-    for (int elem = 0; elem < num_elements; elem++) {
-      int cell = get_elem_cell(elem);
-
+    int ncells = this->grid.get_num_cells();
+    for (int cell = 0; cell < ncells; cell++) {
       VandermondeEvaluator<T, LSFMesh> eval(lsf_mesh, cell);
 
       // Get element LSF dofs
@@ -618,16 +618,21 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
           data, algoim::uvector<int, spatial_dim>(Np_1d, Np_1d));
       get_phi_vals(eval, element_lsf, phi);
 
-      algoim::ImplicitPolyQuadrature<spatial_dim, T> ipquad(phi);
-
       T max_val = *std::max_element(data, data + Np_1d * Np_1d);
       T min_val = *std::min_element(data, data + Np_1d * Np_1d);
-      bool has_interface = (max_val * min_val < 0.0);
 
-      if (has_interface) {
-        cut_elems.insert(elem);
+      bool is_interface_cell = (max_val * min_val < 0.0);
+      if (is_interface_cell) {
+        cut_cells.insert(cell);
+      }
+
+      bool is_active_cell = min_val < 0.0;
+      if (is_active_cell) {
+        active_cells.insert(cell);
       }
     }
+
+    return std::make_tuple(cut_cells, active_cells);
   }
 
   // Update the dof nodes when the level-set function is updated, specifically,
@@ -644,51 +649,24 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
   //   - node -> path elements
   //   - if element is cut element
   void update_mesh_dof_nodes() {
+    elem_cells.clear();
     node_verts.clear();
     vert_nodes.clear();
-    elem_cells.clear();
-    cell_elems.clear();
     cell_dirs.clear();
+    cell_elems.clear();
+    cut_elems.clear();
     regular_stencil_elems.clear();
     node_patch_elems.clear();
 
-    // LSF values are always associated with the ground grid verts, unlike the
-    // dof values which might only be associated with part of the ground grid
-    // verts (i.e. nodes)
-    int nverts = this->grid.get_num_verts();
-
-    // Given lsf dof values, obtain active lsf vertices
-    // A vert is an active lsf vert if it's within (or at) the domain defined
-    // by the lsf, i.e. the lsf value is <= 0
-    std::vector<bool> active_lsf_verts(nverts, false);
-    for (int i = 0; i < nverts; i++) {
-      if (freal(lsf_dof[i]) <= freal(T(0.0))) {
-        active_lsf_verts[i] = true;
-      }
-    }
-
-    // Active cell is a cell with at least one active lsf vert
     int ncells = this->grid.get_num_cells();
-    std::vector<bool> active_cells(ncells, false);
 
-    // Unlike LSF values, dof are associated with nodes, which is a subset of
-    // verts. Here we determine which verts are dof nodes
-    for (int c = 0; c < ncells; c++) {
-      if (active_cells[c]) continue;
-      int verts[Grid::nverts_per_cell];
-      this->grid.get_cell_verts(c, verts);
-      for (int i = 0; i < Grid::nverts_per_cell; i++) {
-        if (active_lsf_verts[verts[i]]) {
-          active_cells[c] = true;
-          break;
-        }
-      }
-    }
+    // Get active cells and cut cells
+    auto [cut_cells, active_cells] = get_cut_cells_active_cells();
 
     // Create active dof nodes and the mapping to verts
     int node = 0;
     for (int c = 0; c < ncells; c++) {
-      if (!active_cells[c]) continue;
+      if (not active_cells.count(c)) continue;
       elem_cells.push_back(c);
       int verts[Grid::nverts_per_cell];
       this->grid.get_cell_verts(c, verts);
@@ -735,8 +713,12 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
       cell_elems[elem_cells[e]] = e;
     }
 
-    // Identify all cut elements
-    populate_cut_elems();
+    // Populate cut elements
+    for (int c = 0; c < ncells; c++) {
+      if (cut_cells.count(c)) {
+        cut_elems.insert(cell_elems.at(c));
+      }
+    }
 
     // Identify all the elements with regular stencils
     for (int i = 0; i < num_elements; i++) {
