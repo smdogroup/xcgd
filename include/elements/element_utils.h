@@ -661,6 +661,51 @@ void add_matrix(const T N[], const T Nxi[], const T &coef_val,
   }
 }
 
+template <typename T, int spatial_dim, int max_nnodes_per_element, int dim>
+void add_interface_matrix(
+    const T N1[], const T Nxi1[], const T N2[], const T Nxi2[],
+    const A2D::Mat<T, dim, dim> &coef_vals,
+    const A2D::Mat<T, dim, spatial_dim * dim> &coef_mixed,
+    const A2D::Mat<T, dim * spatial_dim, dim * spatial_dim> &coef_hess,
+    T elem_jac[]) {
+  constexpr int max_dof_per_element = dim * max_nnodes_per_element;
+
+  for (int i = 0; i < max_nnodes_per_element; i++) {
+    T ni = N1[i];
+    std::vector<T> nxi(&Nxi1[spatial_dim * i],
+                       &Nxi1[spatial_dim * i] + spatial_dim);
+
+    for (int j = 0; j < max_nnodes_per_element; j++) {
+      T nj = N2[j];
+      std::vector<T> nxj(&Nxi2[spatial_dim * j],
+                         &Nxi2[spatial_dim * j] + spatial_dim);
+
+      for (int ii = 0; ii < dim; ii++) {
+        int row = dim * i + ii;
+        for (int jj = 0; jj < dim; jj++) {
+          int col = dim * j + jj;
+
+          T val = 0.0;
+          for (int kk = 0; kk < spatial_dim; kk++) {
+            for (int ll = 0; ll < spatial_dim; ll++) {
+              val += coef_hess(spatial_dim * ii + kk, spatial_dim * jj + ll) *
+                     nxi[kk] * nxj[ll];
+            }
+          }
+
+          for (int ll = 0; ll < spatial_dim; ll++) {
+            val += coef_mixed(ii, spatial_dim * jj + ll) * ni * nxj[ll] +
+                   coef_mixed(jj, spatial_dim * ii + ll) * nj * nxi[ll];
+          }
+
+          elem_jac[col + row * max_dof_per_element] +=
+              val + coef_vals(ii, jj) * ni * nj;
+        }
+      }
+    }
+  };
+}
+
 /**
  * @brief Compute ∂|J|q/∂ξq: the derivatives of the Jacobian determinant w.r.t.
  * reference coordinates ξ at a quadrature point

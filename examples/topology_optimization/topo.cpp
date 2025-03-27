@@ -2078,7 +2078,7 @@ class TopoProb {
 
     if (minor_counter % header_every == 0) {
       std::string line = "\n";
-      for (auto& [header, content] : data) {
+      for (auto& [header, _] : data) {
         line += header;
       }
       std::cout << line << "\n";
@@ -2086,7 +2086,7 @@ class TopoProb {
     }
 
     std::string line;
-    for (auto& [header, content] : data) {
+    for (auto& [_, content] : data) {
       line += content;
     }
     std::cout << line << "\n";

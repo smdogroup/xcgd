@@ -529,13 +529,15 @@ void execute_bulk_elasticity(std::string prefix, int nxy, double ersatz_ratio) {
   }
 }
 
-template <int Np_1d>
+template <int Np_1d, bool use_finite_cell_mesh>
 void execute_interface_elasticity(std::string prefix, int nxy,
                                   double nitsche_eta) {
   using T = double;
   using Grid = StructuredGrid2D<T>;
 
-  using Mesh = FiniteCellMesh<T, Np_1d>;
+  using Mesh =
+      typename std::conditional<use_finite_cell_mesh, FiniteCellMesh<T, Np_1d>,
+                                CutMesh<T, Np_1d>>::type;
   using Quadrature =
       GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER, Grid, Np_1d, Mesh>;
   using Basis = GDBasis2D<T, Mesh>;
@@ -1244,6 +1246,8 @@ void execute(std::string physics, std::string prefix, int nxy,
     execute_mms<Np_1d, use_finite_cell_mesh>(prefix, nxy, physics, instance,
                                              nitsche_eta, save_vtk);
   } else if (physics == "elasticity-bulk") {
+    xcgd_assert(instance == "circle",
+                "instance must be circle for elasticity-bulk physics");
     if (use_ersatz) {
       execute_bulk_elasticity<Np_1d, use_finite_cell_mesh, true>(prefix, nxy,
                                                                  ersatz_ratio);
@@ -1252,7 +1256,10 @@ void execute(std::string physics, std::string prefix, int nxy,
                                                                   0.0);
     }
   } else {  // physics == "elasticity-interface"
-    execute_interface_elasticity<Np_1d>(prefix, nxy, nitsche_eta);
+    xcgd_assert(instance == "circle",
+                "instance must be circle for elasticity-interface physics");
+    execute_interface_elasticity<Np_1d, use_finite_cell_mesh>(prefix, nxy,
+                                                              nitsche_eta);
   }
 }
 

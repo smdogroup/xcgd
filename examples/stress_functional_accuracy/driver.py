@@ -111,6 +111,7 @@ def run_experiments(
     ersatz_ratio: float,
     nitsche_eta: float,
     smoke: bool,
+    Np_1d_list: List[int],
 ):
     logpath = os.path.join(run_name, f"{run_name}.log")
     open(logpath, "w").close()  # erase existing file
@@ -132,7 +133,6 @@ def run_experiments(
     else:
         df_data["stress_norm"] = []
 
-    Np_1d_list = [2, 4, 6]
     nxy_list = list(map(int, np.logspace(3, 7, 20, base=2)))
     if smoke:
         Np_1d_list = [2, 4]
@@ -340,11 +340,15 @@ if __name__ == "__main__":
     p.add_argument("--ersatz-ratio", default=1e-6, type=float)
     p.add_argument("--nitsche-eta", default=1e8, type=float)
     p.add_argument("--smoke-test", action="store_true")
+    p.add_argument("--Np_1d", nargs="*", default=[2, 4, 6], type=int)
     args = p.parse_args()
 
     # Sanity checks
     if args.physics == "elasticity-mms" and args.instance == "square":
         print(f"[Error] square is not implemented for elasticity-mms")
+        exit(-1)
+    if args.physics == "elasticity-interface" and args.instance == "square":
+        print(f"[Error] square is not implemented for elasticity-interface")
         exit(-1)
     if args.physics != "poisson" and args.instance != "square":
         print(
@@ -362,7 +366,7 @@ if __name__ == "__main__":
         if args.instance == "circle":
             run_name += f"_nitscheeta_{args.nitsche_eta:.0e}"
     elif args.physics == "elasticity-interface":
-        run_name = f"{args.physics}_energy_precision_nitscheeta_{args.nitsche_eta:.0e}"
+        run_name = f"{args.physics}_energy_precision_{args.mesh}_nitscheeta_{args.nitsche_eta:.0e}"
     else:
         run_name = f"{args.physics}_energy_precision_{args.mesh}"
 
@@ -386,6 +390,7 @@ if __name__ == "__main__":
             args.ersatz_ratio,
             args.nitsche_eta,
             args.smoke_test,
+            args.Np_1d,
         )
     else:
         df = pd.read_csv(args.csv)

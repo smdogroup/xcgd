@@ -472,10 +472,12 @@ class GDBasis2D final : public BasisBase<T, Mesh_> {
   using Mesh = Mesh_;
 
  public:
-  GDBasis2D(Mesh& mesh)
-      : mesh(mesh),
-        regular_eval(std::make_shared<VandermondeEvaluator<T, Mesh>>(
-            mesh, *(mesh.get_regular_stencil_elems().begin()), true)) {}
+  GDBasis2D(Mesh& mesh) : mesh(mesh) {
+    if (not mesh.get_regular_stencil_elems().empty()) {
+      regular_eval = std::make_shared<VandermondeEvaluator<T, Mesh>>(
+          mesh, *(mesh.get_regular_stencil_elems().begin()), true);
+    }
+  }
 
   /**
    * @brief Given all quadrature points, evaluate the shape function values,

@@ -21,11 +21,8 @@ class InterfaceGalerkinAnalysis final {
 
   // Static data taken from the physics
   static constexpr int dof_per_node = Physics::dof_per_node;
-  static constexpr int dof_per_vert = Physics::dof_per_vert;
   static constexpr int data_per_node = Physics::data_per_node;
 
-  // static_assert(Mesh::is_finite_cell_mesh,
-  //               "InterfaceProblem only works with FiniteCellMesh");
   static_assert(data_per_node == 0 or data_per_node == 1,
                 "we only support data_per_node == 0 or 1 for now");
   static_assert(Quadrature::quad_type == QuadPtType::SURFACE,
@@ -41,11 +38,13 @@ class InterfaceGalerkinAnalysis final {
   // Constructor for interface regular analysis
   InterfaceGalerkinAnalysis(Mesh& mesh_primary, Mesh& mesh_secondary,
                             Quadrature& quadrature_interface,
-                            Basis& basis_primary, Physics& physics_interface)
+                            Basis& basis_primary, Basis& basis_secondary,
+                            Physics& physics_interface)
       : mesh_primary(mesh_primary),
         mesh_secondary(mesh_secondary),
         quadrature(quadrature_interface),
-        basis(basis_primary),
+        basis_primary(basis_primary),
+        basis_secondary(basis_secondary),
         physics(physics_interface),
         cell_primary_elems(mesh_primary.get_cell_elems()),
         cell_secondary_elems(mesh_secondary.get_cell_elems()) {
@@ -67,14 +66,13 @@ class InterfaceGalerkinAnalysis final {
   }
 
   T energy(const T x[], const T dof[]) const {
-    xcgd_assert(Mesh::is_finite_cell_mesh,
-                "InterfaceProblem only works with FiniteCellMesh for now");
     T total_energy = 0.0;
 
     for (int cell : interface_cells) {
       auto [nnodes_primary, nnodes_secondary, num_quad_pts, nodes_primary,
-            nodes_secondary, element_xloc, N, Nxi, element_dof_primary,
-            element_dof_secondary, element_x, wts, ns] =
+            nodes_secondary, element_xloc_primary, element_xloc_secondary,
+            N_primary, Nxi_primary, N_secondary, Nxi_secondary,
+            element_dof_primary, element_dof_secondary, wts, ns] =
           interpolate_for_element(cell, x, dof);
 
       for (int j = 0; j < num_quad_pts; j++) {
@@ -84,35 +82,32 @@ class InterfaceGalerkinAnalysis final {
         // Evaluate the derivative of the spatial dof in the computational
         // coordinates
         A2D::Vec<T, spatial_dim> xloc, nrm_ref;
-        A2D::Mat<T, spatial_dim, spatial_dim> J;
+        A2D::Mat<T, spatial_dim, spatial_dim> J_primary;
         interp_val_grad<T, spatial_dim, max_nnodes_per_element, spatial_dim>(
-            element_xloc.data(), &N[offset_n], &Nxi[offset_nxi], get_ptr(xloc),
-            get_ptr(J));
+            element_xloc_primary.data(), &N_primary[offset_n],
+            &Nxi_primary[offset_nxi], get_ptr(xloc), get_ptr(J_primary));
 
         // Evaluate the derivative of the dof in the computational coordinates
         typename Physics::dof_t vals_primary{};
         typename Physics::grad_t grad_primary{}, grad_ref_primary{};
         interp_val_grad<T, spatial_dim, max_nnodes_per_element, dof_per_node>(
-            element_dof_primary.data(), &N[offset_n], &Nxi[offset_nxi],
-            get_ptr(vals_primary), get_ptr(grad_ref_primary));
+            element_dof_primary.data(), &N_primary[offset_n],
+            &Nxi_primary[offset_nxi], get_ptr(vals_primary),
+            get_ptr(grad_ref_primary));
 
         typename Physics::dof_t vals_secondary{};
         typename Physics::grad_t grad_secondary{}, grad_ref_secondary{};
         interp_val_grad<T, spatial_dim, max_nnodes_per_element, dof_per_node>(
-            element_dof_secondary.data(), &N[offset_n], &Nxi[offset_nxi],
-            get_ptr(vals_secondary), get_ptr(grad_ref_secondary));
+            element_dof_secondary.data(), &N_secondary[offset_n],
+            &Nxi_secondary[offset_nxi], get_ptr(vals_secondary),
+            get_ptr(grad_ref_secondary));
 
         // Transform gradient from ref coordinates to physical coordinates
-        transform(J, grad_ref_primary, grad_primary);
-        transform(J, grad_ref_secondary, grad_secondary);
+        transform(J_primary, grad_ref_primary, grad_primary);
+        transform(J_primary, grad_ref_secondary, grad_secondary);
 
-        // Add the energy contributions
+        // Assume no element dv
         T xq = T(0.0);
-        if (x) {
-          interp_val_grad<T, spatial_dim, max_nnodes_per_element,
-                          data_per_node>(element_x.data(), &N[offset_n],
-                                         nullptr, get_ptr(xq), nullptr);
-        }
 
         if constexpr (Quadrature::quad_type == QuadPtType::SURFACE) {
           for (int d = 0; d < spatial_dim; d++) {
@@ -121,7 +116,7 @@ class InterfaceGalerkinAnalysis final {
         }
 
         total_energy +=
-            physics.energy(wts[j], xq, xloc, nrm_ref, J, vals_primary,
+            physics.energy(wts[j], xq, xloc, nrm_ref, J_primary, vals_primary,
                            vals_secondary, grad_primary, grad_secondary);
       }
     }
@@ -130,12 +125,11 @@ class InterfaceGalerkinAnalysis final {
   }
 
   void residual(const T x[], const T dof[], T res[]) const {
-    xcgd_assert(Mesh::is_finite_cell_mesh,
-                "InterfaceProblem only works with FiniteCellMesh for now");
     for (int cell : interface_cells) {
       auto [nnodes_primary, nnodes_secondary, num_quad_pts, nodes_primary,
-            nodes_secondary, element_xloc, N, Nxi, element_dof_primary,
-            element_dof_secondary, element_x, wts, ns] =
+            nodes_secondary, element_xloc_primary, element_xloc_secondary,
+            N_primary, Nxi_primary, N_secondary, Nxi_secondary,
+            element_dof_primary, element_dof_secondary, wts, ns] =
           interpolate_for_element(cell, x, dof);
 
       std::vector<T> element_res_primary(max_dof_per_element, T(0.0));
@@ -150,28 +144,26 @@ class InterfaceGalerkinAnalysis final {
         A2D::Vec<T, spatial_dim> xloc, nrm_ref;
         A2D::Mat<T, spatial_dim, spatial_dim> J;
         interp_val_grad<T, spatial_dim, max_nnodes_per_element, spatial_dim>(
-            element_xloc.data(), &N[offset_n], &Nxi[offset_nxi], get_ptr(xloc),
-            get_ptr(J));
+            element_xloc_primary.data(), &N_primary[offset_n],
+            &Nxi_primary[offset_nxi], get_ptr(xloc), get_ptr(J));
 
         // Evaluate the derivative of the dof in the computational coordinates
         typename Physics::dof_t vals_primary{};
         typename Physics::grad_t grad_primary{}, grad_ref_primary{};
         interp_val_grad<T, spatial_dim, max_nnodes_per_element, dof_per_node>(
-            element_dof_primary.data(), &N[offset_n], &Nxi[offset_nxi],
-            get_ptr(vals_primary), get_ptr(grad_ref_primary));
+            element_dof_primary.data(), &N_primary[offset_n],
+            &Nxi_primary[offset_nxi], get_ptr(vals_primary),
+            get_ptr(grad_ref_primary));
 
         typename Physics::dof_t vals_secondary{};
         typename Physics::grad_t grad_secondary{}, grad_ref_secondary{};
         interp_val_grad<T, spatial_dim, max_nnodes_per_element, dof_per_node>(
-            element_dof_secondary.data(), &N[offset_n], &Nxi[offset_nxi],
-            get_ptr(vals_secondary), get_ptr(grad_ref_secondary));
+            element_dof_secondary.data(), &N_secondary[offset_n],
+            &Nxi_secondary[offset_nxi], get_ptr(vals_secondary),
+            get_ptr(grad_ref_secondary));
 
+        // Assume no element dv
         T xq = T(0.0);
-        if (x) {
-          interp_val_grad<T, spatial_dim, max_nnodes_per_element,
-                          data_per_node>(element_x.data(), &N[offset_n],
-                                         nullptr, get_ptr(xq), nullptr);
-        }
 
         if constexpr (Quadrature::quad_type == QuadPtType::SURFACE) {
           for (int d = 0; d < spatial_dim; d++) {
@@ -201,10 +193,11 @@ class InterfaceGalerkinAnalysis final {
         rtransform(J, coef_grad_secondary, coef_grad_ref_secondary);
 
         // Add the contributions to the element residual
-        add_grad<T, Basis>(&N[offset_n], &Nxi[offset_nxi], coef_vals_primary,
-                           coef_grad_ref_primary, element_res_primary.data());
-        add_grad<T, Basis>(&N[offset_n], &Nxi[offset_nxi], coef_vals_secondary,
-                           coef_grad_ref_secondary,
+        add_grad<T, Basis>(&N_primary[offset_n], &Nxi_primary[offset_nxi],
+                           coef_vals_primary, coef_grad_ref_primary,
+                           element_res_primary.data());
+        add_grad<T, Basis>(&N_secondary[offset_n], &Nxi_secondary[offset_nxi],
+                           coef_vals_secondary, coef_grad_ref_secondary,
                            element_res_secondary.data());
       }
 
@@ -219,12 +212,11 @@ class InterfaceGalerkinAnalysis final {
 
   void jacobian_product(const T x[], const T dof[], const T direct[],
                         T res[]) const {
-    xcgd_assert(Mesh::is_finite_cell_mesh,
-                "InterfaceProblem only works with FiniteCellMesh for now");
     for (int cell : interface_cells) {
       auto [nnodes_primary, nnodes_secondary, num_quad_pts, nodes_primary,
-            nodes_secondary, element_xloc, N, Nxi, element_dof_primary,
-            element_dof_secondary, element_x, wts, ns] =
+            nodes_secondary, element_xloc_primary, element_xloc_secondary,
+            N_primary, Nxi_primary, N_secondary, Nxi_secondary,
+            element_dof_primary, element_dof_secondary, wts, ns] =
           interpolate_for_element(cell, x, dof);
 
       // Get the element directions for the Jacobian-vector product
@@ -250,21 +242,23 @@ class InterfaceGalerkinAnalysis final {
         A2D::Vec<T, spatial_dim> xloc, nrm_ref;
         A2D::Mat<T, spatial_dim, spatial_dim> J;
         interp_val_grad<T, spatial_dim, max_nnodes_per_element, spatial_dim>(
-            element_xloc.data(), &N[offset_n], &Nxi[offset_nxi], get_ptr(xloc),
-            get_ptr(J));
+            element_xloc_primary.data(), &N_primary[offset_n],
+            &Nxi_primary[offset_nxi], get_ptr(xloc), get_ptr(J));
 
         // Evaluate the derivative of the dof in the computational coordinates
         typename Physics::dof_t vals_primary{};
         typename Physics::grad_t grad_primary{}, grad_ref_primary{};
         interp_val_grad<T, spatial_dim, max_nnodes_per_element, dof_per_node>(
-            element_dof_primary.data(), &N[offset_n], &Nxi[offset_nxi],
-            get_ptr(vals_primary), get_ptr(grad_ref_primary));
+            element_dof_primary.data(), &N_primary[offset_n],
+            &Nxi_primary[offset_nxi], get_ptr(vals_primary),
+            get_ptr(grad_ref_primary));
 
         typename Physics::dof_t vals_secondary{};
         typename Physics::grad_t grad_secondary{}, grad_ref_secondary{};
         interp_val_grad<T, spatial_dim, max_nnodes_per_element, dof_per_node>(
-            element_dof_secondary.data(), &N[offset_n], &Nxi[offset_nxi],
-            get_ptr(vals_secondary), get_ptr(grad_ref_secondary));
+            element_dof_secondary.data(), &N_secondary[offset_n],
+            &Nxi_secondary[offset_nxi], get_ptr(vals_secondary),
+            get_ptr(grad_ref_secondary));
 
         // Transform gradient from ref coordinates to physical coordinates
         transform(J, grad_ref_primary, grad_primary);
@@ -276,26 +270,24 @@ class InterfaceGalerkinAnalysis final {
         typename Physics::grad_t direct_grad_primary{},
             direct_grad_ref_primary{};
         interp_val_grad<T, spatial_dim, max_nnodes_per_element, dof_per_node>(
-            element_direct_primary.data(), &N[offset_n], &Nxi[offset_nxi],
-            get_ptr(direct_vals_primary), get_ptr(direct_grad_ref_primary));
+            element_direct_primary.data(), &N_primary[offset_n],
+            &Nxi_primary[offset_nxi], get_ptr(direct_vals_primary),
+            get_ptr(direct_grad_ref_primary));
 
         typename Physics::dof_t direct_vals_secondary{};
         typename Physics::grad_t direct_grad_secondary{},
             direct_grad_ref_secondary{};
         interp_val_grad<T, spatial_dim, max_nnodes_per_element, dof_per_node>(
-            element_direct_secondary.data(), &N[offset_n], &Nxi[offset_nxi],
-            get_ptr(direct_vals_secondary), get_ptr(direct_grad_ref_secondary));
+            element_direct_secondary.data(), &N_secondary[offset_n],
+            &Nxi_secondary[offset_nxi], get_ptr(direct_vals_secondary),
+            get_ptr(direct_grad_ref_secondary));
 
         // Transform gradient from ref coordinates to physical coordinates
         transform(J, direct_grad_ref_primary, direct_grad_primary);
         transform(J, direct_grad_ref_secondary, direct_grad_secondary);
 
+        // Assume no element df
         T xq = T(0.0);
-        if (x) {
-          interp_val_grad<T, spatial_dim, max_nnodes_per_element,
-                          data_per_node>(element_x.data(), &N[offset_n],
-                                         nullptr, get_ptr(xq), nullptr);
-        }
 
         if constexpr (Quadrature::quad_type == QuadPtType::SURFACE) {
           for (int d = 0; d < spatial_dim; d++) {
@@ -324,10 +316,11 @@ class InterfaceGalerkinAnalysis final {
         rtransform(J, coef_grad_secondary, coef_grad_ref_secondary);
 
         // Add the contributions to the element residual
-        add_grad<T, Basis>(&N[offset_n], &Nxi[offset_nxi], coef_vals_primary,
-                           coef_grad_ref_primary, element_res_primary.data());
-        add_grad<T, Basis>(&N[offset_n], &Nxi[offset_nxi], coef_vals_secondary,
-                           coef_grad_ref_secondary,
+        add_grad<T, Basis>(&N_primary[offset_n], &Nxi_primary[offset_nxi],
+                           coef_vals_primary, coef_grad_ref_primary,
+                           element_res_primary.data());
+        add_grad<T, Basis>(&N_secondary[offset_n], &Nxi_secondary[offset_nxi],
+                           coef_vals_secondary, coef_grad_ref_secondary,
                            element_res_secondary.data());
       }
 
@@ -343,20 +336,29 @@ class InterfaceGalerkinAnalysis final {
   void jacobian(const T x[], const T dof[],
                 GalerkinBSRMat<T, dof_per_node>* mat,
                 bool zero_jac = true) const {
-    xcgd_assert(Mesh::is_finite_cell_mesh,
-                "InterfaceProblem only works with FiniteCellMesh for now");
     if (zero_jac) {
       mat->zero();
     }
 
     for (int cell : interface_cells) {
       auto [nnodes_primary, nnodes_secondary, num_quad_pts, nodes_primary,
-            nodes_secondary, element_xloc, N, Nxi, element_dof_primary,
-            element_dof_secondary, element_x, wts, ns] =
+            nodes_secondary, element_xloc_primary, element_xloc_secondary,
+            N_primary, Nxi_primary, N_secondary, Nxi_secondary,
+            element_dof_primary, element_dof_secondary, wts, ns] =
           interpolate_for_element(cell, x, dof);
 
-      std::vector<T> element_jac(
-          2 * 2 * max_dof_per_element * max_dof_per_element, T(0.0));
+      // element_jac = [d2e/duL2  d2e/duLR
+      //                d2e/duRL  d2e/dR2]
+      // where L for primary mesh, R for secondary mesh
+
+      std::vector<T> element_jac_LL(max_dof_per_element * max_dof_per_element,
+                                    T(0.0));
+      std::vector<T> element_jac_LR(max_dof_per_element * max_dof_per_element,
+                                    T(0.0));
+      std::vector<T> element_jac_RL(max_dof_per_element * max_dof_per_element,
+                                    T(0.0));
+      std::vector<T> element_jac_RR(max_dof_per_element * max_dof_per_element,
+                                    T(0.0));
 
       for (int j = 0; j < num_quad_pts; j++) {
         int offset_n = j * max_nnodes_per_element;
@@ -367,28 +369,26 @@ class InterfaceGalerkinAnalysis final {
         A2D::Vec<T, spatial_dim> xloc, nrm_ref;
         A2D::Mat<T, spatial_dim, spatial_dim> J;
         interp_val_grad<T, spatial_dim, max_nnodes_per_element, spatial_dim>(
-            element_xloc.data(), &N[offset_n], &Nxi[offset_nxi], get_ptr(xloc),
-            get_ptr(J));
+            element_xloc_primary.data(), &N_primary[offset_n],
+            &Nxi_primary[offset_nxi], get_ptr(xloc), get_ptr(J));
 
         // Evaluate the derivative of the dof in the computational coordinates
         typename Physics::dof_t vals_primary{};
         typename Physics::grad_t grad_primary{}, grad_ref_primary{};
         interp_val_grad<T, spatial_dim, max_nnodes_per_element, dof_per_node>(
-            element_dof_primary.data(), &N[offset_n], &Nxi[offset_nxi],
-            get_ptr(vals_primary), get_ptr(grad_ref_primary));
+            element_dof_primary.data(), &N_primary[offset_n],
+            &Nxi_primary[offset_nxi], get_ptr(vals_primary),
+            get_ptr(grad_ref_primary));
 
         typename Physics::dof_t vals_secondary{};
         typename Physics::grad_t grad_secondary{}, grad_ref_secondary{};
         interp_val_grad<T, spatial_dim, max_nnodes_per_element, dof_per_node>(
-            element_dof_secondary.data(), &N[offset_n], &Nxi[offset_nxi],
-            get_ptr(vals_secondary), get_ptr(grad_ref_secondary));
+            element_dof_secondary.data(), &N_secondary[offset_n],
+            &Nxi_secondary[offset_nxi], get_ptr(vals_secondary),
+            get_ptr(grad_ref_secondary));
 
+        // Assume no element-dv
         T xq = T(0.0);
-        if (x) {
-          interp_val_grad<T, spatial_dim, max_nnodes_per_element,
-                          data_per_node>(element_x.data(), &N[offset_n],
-                                         nullptr, get_ptr(xq), nullptr);
-        }
 
         if constexpr (Quadrature::quad_type == QuadPtType::SURFACE) {
           for (int d = 0; d < spatial_dim; d++) {
@@ -401,47 +401,77 @@ class InterfaceGalerkinAnalysis final {
         transform(J, grad_ref_secondary, grad_secondary);
 
         // Evaluate the residuals at the quadrature points
-        typename Physics::jac_t jac_vals{};
-        typename Physics::jac_mixed_t jac_mixed{}, jac_mixed_ref{};
-        typename Physics::jac_grad_t jac_grad{}, jac_grad_ref{};
+        typename Physics::jac_t jac_vals_LL{}, jac_vals_LR{}, jac_vals_RR{};
+        typename Physics::jac_mixed_t jac_mixed_LL{}, jac_mixed_LR{},
+            jac_mixed_RR{};
+        typename Physics::jac_mixed_t jac_mixed_LL_ref{}, jac_mixed_LR_ref{},
+            jac_mixed_RR_ref{};
+
+        typename Physics::jac_grad_t jac_grad_LL{}, jac_grad_LR{},
+            jac_grad_RR{};
+        typename Physics::jac_grad_t jac_grad_LL_ref{}, jac_grad_LR_ref{},
+            jac_grad_RR_ref{};
 
         physics.jacobian(wts[j], xq, xloc, nrm_ref, J, vals_primary,
-                         vals_secondary, grad_primary, grad_secondary, jac_vals,
-                         jac_mixed, jac_grad);
+                         vals_secondary, grad_primary, grad_secondary,
+                         jac_vals_LL, jac_vals_LR, jac_vals_RR, jac_mixed_LL,
+                         jac_mixed_LR, jac_mixed_RR, jac_grad_LL, jac_grad_LR,
+                         jac_grad_RR);
 
         // Transform hessian from physical coordinates back to ref coordinates
-        jtransform<T, dof_per_vert, spatial_dim>(J, jac_grad, jac_grad_ref);
-        mtransform(J, jac_mixed, jac_mixed_ref);
+        jtransform<T, dof_per_node, spatial_dim>(J, jac_grad_LL,
+                                                 jac_grad_LL_ref);
+        jtransform<T, dof_per_node, spatial_dim>(J, jac_grad_LR,
+                                                 jac_grad_LR_ref);
+        jtransform<T, dof_per_node, spatial_dim>(J, jac_grad_RR,
+                                                 jac_grad_RR_ref);
+
+        mtransform(J, jac_mixed_LL, jac_mixed_LL_ref);
+        mtransform(J, jac_mixed_LR, jac_mixed_LR_ref);
+        mtransform(J, jac_mixed_RR, jac_mixed_RR_ref);
 
         // Add the contributions to the element Jacobian
-        add_matrix<T, spatial_dim, max_nnodes_per_element>(
-            &N[offset_n], &Nxi[offset_nxi], jac_vals, jac_mixed_ref,
-            jac_grad_ref, element_jac.data());
+        add_interface_matrix<T, spatial_dim, max_nnodes_per_element>(
+            &N_primary[offset_n], &Nxi_primary[offset_nxi],
+            &N_primary[offset_n], &Nxi_primary[offset_nxi], jac_vals_LL,
+            jac_mixed_LL_ref, jac_grad_LL_ref, element_jac_LL.data());
+
+        add_interface_matrix<T, spatial_dim, max_nnodes_per_element>(
+            &N_primary[offset_n], &Nxi_primary[offset_nxi],
+            &N_secondary[offset_n], &Nxi_secondary[offset_nxi], jac_vals_LR,
+            jac_mixed_LR_ref, jac_grad_LR_ref, element_jac_LR.data());
+
+        add_interface_matrix<T, spatial_dim, max_nnodes_per_element>(
+            &N_secondary[offset_n], &Nxi_secondary[offset_nxi],
+            &N_primary[offset_n], &Nxi_primary[offset_nxi], jac_vals_LR,
+            jac_mixed_LR_ref, jac_grad_LR_ref, element_jac_RL.data());
+
+        add_interface_matrix<T, spatial_dim, max_nnodes_per_element>(
+            &N_secondary[offset_n], &Nxi_secondary[offset_nxi],
+            &N_secondary[offset_n], &Nxi_secondary[offset_nxi], jac_vals_RR,
+            jac_mixed_RR_ref, jac_grad_RR_ref, element_jac_RR.data());
       }
 
-      xcgd_assert(nnodes_primary == nnodes_secondary,
-                  "number of primary dof nodes (" +
-                      std::to_string(nnodes_primary) +
-                      ") should be equal to number of "
-                      "secondary dof nodes(" +
-                      std::to_string(nnodes_secondary) + ")");
-      int nnodes_all = nnodes_primary + nnodes_secondary;
-      std::vector<int> nodes_all(nnodes_all, 0);
-      for (int t = 0; t < nnodes_primary; t++) {
-        nodes_all[2 * t] = nodes_primary[t];
-        nodes_all[2 * t + 1] = nodes_secondary[t];
-      }
+      mat->template add_block_values<max_nnodes_per_element>(
+          nnodes_primary, nodes_primary.data(), nnodes_primary,
+          nodes_primary.data(), element_jac_LL.data());
 
-      // I really don't like this quite devil hard-coded 2 here, but it works
-      mat->template add_block_values<2 * max_nnodes_per_element>(
-          nnodes_all, nodes_all.data(), element_jac.data());
+      mat->template add_block_values<max_nnodes_per_element>(
+          nnodes_primary, nodes_primary.data(), nnodes_secondary,
+          nodes_secondary.data(), element_jac_LR.data());
+
+      mat->template add_block_values<max_nnodes_per_element>(
+          nnodes_secondary, nodes_secondary.data(), nnodes_primary,
+          nodes_primary.data(), element_jac_RL.data());
+
+      mat->template add_block_values<max_nnodes_per_element>(
+          nnodes_secondary, nodes_secondary.data(), nnodes_secondary,
+          nodes_secondary.data(), element_jac_RR.data());
     }
   }
 
   void LSF_jacobian_adjoint_product(const T dof[], const T psi[],
                                     T dfdphi[]) const {
-    xcgd_assert(Mesh::is_finite_cell_mesh,
-                "InterfaceProblem only works with FiniteCellMesh for now");
     static_assert(Basis::is_gd_basis, "This method only works with GD Basis");
     static_assert(Mesh::is_cut_mesh,
                   "This method requires a level-set-cut mesh");
@@ -449,9 +479,10 @@ class InterfaceGalerkinAnalysis final {
     for (int cell : interface_cells) {
       constexpr bool need_Nxixi_and_quad_grads = true;
       auto [nnodes_primary, nnodes_secondary, num_quad_pts, nodes_primary,
-            nodes_secondary, element_xloc, N, Nxi, Nxixi, element_dof_primary,
-            element_dof_secondary, element_x, wts, ns, pts_grad, wts_grad,
-            wns_grad] =
+            nodes_secondary, element_xloc_primary, element_xloc_secondary,
+            N_primary, Nxi_primary, Nxixi_primary, N_secondary, Nxi_secondary,
+            Nxixi_secondary, element_dof_primary, element_dof_secondary, wts,
+            ns, pts_grad, wts_grad, wns_grad] =
           interpolate_for_element<need_Nxixi_and_quad_grads>(cell, nullptr,
                                                              dof);
 
@@ -476,8 +507,8 @@ class InterfaceGalerkinAnalysis final {
         A2D::Vec<T, spatial_dim> xloc, nrm_ref;
         A2D::Mat<T, spatial_dim, spatial_dim> J;
         interp_val_grad<T, spatial_dim, max_nnodes_per_element, spatial_dim>(
-            element_xloc.data(), &N[offset_n], &Nxi[offset_nxi], get_ptr(xloc),
-            get_ptr(J));
+            element_xloc_primary.data(), &N_primary[offset_n],
+            &Nxi_primary[offset_nxi], get_ptr(xloc), get_ptr(J));
 
         if constexpr (Quadrature::quad_type == QuadPtType::SURFACE) {
           for (int d = 0; d < spatial_dim; d++) {
@@ -504,31 +535,35 @@ class InterfaceGalerkinAnalysis final {
 
         // Interpolate the quantities at the quadrature point
         interp_val_grad<T, spatial_dim, max_nnodes_per_element, dof_per_node>(
-            element_dof_primary.data(), &N[offset_n], &Nxi[offset_nxi],
-            get_ptr(uq_primary), get_ptr(ugrad_ref_primary));
+            element_dof_primary.data(), &N_primary[offset_n],
+            &Nxi_primary[offset_nxi], get_ptr(uq_primary),
+            get_ptr(ugrad_ref_primary));
         interp_val_grad<T, spatial_dim, max_nnodes_per_element, dof_per_node>(
-            element_dof_secondary.data(), &N[offset_n], &Nxi[offset_nxi],
-            get_ptr(uq_secondary), get_ptr(ugrad_ref_secondary));
+            element_dof_secondary.data(), &N_secondary[offset_n],
+            &Nxi_secondary[offset_nxi], get_ptr(uq_secondary),
+            get_ptr(ugrad_ref_secondary));
 
         interp_val_grad<T, spatial_dim, max_nnodes_per_element, dof_per_node>(
-            element_psi_primary.data(), &N[offset_n], &Nxi[offset_nxi],
-            get_ptr(psiq_primary), get_ptr(pgrad_ref_primary));
+            element_psi_primary.data(), &N_primary[offset_n],
+            &Nxi_primary[offset_nxi], get_ptr(psiq_primary),
+            get_ptr(pgrad_ref_primary));
         interp_val_grad<T, spatial_dim, max_nnodes_per_element, dof_per_node>(
-            element_psi_secondary.data(), &N[offset_n], &Nxi[offset_nxi],
-            get_ptr(psiq_secondary), get_ptr(pgrad_ref_secondary));
+            element_psi_secondary.data(), &N_secondary[offset_n],
+            &Nxi_secondary[offset_nxi], get_ptr(psiq_secondary),
+            get_ptr(pgrad_ref_secondary));
 
         interp_hess<T, spatial_dim, max_nnodes_per_element, dof_per_node>(
-            element_dof_primary.data(), &Nxixi[offset_nxixi],
+            element_dof_primary.data(), &Nxixi_primary[offset_nxixi],
             get_ptr(uhess_ref_primary));
         interp_hess<T, spatial_dim, max_nnodes_per_element, dof_per_node>(
-            element_dof_secondary.data(), &Nxixi[offset_nxixi],
+            element_dof_secondary.data(), &Nxixi_secondary[offset_nxixi],
             get_ptr(uhess_ref_secondary));
 
         interp_hess<T, spatial_dim, max_nnodes_per_element, dof_per_node>(
-            element_psi_primary.data(), &Nxixi[offset_nxixi],
+            element_psi_primary.data(), &Nxixi_primary[offset_nxixi],
             get_ptr(phess_ref_primary));
         interp_hess<T, spatial_dim, max_nnodes_per_element, dof_per_node>(
-            element_psi_secondary.data(), &Nxixi[offset_nxixi],
+            element_psi_secondary.data(), &Nxixi_secondary[offset_nxixi],
             get_ptr(phess_ref_secondary));
 
         transform(J, ugrad_ref_primary, ugrad_primary);
@@ -606,7 +641,8 @@ class InterfaceGalerkinAnalysis final {
   const Mesh& get_primary_mesh() { return mesh_primary; }
   const Mesh& get_secondary_mesh() { return mesh_secondary; }
   const Quadrature& get_quadrature() { return quadrature; }
-  const Basis& get_basis() { return basis; }
+  const Basis& get_primary_basis() { return basis_primary; }
+  const Basis& get_secondary_basis() { return basis_secondary; }
   const Physics& get_physics() { return physics; }
 
  private:
@@ -630,16 +666,15 @@ class InterfaceGalerkinAnalysis final {
     }
 
     // Get the element node locations
-    std::vector<T> element_xloc(spatial_dim * max_nnodes_per_element, T(0.0));
-    get_element_xloc<T, Mesh, Basis>(mesh_primary, elem_primary,
-                                     element_xloc.data());
+    std::vector<T> element_xloc_primary(spatial_dim * max_nnodes_per_element,
+                                        T(0.0));
+    std::vector<T> element_xloc_secondary(spatial_dim * max_nnodes_per_element,
+                                          T(0.0));
 
-    // Get element design variable if needed
-    std::vector<T> element_x(max_dof_per_element, T(0.0));
-    if (x) {
-      get_element_vars<T, 1, Basis>(nnodes_primary, nodes_primary.data(), x,
-                                    element_x.data());
-    }
+    get_element_xloc<T, Mesh, Basis>(mesh_primary, elem_primary,
+                                     element_xloc_primary.data());
+    get_element_xloc<T, Mesh, Basis>(mesh_primary, elem_primary,
+                                     element_xloc_secondary.data());
 
     // Get the element degrees of freedom
     std::vector<T> element_dof_primary(max_dof_per_element, 0.0);
@@ -654,30 +689,45 @@ class InterfaceGalerkinAnalysis final {
       std::vector<T> pts, wts, ns;
       int num_quad_pts =
           quadrature.get_quadrature_pts(elem_primary, pts, wts, ns);
-      std::vector<T> N, Nxi;
-      basis.eval_basis_grad(elem_primary, pts, N, Nxi);
-      return std::make_tuple(nnodes_primary, nnodes_secondary, num_quad_pts,
-                             nodes_primary, nodes_secondary, element_xloc, N,
-                             Nxi, element_dof_primary, element_dof_secondary,
-                             element_x, wts, ns);
+
+      std::vector<T> N_primary, Nxi_primary;
+      std::vector<T> N_secondary, Nxi_secondary;
+
+      basis_primary.eval_basis_grad(elem_primary, pts, N_primary, Nxi_primary);
+      basis_secondary.eval_basis_grad(elem_secondary, pts, N_secondary,
+                                      Nxi_secondary);
+      return std::make_tuple(
+          nnodes_primary, nnodes_secondary, num_quad_pts, nodes_primary,
+          nodes_secondary, element_xloc_primary, element_xloc_secondary,
+          N_primary, Nxi_primary, N_secondary, Nxi_secondary,
+          element_dof_primary, element_dof_secondary, wts, ns);
     } else {
       std::vector<T> pts, wts, ns, pts_grad, wts_grad, wns_grad;
       int num_quad_pts = quadrature.get_quadrature_pts_grad(
           elem_primary, pts, wts, ns, pts_grad, wts_grad, wns_grad);
-      std::vector<T> N, Nxi, Nxixi;
-      basis.eval_basis_grad(elem_primary, pts, N, Nxi, Nxixi);
-      return std::make_tuple(nnodes_primary, nnodes_secondary, num_quad_pts,
-                             nodes_primary, nodes_secondary, element_xloc, N,
-                             Nxi, Nxixi, element_dof_primary,
-                             element_dof_secondary, element_x, wts, ns,
-                             pts_grad, wts_grad, wns_grad);
+
+      std::vector<T> N_primary, Nxi_primary, Nxixi_primary;
+      std::vector<T> N_secondary, Nxi_secondary, Nxixi_secondary;
+
+      basis_primary.eval_basis_grad(elem_primary, pts, N_primary, Nxi_primary,
+                                    Nxixi_primary);
+      basis_secondary.eval_basis_grad(elem_secondary, pts, N_secondary,
+                                      Nxi_secondary, Nxixi_secondary);
+
+      return std::make_tuple(
+          nnodes_primary, nnodes_secondary, num_quad_pts, nodes_primary,
+          nodes_secondary, element_xloc_primary, element_xloc_secondary,
+          N_primary, Nxi_primary, Nxixi_primary, N_secondary, Nxi_secondary,
+          Nxixi_secondary, element_dof_primary, element_dof_secondary, wts, ns,
+          pts_grad, wts_grad, wns_grad);
     }
   }
 
   Mesh& mesh_primary;
   Mesh& mesh_secondary;
   Quadrature& quadrature;
-  Basis& basis;
+  Basis& basis_primary;
+  Basis& basis_secondary;
   Physics& physics;
 
   const std::map<int, int>& cell_primary_elems;

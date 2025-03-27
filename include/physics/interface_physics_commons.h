@@ -9,9 +9,6 @@ template <typename T, int spatial_dim_, int data_per_node_, int dof_per_node_>
 class InterfacePhysicsBase {
  public:
   static constexpr int dof_per_node = dof_per_node_;
-  static constexpr int dof_per_vert =
-      2 * dof_per_node;  // because each vert has two nodes from primary side
-                         // and secondary side
   static constexpr int data_per_node = data_per_node_;
   static constexpr int spatial_dim = spatial_dim_;
   static constexpr bool is_interface_physics = true;
@@ -32,10 +29,10 @@ class InterfacePhysicsBase {
       A2D::Mat<T, dof_per_node, spatial_dim * spatial_dim>>::type;
 
   // Note that these types have different shape than PhysicsBase
-  using jac_t = A2D::Mat<T, dof_per_vert, dof_per_vert>;
-  using jac_mixed_t = A2D::Mat<T, dof_per_vert, spatial_dim * dof_per_vert>;
+  using jac_t = A2D::Mat<T, dof_per_node, dof_per_node>;
+  using jac_mixed_t = A2D::Mat<T, dof_per_node, spatial_dim * dof_per_node>;
   using jac_grad_t =
-      A2D::Mat<T, dof_per_vert * spatial_dim, dof_per_vert * spatial_dim>;
+      A2D::Mat<T, dof_per_node * spatial_dim, dof_per_node * spatial_dim>;
 
   /**
    * @brief At a quadrature point, evaluate the energy functional
@@ -158,14 +155,19 @@ class InterfacePhysicsBase {
    * @param [in] J coordinate transformation matrix ∂x/∂ξ
    * @param [in] vals uq, state variable at the quadrature point
    * @param [in] grad (∇_x)uq, gradients of state w.r.t. x at quadrature point
-   * @param [out] jac_vals ∂2e/∂uq2
+   * @param [out] jac_vals_mm ∂2e/∂uqm∂uqm
+   * @param [out] jac_vals_ms ∂2e/∂uqm∂uqs
+   * @param [out] jac_vals_ss ∂2e/∂uqs∂uqs
    * @param [out] jac_mixed ∂/∂(∇_x)uq(∂e/∂uq), shape (dim(uq), dim(∂(∇_x)uq))
    * @param [out] jac_grad ∂2e/∂(∇_x)uq2
    */
   virtual void jacobian(T weight, dv_t dv, xloc_t& xloc, nrm_t& nrm_ref, J_t& J,
                         dof_t& vals_m, dof_t& vals_s, grad_t& grad_m,
-                        grad_t& grad_s, jac_t& jac_vals, jac_mixed_t& jac_mixed,
-                        jac_grad_t& jac_grad) const {
+                        grad_t& grad_s, jac_t& jac_vals_mm, jac_t& jac_vals_ms,
+                        jac_t& jac_vals_ss, jac_mixed_t& jac_mixed_mm,
+                        jac_mixed_t& jac_mixed_ms, jac_mixed_t& jac_mixed_ss,
+                        jac_grad_t& jac_grad_mm, jac_grad_t& jac_grad_ms,
+                        jac_grad_t& jac_grad_ss) const {
     throw NotImplemented("jacobian() for your physics is not implemented");
   }
 };

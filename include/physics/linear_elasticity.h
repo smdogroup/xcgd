@@ -518,7 +518,6 @@ class LinearElasticityInterface final
 
  public:
   using PhysicsBase_s::dof_per_node;
-  using PhysicsBase_s::dof_per_vert;
   using PhysicsBase_s::spatial_dim;
 
   LinearElasticityInterface(double eta, T E_primary, T nu_primary,
@@ -758,10 +757,18 @@ class LinearElasticityInterface final
       A2D::Vec<T, dof_per_node>& u_secondary,
       A2D::Mat<T, dof_per_node, spatial_dim>& grad_primary,
       A2D::Mat<T, dof_per_node, spatial_dim>& grad_secondary,
-      A2D::Mat<T, dof_per_vert, dof_per_vert>& jac_u,
-      A2D::Mat<T, dof_per_vert, dof_per_vert * spatial_dim>& jac_mixed,
-      A2D::Mat<T, dof_per_vert * spatial_dim, dof_per_vert * spatial_dim>&
-          jac_grad) const {
+      A2D::Mat<T, dof_per_node, dof_per_node>& jac_u_LL,
+      A2D::Mat<T, dof_per_node, dof_per_node>& jac_u_LR,
+      A2D::Mat<T, dof_per_node, dof_per_node>& jac_u_RR,
+      A2D::Mat<T, dof_per_node, dof_per_node * spatial_dim>& jac_mixed_LL,
+      A2D::Mat<T, dof_per_node, dof_per_node * spatial_dim>& jac_mixed_LR,
+      A2D::Mat<T, dof_per_node, dof_per_node * spatial_dim>& jac_mixed_RR,
+      A2D::Mat<T, dof_per_node * spatial_dim, dof_per_node * spatial_dim>&
+          jac_grad_LL,
+      A2D::Mat<T, dof_per_node * spatial_dim, dof_per_node * spatial_dim>&
+          jac_grad_LR,
+      A2D::Mat<T, dof_per_node * spatial_dim, dof_per_node * spatial_dim>&
+          jac_grad_RR) const {
     // Prepare passive quantities: Evaluate dt
     A2D::Vec<T, spatial_dim> tan_ref;
     A2D::Mat<T, spatial_dim, spatial_dim> rot;
@@ -837,49 +844,49 @@ class LinearElasticityInterface final
     // Extract the Hessian w.r.t. u and mixed Hessian (w.r.t. u and ugrad)
     // Note that we omit the Hessian w.r.t. ugrad because ∂2e/∂(∇_x)uq2 is zero
     // by construction
-    for (int i = 0; i < dof_per_vert; i++) {
-      up_primary.zero();
-      up_secondary.zero();
 
-      uh_primary.zero();
-      uh_secondary.zero();
+    auto populate_jac =
+        [&](A2D::Vec<T, dof_per_node>& up, A2D::Vec<T, dof_per_node>& uh,
+            A2D::Mat<T, dof_per_node, spatial_dim>& hgrad,
+            A2D::Mat<T, dof_per_node, dof_per_node>& jac_u,
+            A2D::Mat<T, dof_per_node, dof_per_node * spatial_dim>& jac_mixed) {
+          for (int i = 0; i < dof_per_node; i++) {
+            up_primary.zero();
+            up_secondary.zero();
 
-      pgrad_primary.zero();
-      pgrad_secondary.zero();
+            uh_primary.zero();
+            uh_secondary.zero();
 
-      hgrad_primary.zero();
-      hgrad_secondary.zero();
+            pgrad_primary.zero();
+            pgrad_secondary.zero();
 
-      stack.hzero();
+            hgrad_primary.zero();
+            hgrad_secondary.zero();
 
-      if (i < dof_per_node) {
-        up_primary[i] = 1.0;
-      } else {
-        up_secondary[i - dof_per_node] = 1.0;
-      }
+            stack.hzero();
 
-      stack.hforward();
-      stack.hreverse();
+            up[i] = 1.0;
 
-      for (int j = 0; j < dof_per_vert; j++) {
-        int jj = j - dof_per_node;
-        // Extract the Hessian w.r.t. u
-        if (j < dof_per_node) {
-          jac_u(j, i) = uh_primary[j];
-        } else {
-          jac_u(j, i) = uh_secondary[jj];
-        }
+            stack.hforward();
+            stack.hreverse();
 
-        for (int k = 0; k < spatial_dim; k++) {
-          // Extract the mixed Hessian w.r.t. u and ∇u:
-          if (j < dof_per_node) {
-            jac_mixed(i, j * spatial_dim + k) = hgrad_primary(j, k);
-          } else {
-            jac_mixed(i, j * spatial_dim + k) = hgrad_secondary(jj, k);
+            for (int j = 0; j < dof_per_node; j++) {
+              // Extract the Hessian w.r.t. u
+              jac_u(j, i) = uh[j];
+
+              for (int k = 0; k < spatial_dim; k++) {
+                // Extract the mixed Hessian w.r.t. u and ∇u:
+                jac_mixed(i, j * spatial_dim + k) = hgrad(j, k);
+              }
+            }
           }
-        }
-      }
-    }
+        };
+
+    populate_jac(up_primary, uh_primary, hgrad_primary, jac_u_LL, jac_mixed_LL);
+    populate_jac(up_primary, uh_secondary, hgrad_secondary, jac_u_LR,
+                 jac_mixed_LR);
+    populate_jac(up_secondary, uh_secondary, hgrad_secondary, jac_u_RR,
+                 jac_mixed_RR);
   }
 
  private:

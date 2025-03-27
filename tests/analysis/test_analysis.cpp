@@ -163,9 +163,9 @@ T two_sided_LSF_jacobian_adjoint_product_fd_check(
                                 physics_bulk_primary);
   BulkAnalysis analysis_secondary(mesh_secondary, quadrature_secondary,
                                   basis_secondary, physics_bulk_secondary);
-  InterfaceAnalysis analysis_interface(
-      mesh_primary, mesh_secondary, quadrature_interface,
-      basis_primary /*NOTE: we use basis_primary here*/, physics_interface);
+  InterfaceAnalysis analysis_interface(mesh_primary, mesh_secondary,
+                                       quadrature_interface, basis_primary,
+                                       basis_secondary, physics_interface);
 
   using SurfAnalysis =
       GalerkinAnalysis<T, Mesh, typename BulkQuadrature::InterfaceQuad, Basis,

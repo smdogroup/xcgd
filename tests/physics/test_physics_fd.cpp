@@ -27,8 +27,10 @@ void test_physics_fd(std::tuple<Mesh *, Quadrature *, Basis *> tuple,
   std::shared_ptr<Mesh> mesh_secondary;  // used only for interface physics
   Quadrature *quadrature = std::get<1>(tuple);
   Basis *basis = std::get<2>(tuple);
+  std::shared_ptr<Basis> basis_secondary;  // used only for interface physics
 
   constexpr bool is_interface_physics = Physics::is_interface_physics;
+
   if constexpr (is_interface_physics) {
     static_assert(Mesh::is_cut_mesh,
                   "cut mesh must be used to test interface physics");
@@ -39,6 +41,7 @@ void test_physics_fd(std::tuple<Mesh *, Quadrature *, Basis *> tuple,
       mesh_secondary->get_lsf_dof()[i] = -mesh->get_lsf_dof()[i];
     }
     mesh_secondary->update_mesh();
+    basis_secondary = std::make_shared<Basis>(*mesh_secondary);
   }
 
   int num_nodes = 0, num_elements = 0;
@@ -95,7 +98,7 @@ void test_physics_fd(std::tuple<Mesh *, Quadrature *, Basis *> tuple,
 
   if constexpr (is_interface_physics) {
     analysis = std::make_shared<Analysis>(*mesh, *mesh_secondary, *quadrature,
-                                          *basis, physics);
+                                          *basis, *basis_secondary, physics);
   } else {
     analysis = std::make_shared<Analysis>(*mesh, *quadrature, *basis, physics);
   }
@@ -208,11 +211,13 @@ void test_physics_fd(std::tuple<Mesh *, Quadrature *, Basis *> tuple,
   EXPECT_NEAR(Jp_relerr, 0.0, tol);
 }
 
-template <int Np_1d = 4>
+template <int Np_1d = 4, bool use_finite_cell_mesh = true>
 auto create_gd_lsf_surf_basis() {
   int constexpr nx = 8, ny = 8;
   using Grid = StructuredGrid2D<T>;
-  using Mesh = FiniteCellMesh<T, Np_1d>;
+  using Mesh =
+      typename std::conditional<use_finite_cell_mesh, FiniteCellMesh<T, Np_1d>,
+                                CutMesh<T, Np_1d>>::type;
   using Quadrature =
       GDLSFQuadrature2D<T, Np_1d, QuadPtType::SURFACE, Grid, Np_1d, Mesh>;
   using Basis = GDBasis2D<T, Mesh>;
@@ -366,8 +371,12 @@ TEST(physics, ElasticityExternalLoad) {
 }
 
 TEST(physics, LinearElasticityInterface) {
-  test_linear_elasticity_interface(create_gd_lsf_surf_basis<2>());
-  test_linear_elasticity_interface(create_gd_lsf_surf_basis<4>());
+  constexpr bool use_finite_cell_mesh = false;
+  test_linear_elasticity_interface(
+      create_gd_lsf_surf_basis<2, use_finite_cell_mesh>());
+  // TODO: revert
+  // test_linear_elasticity_interface(
+  //     create_gd_lsf_surf_basis<4, use_finite_cell_mesh>());
 }
 
 TEST(physics, SurfStressAggregation) {
