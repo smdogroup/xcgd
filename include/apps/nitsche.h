@@ -145,17 +145,17 @@ class NitscheTwoSidedApp final {
   using CSCMat = SparseUtils::CSCMat<T>;
 
  public:
-  NitscheTwoSidedApp(Mesh& mesh, Quadrature& quadrature, Basis& basis,
-                     PhysicsBulk& physics_bulk_primary,
+  NitscheTwoSidedApp(Mesh& mesh_primary, Quadrature& quadrature,
+                     Basis& basis_primary, PhysicsBulk& physics_bulk_primary,
                      PhysicsBulk& physics_bulk_secondary,
                      PhysicsInterface& physics_interface)
-      : grid(mesh.get_grid()),
-        mesh_m(mesh),
+      : grid(mesh_primary.get_grid()),
+        mesh_m(mesh_primary),
         mesh_s(grid),
         quadrature_bulk_m(quadrature),
         quadrature_bulk_s(mesh_s),
-        quadrature_interface(mesh),
-        basis_m(basis),
+        quadrature_interface(mesh_primary),
+        basis_m(basis_primary),
         basis_s(mesh_s),
         physics_bulk_m(physics_bulk_primary),
         physics_bulk_s(physics_bulk_secondary),

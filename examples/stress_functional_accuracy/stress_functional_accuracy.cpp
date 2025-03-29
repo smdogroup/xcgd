@@ -128,29 +128,23 @@ void eval_interface_stress(std::string vtk_path, T E, T nu, Mesh& mesh,
 
   std::vector<T> xloc_surf_q =
       surf_stress_analysis.interpolate_energy(sol.data()).first;
-
-  // Debug
-  // auto [pt_map, val_map] =
-  //     surf_stress_analysis.interpolate_energy_map(sol.data());
-  // std::vector<T> xloc_surf_q, xloc_elem_q;
-  // for (int i = 0; i < mesh.get_num_elements(); i++) {
-  //   if (not pt_map.count(i)) {
-  //     continue;
-  //   }
-  //   for (T v : pt_map.at(i)) {
-  //     xloc_surf_q.push_back(v);
-  //   }
-  //   for (T v : val_map.at(i)) {
-  //     xloc_elem_q.push_back(T(i));
-  //   }
-  // }
-
   surf_quad_vtk.add_mesh(xloc_surf_q);
   surf_quad_vtk.write_mesh();
 
-  // Debug
-  // surf_quad_vtk.add_sol("qelem", xloc_elem_q);
-  // surf_quad_vtk.write_sol("qelem");
+  // Evaluate norm errors
+  using EnergyNormPhysics =
+      LinearElasticityEnergyNormError<T, spatial_dim, StressFunc>;
+  using EnergyNormAnalysis =
+      GalerkinAnalysis<T, Mesh, SurfQuadrature, Basis, EnergyNormPhysics>;
+
+  EnergyNormPhysics stress_norm_physics(E, nu, stress_func);
+  EnergyNormAnalysis stress_norm_analysis(mesh, surf_quadrature, basis,
+                                          stress_norm_physics);
+  // Energy norm at each quadrature points
+  std::vector<T> stress_norm_q =
+      stress_norm_analysis.interpolate_energy(sol.data()).second;
+  surf_quad_vtk.add_sol("stress_norm_err", stress_norm_q);
+  surf_quad_vtk.write_sol("stress_norm_err");
 
   // Get exact boundary Stress
   int num_quads = xloc_surf_q.size() / spatial_dim;
@@ -848,6 +842,19 @@ void execute_interface_elasticity(std::string prefix, int nxy,
     secondary_cut_vtk.write_vec("sol_exact", sol_exact_secondary.data());
   }
 
+  // Stencils
+  {
+    StencilToVTK<T, Mesh> primary_stencil_vtk(
+        mesh_primary, std::filesystem::path(prefix) /
+                          std::filesystem::path("stencils_primary.vtk"));
+    primary_stencil_vtk.write_stencils(mesh_primary.get_elem_nodes());
+
+    StencilToVTK<T, Mesh> secondary_stencil_vtk(
+        mesh_secondary, std::filesystem::path(prefix) /
+                            std::filesystem::path("stencils_secondary.vtk"));
+    secondary_stencil_vtk.write_stencils(mesh_secondary.get_elem_nodes());
+  }
+
   // Evaluate norm errors
   using EnergyNormPhysics =
       LinearElasticityEnergyNormError<T, spatial_dim,
@@ -863,17 +870,23 @@ void execute_interface_elasticity(std::string prefix, int nxy,
   EnergyNormPhysics stress_norm_physics_r(E2, nu2, elasticity_stress_fun);
 
   EnergyNormAnalysis stress_norm_analysis_l(
-      physics_app->get_interface_analysis().get_primary_mesh(), quadrature,
-      basis, stress_norm_physics_l);
+      physics_app->get_primary_mesh(),
+      physics_app->get_primary_bulk_quadrature(),
+      physics_app->get_primary_basis(), stress_norm_physics_l);
+
   EnergyNormAnalysis stress_norm_analysis_r(
-      physics_app->get_interface_analysis().get_secondary_mesh(), quadrature,
-      basis, stress_norm_physics_r);
+      physics_app->get_secondary_mesh(),
+      physics_app->get_secondary_bulk_quadrature(),
+      physics_app->get_secondary_basis(), stress_norm_physics_r);
+
   InterfaceEnergyNormAnalysis stress_norm_analysis_l_interface(
-      physics_app->get_interface_analysis().get_primary_mesh(),
-      physics_app->get_interface_quadrature(), basis, stress_norm_physics_l);
+      physics_app->get_primary_mesh(), physics_app->get_interface_quadrature(),
+      physics_app->get_primary_basis(), stress_norm_physics_l);
+
   InterfaceEnergyNormAnalysis stress_norm_analysis_r_interface(
-      physics_app->get_interface_analysis().get_secondary_mesh(),
-      physics_app->get_interface_quadrature(), basis, stress_norm_physics_r);
+      physics_app->get_secondary_mesh(),
+      physics_app->get_interface_quadrature(),
+      physics_app->get_secondary_basis(), stress_norm_physics_r);
 
   json j = {{"stress_norm_primary",
              sqrt(stress_norm_analysis_l.energy(nullptr, sol_primary.data()))},
