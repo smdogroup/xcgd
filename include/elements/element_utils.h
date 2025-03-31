@@ -1318,6 +1318,17 @@ std::vector<std::pair<int, int>> pstencil_to_pterms_deprecated(
   return pterms;
 }
 
+/**
+ * For each element, given the vertex coordinates of its DOF nodes, determine
+ * which 2d polynomial bases terms (i.e. the pterms) we need.
+ *
+ * 2d polynomial bases are 1, x, y, xy, x^2y, xy^2, x^2y^2, etc.
+ * pterms stores the power of x and y for each node.
+ *
+ * vertical_first is true meaning that we perform a bead sort-like operation on
+ * the stencil verts along y axis first, i.e. we let all stencil nodes to drop
+ * vertically first, then horizontally
+ * */
 inline std::vector<std::pair<int, int>> verts_to_pterms(
     const std::vector<std::pair<int, int>> &verts, bool vertical_first = true) {
   std::map<int, int> ix_counts, iy_counts;
@@ -1331,10 +1342,12 @@ inline std::vector<std::pair<int, int>> verts_to_pterms(
   ix_counts_v.reserve(ix_counts.size());
   iy_counts_v.reserve(iy_counts.size());
 
+  // Loop over the map from smaller key to larger key
   for (auto &[_, v] : ix_counts) {
     ix_counts_v.push_back(v);
   }
 
+  // Loop over the map from smaller key to larger key
   for (auto &[_, v] : iy_counts) {
     iy_counts_v.push_back(v);
   }

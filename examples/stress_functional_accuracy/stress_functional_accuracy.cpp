@@ -821,10 +821,18 @@ void execute_interface_elasticity(std::string prefix, int nxy,
       }
     }
 
+    int num_elements_primary = mesh_primary.get_num_elements();
+    const auto& elem_nodes_primary = mesh_primary.get_elem_nodes();
+    std::vector<T> nstencils_primary_v(num_elements_primary, 0.0);
+    for (int i = 0; i < num_elements_primary; i++) {
+      nstencils_primary_v[i] = elem_nodes_primary.at(i).size();
+    }
+
     primary_cut_vtk.write_mesh();
     primary_cut_vtk.write_sol("lsf", mesh_primary.get_lsf_nodes().data());
     primary_cut_vtk.write_vec("sol", sol_primary.data());
     primary_cut_vtk.write_vec("sol_exact", sol_exact_primary.data());
+    primary_cut_vtk.write_cell_sol("nstencils", nstencils_primary_v.data());
 
     std::vector<T> sol_exact_secondary;
     for (int i = 0; i < mesh_secondary.get_num_nodes(); i++) {
@@ -836,10 +844,18 @@ void execute_interface_elasticity(std::string prefix, int nxy,
       }
     }
 
+    int num_elements_secondary = mesh_secondary.get_num_elements();
+    const auto& elem_nodes_secondary = mesh_secondary.get_elem_nodes();
+    std::vector<T> nstencils_secondary_v(num_elements_secondary, 0.0);
+    for (int i = 0; i < num_elements_secondary; i++) {
+      nstencils_secondary_v[i] = elem_nodes_secondary.at(i).size();
+    }
+
     secondary_cut_vtk.write_mesh();
     secondary_cut_vtk.write_sol("lsf", mesh_secondary.get_lsf_nodes().data());
     secondary_cut_vtk.write_vec("sol", sol_secondary.data());
     secondary_cut_vtk.write_vec("sol_exact", sol_exact_secondary.data());
+    secondary_cut_vtk.write_cell_sol("nstencils", nstencils_secondary_v.data());
   }
 
   // Stencils

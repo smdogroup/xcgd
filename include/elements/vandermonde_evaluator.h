@@ -148,6 +148,7 @@ class VandermondeEvaluator {
       verts[i] = {ixy[0], ixy[1]};
     }
 
+    // Get pterms for polynomial bases
     int dir = mesh.get_elem_dir(elem);
     int dim = dir / spatial_dim;
     pterms = verts_to_pterms(verts, dim == 1);

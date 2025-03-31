@@ -6,6 +6,7 @@
 #include <limits>
 #include <map>
 #include <set>
+#include <stdexcept>
 #include <vector>
 
 #include "elements/element_commons.h"
@@ -356,21 +357,31 @@ class GridMesh : public GDMeshBase<T, Np_1d, Grid_> {
   std::set<int> regular_stencil_elems;
 };
 
-// - AllowOutsideLSF: when creating element -> dof node mapping, allow nodes to
-// reside outside the boundary defined by the level-set function, which usually
-// happens at the cut cells, default option
-// - StrictlyInsideLSF: typically for cut elements, don't allow vertices outside
-// the boundary defined by the level-set function to be used as dof nodes
+/**
+ * - AllowOutsideLSF: when creating element -> dof node mapping, allow nodes to
+ * reside outside the boundary defined by the level-set function, which usually
+ * happens at the cut cells, default option
+ * - StrictlyInsideLSF: typically for cut elements, don't allow vertices outside
+ * the boundary defined by the level-set function to be used as dof nodes
+ */
 enum class NodeStrategy { AllowOutsideLSF, StrictlyInsideLSF };
 
-// // - Original: original stencil strategy, for high order elements near the
-// cut
-// // boundary, we tend to modify the stencil nodes by pushing them inward
-// // - FiniceCell: finite-cell-like stencil strategy, where we do not modify
-// the
-// // stencil for elements, potentially resulting more dof nodes for a same LSF
-// // boundary
-// enum class StencilStrategy { Original, FiniteCell };
+/**
+ * When determining DOF nodes for elements near the cut boundary,
+ * we often need to modify from the ground stencil because some of the vertices
+ * in the ground stensil is too deep outside the cut boundary. This enum
+ * marks the two different strategies of such modification:
+ *
+ * - PerElement: we determine a push direction based on gradient of the LSF
+ * function at the element centroid, then use that direction for all nodes
+ * associated to this element. Main drawback of this approach is that we do not
+ * maintain consistency across elements, meaning that a same active vertex could
+ * be pushed to different location for differnet elements near it.
+ *
+ * - PerNode: in contrast to PerElement, we determine a push direction for each
+ * vertex, so the push modification is always consistent across elements.
+ * */
+// enum class PushStrategy { PerElement, PerNode };
 
 /**
  * @brief The Galerkin difference mesh defined on a structured
@@ -558,7 +569,15 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
 
     // Then, we update the element -> node mapping
     // update_mesh_elem_node_mapping_spiral();
-    update_mesh_elem_node_mapping_push();
+    update_elem_nodes_per_element();
+
+    // if (push_strategy == PushStrategy::PerElement) {
+    //   update_elem_nodes_per_element();
+    // } else if (push_strategy == PushStrategy::PerNode) {
+    //   update_elem_nodes_per_node();
+    // } else {
+    //   throw std::runtime_error("Unknown push_strategy");
+    // }
   }
 
   inline const Map<int, int>& get_vert_nodes() const { return vert_nodes; }
@@ -652,7 +671,6 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
     elem_cells.clear();
     node_verts.clear();
     vert_nodes.clear();
-    cell_dirs.clear();
     cell_elems.clear();
     cut_elems.clear();
     regular_stencil_elems.clear();
@@ -663,7 +681,8 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
     // Get active cells and cut cells
     auto [cut_cells, active_cells] = get_cut_cells_active_cells();
 
-    // Create active dof nodes and the mapping to verts
+    // Determine elements and dof nodes, and the mapping between elem <-> cell
+    // and node <-> vert
     int node = 0;
     for (int c = 0; c < ncells; c++) {
       if (not active_cells.count(c)) continue;
@@ -677,29 +696,6 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
           node++;
         }
       }
-    }
-
-    // For each cell, get the push direction for the outlying ground stencil
-    // vertices
-    cell_dirs = std::vector<int>(ncells, -1);  // val | direction
-                                               // 0   | +x
-                                               // 1   | -x
-                                               // 2   | +y
-                                               // 3   | -y
-                                               // 4   | +z
-                                               // 5   | -z
-
-    for (int c = 0; c < ncells; c++) {
-      std::array<T, spatial_dim> grad = interp_lsf_grad(c);
-      double tmp = std::numeric_limits<double>::lowest();
-      int dim = -1;
-      for (int d = 0; d < spatial_dim; d++) {
-        if (fabs(grad[d]) > tmp) {
-          tmp = fabs(grad[d]);
-          dim = d;
-        }
-      }
-      cell_dirs[c] = 2 * dim + (freal(grad[dim]) < 0.0 ? 0 : 1);
     }
 
     int num_nodes_old = num_nodes;
@@ -822,8 +818,44 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
     }
   }
 
-  void update_mesh_elem_node_mapping_push() {
+  // val | direction
+  // 0   | +x
+  // 1   | -x
+  // 2   | +y
+  // 3   | -y
+  // 4   | +z
+  // 5   | -z
+  int get_push_dir(std::array<T, spatial_dim> grad) {
+    double tmp = std::numeric_limits<double>::lowest();
+    int dim = -1;
+    for (int d = 0; d < spatial_dim; d++) {
+      if (fabs(grad[d]) > tmp) {
+        tmp = fabs(grad[d]);
+        dim = d;
+      }
+    }
+    return 2 * dim + (freal(grad[dim]) < 0.0 ? 0 : 1);
+  }
+
+  std::pair<int, int> parse_push_dir(int dir) {
+    int dim = dir / spatial_dim;
+    int sign = dir % spatial_dim == 0 ? 1 : -1;
+    return {dim, sign};
+  }
+
+  void update_elem_nodes_per_element() {
     elem_nodes.clear();
+    cell_dirs.clear();
+
+    int ncells = this->grid.get_num_cells();
+
+    // For each cell, get the push direction for the outlying ground stencil
+    // vertices
+    cell_dirs = std::vector<int>(ncells, -1);
+
+    for (int c = 0; c < ncells; c++) {
+      cell_dirs[c] = get_push_dir(interp_lsf_grad_at_cell(c));
+    }
 
     for (int elem = 0; elem < num_elements; elem++) {
       // Initialize elem -> nodes
@@ -836,9 +868,7 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
       this->grid.template get_cell_ground_stencil<Np_1d>(cell, verts);
 
       // Get push direction
-      int dir = cell_dirs[cell];
-      int dim = dir / spatial_dim;
-      int sign = dir % spatial_dim == 0 ? 1 : -1;
+      auto [dim, sign] = parse_push_dir(cell_dirs[cell]);
 
       // Add nodes
       for (int i = 0; i < max_nnodes_per_element; i++) {
@@ -858,11 +888,122 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
     }
   }
 
+  void update_elem_nodes_per_node() {
+    elem_nodes.clear();
+    cell_dirs.clear();
+
+    // First, we loop over all elements, and we collect the verts that all
+    // element ground stencil touches
+    std::set<int> touched_verts;
+    for (int e = 0; e < num_elements; e++) {
+      int verts[max_nnodes_per_element];
+      int cell = elem_cells.at(e);
+      this->grid.template get_cell_ground_stencil<Np_1d>(cell, verts);
+      for (int i = 0; i < max_nnodes_per_element; i++) {
+        touched_verts.insert(verts[i]);
+      }
+    }
+
+    // Next, we create the push rule by populating a 1-1 mapping from touched
+    // verts to active verts. For touched verts that are active verts, the
+    // active verts they map to is likely themselves. The map is only
+    // non-trivial for those inactive touched verts. The push direction is
+    // determined based on the largest component of the LSF gradient evaluated
+    // at the touched verts.
+    std::map<int, int> touched_to_active_vert_mapping;
+    for (int touched_vert : touched_verts) {
+      /* If touched vert is an active vert */
+      if (vert_nodes.count(touched_vert)) {
+        touched_to_active_vert_mapping[touched_vert] = touched_vert;
+      } else {
+        auto [dim, sign] =
+            parse_push_dir(interp_lsf_grad_at_vert(touched_vert));
+
+        int ixy[spatial_dim] = {-1, -1};
+        this->grid.get_vert_coords(touched_vert, ixy);
+        ixy[dim] += sign * Np_1d;
+
+        int candidate_vert = this->grid.get_coords_vert(ixy);
+
+        /* If candidate vert is an active vert */
+        if (vert_nodes.count(candidate_vert)) {
+          touched_to_active_vert_mapping[touched_vert] = candidate_vert;
+        } else {
+          touched_to_active_vert_mapping[touched_vert] =
+              -1;  // does not have a map, hence the stencil is degenerate
+        }
+      }
+    }
+
+    // Next, we populate the dof mapping as well as elem dir
+    for (int elem = 0; elem < num_elements; elem++) {
+      // Initialize elem -> nodes
+      std::vector<int>& nodes = elem_nodes[elem];
+      nodes.reserve(max_nnodes_per_element);
+
+      // Get ground stencil
+      int touched_verts[max_nnodes_per_element];
+      int cell = elem_cells.at(elem);
+      this->grid.template get_cell_ground_stencil<Np_1d>(cell, touched_verts);
+
+      // Add nodes
+      for (int i = 0; i < max_nnodes_per_element; i++) {
+        int target_vert = touched_to_active_vert_mapping[touched_verts[i]];
+        if (target_vert > 0) {
+          nodes.push_back(vert_nodes.at(target_vert));
+        }
+      }
+    }
+  }
+
   // Given the lsf dof, interpolate the gradient of the lsf at the centroid
   // a cell using bilinear quad element
-  std::array<T, spatial_dim> interp_lsf_grad(int cell) {
+  std::array<T, spatial_dim> interp_lsf_grad_at_cell(int cell) {
     int verts[Grid::nverts_per_cell];
     this->grid.get_cell_verts(cell, verts);
+
+    const T* h = this->grid.get_h();
+    std::array<T, spatial_dim> grad;
+
+    grad[0] = 0.5 / h[0] *
+              (-lsf_dof[verts[0]] + lsf_dof[verts[1]] + lsf_dof[verts[2]] -
+               lsf_dof[verts[3]]);
+    grad[1] = 0.5 / h[1] *
+              (-lsf_dof[verts[0]] - lsf_dof[verts[1]] + lsf_dof[verts[2]] +
+               lsf_dof[verts[3]]);
+    return grad;
+  }
+
+  std::array<T, spatial_dim> interp_lsf_grad_at_vert(int vert) {
+    int ixy[spatial_dim];
+    this->grid.get_vert_coords(vert, ixy);
+    const int* nxy = this->grid.get_nxy();
+
+    std::array<int, Grid::nverts_per_cell> verts;
+
+    if (ixy[0] < nxy[0] and ixy[1] < nxy[1]) {
+      verts[0] = this->grid.get_coords_vert(ixy[0], ixy[1]);
+      verts[1] = this->grid.get_coords_vert(ixy[0] + 1, ixy[1]);
+      verts[2] = this->grid.get_coords_vert(ixy[0] + 1, ixy[1] + 1);
+      verts[3] = this->grid.get_coords_vert(ixy[0], ixy[1] + 1);
+    } else if (ixy[0] == nxy[0] and ixy[1] < nxy[1]) {
+      verts[0] = this->grid.get_coords_vert(ixy[0] - 1, ixy[1]);
+      verts[1] = this->grid.get_coords_vert(ixy[0], ixy[1]);
+      verts[2] = this->grid.get_coords_vert(ixy[0], ixy[1] + 1);
+      verts[3] = this->grid.get_coords_vert(ixy[0] - 1, ixy[1] + 1);
+    } else if (ixy[0] < nxy[0] and ixy[1] == nxy[1]) {
+      verts[0] = this->grid.get_coords_vert(ixy[0], ixy[1] - 1);
+      verts[1] = this->grid.get_coords_vert(ixy[0] + 1, ixy[1] - 1);
+      verts[2] = this->grid.get_coords_vert(ixy[0] + 1, ixy[1]);
+      verts[3] = this->grid.get_coords_vert(ixy[0], ixy[1]);
+    } else if (ixy[0] == nxy[0] and ixy[1] == nxy[1]) {
+      verts[0] = this->grid.get_coords_vert(ixy[0] - 1, ixy[1] - 1);
+      verts[1] = this->grid.get_coords_vert(ixy[0], ixy[1] - 1);
+      verts[2] = this->grid.get_coords_vert(ixy[0], ixy[1]);
+      verts[3] = this->grid.get_coords_vert(ixy[0] - 1, ixy[1]);
+    } else {
+      throw std::runtime_error("unreachable");
+    }
 
     const T* h = this->grid.get_h();
     std::array<T, spatial_dim> grad;
@@ -1001,6 +1142,8 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
 
   // level set function values at vertices of the ground grid
   std::vector<T> lsf_dof;
+
+  // PushStrategy push_strategy;
 
   /* Below is information about the element-to-node topology, at each update to
    * the mesh, the dof nodes associated to an element may change from verts to
