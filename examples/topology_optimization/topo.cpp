@@ -105,7 +105,8 @@ class CantileverMesh final
   using typename Base::Mesh;
 
   CantileverMesh(std::array<int, Grid::spatial_dim> nxy,
-                 std::array<T, Grid::spatial_dim> lxy, double loaded_frac)
+                 std::array<T, Grid::spatial_dim> lxy, double loaded_frac,
+                 bool symmetric)
       : nxy(nxy),
         lxy(lxy),
         grid(nxy.data(), lxy.data()),
@@ -117,9 +118,15 @@ class CantileverMesh final
       T xloc[Grid::spatial_dim];
       int c = this->grid.get_coords_cell(nxy[0] - 1, iy);
       this->grid.get_cell_xloc(c, xloc);
-      if (xloc[1] >= lxy[1] * (1.0 - loaded_frac) / 2.0 and
-          xloc[1] <= lxy[1] * (1.0 + loaded_frac) / 2.0) {
-        loaded_cells.insert(c);
+      if (symmetric) {
+        if (xloc[1] >= lxy[1] * (1.0 - loaded_frac) / 2.0 and
+            xloc[1] <= lxy[1] * (1.0 + loaded_frac) / 2.0) {
+          loaded_cells.insert(c);
+        }
+      } else {
+        if (xloc[1] <= lxy[1] * loaded_frac) {
+          loaded_cells.insert(c);
+        }
       }
     }
 
@@ -2997,9 +3004,10 @@ void execute(int argc, char* argv[]) {
   } else {
     if (instance == "cantilever") {
       double loaded_frac = parser.get_double_option("loaded_frac");
+      bool symmetric = parser.get_bool_option("cantilever_symmetric");
       prob_mesh =
           std::make_shared<CantileverMesh<T, Np_1d, use_finite_cell_mesh>>(
-              nxy, lxy, loaded_frac);
+              nxy, lxy, loaded_frac, symmetric);
     } else if (instance == "anchor") {
       double clamped_frac = parser.get_double_option("anchor_clamped_frac");
       double D_ux = parser.get_double_option("anchor_D_ux");
