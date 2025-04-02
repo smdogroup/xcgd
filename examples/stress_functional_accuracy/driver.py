@@ -112,6 +112,9 @@ def run_experiments(
     nitsche_eta: float,
     smoke: bool,
     Np_1d_list: List[int],
+    nxy_min: int,
+    nxy_max: int,
+    nxy_num: int,
 ):
     logpath = os.path.join(run_name, f"{run_name}.log")
     open(logpath, "w").close()  # erase existing file
@@ -133,7 +136,12 @@ def run_experiments(
     else:
         df_data["stress_norm"] = []
 
-    nxy_list = list(map(int, np.logspace(3, 7, 20, base=2)))
+    nxy_list = list(
+        map(round, np.logspace(np.log2(nxy_min), np.log2(nxy_max), nxy_num, base=2))
+    )
+
+    print(f"sweeping nxy_list: {nxy_list}")
+
     if smoke:
         Np_1d_list = [2, 4]
         nxy_list = [4, 8, 16, 32]
@@ -341,6 +349,9 @@ if __name__ == "__main__":
     p.add_argument("--nitsche-eta", default=1e8, type=float)
     p.add_argument("--smoke-test", action="store_true")
     p.add_argument("--Np_1d", nargs="*", default=[2, 4, 6], type=int)
+    p.add_argument("--nxy-min", type=int, default=22)
+    p.add_argument("--nxy-max", type=int, default=128)
+    p.add_argument("--nxy-num", type=int, default=13)
     args = p.parse_args()
 
     # Sanity checks
@@ -391,6 +402,9 @@ if __name__ == "__main__":
             args.nitsche_eta,
             args.smoke_test,
             args.Np_1d,
+            args.nxy_min,
+            args.nxy_max,
+            args.nxy_num,
         )
     else:
         df = pd.read_csv(args.csv)

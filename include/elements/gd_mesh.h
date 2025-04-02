@@ -16,6 +16,58 @@
 #include "utils/misc.h"
 
 /**
+ * For each element, given the vertex coordinates of its DOF nodes, determine
+ * which 2d polynomial bases terms (i.e. the pterms) we need.
+ *
+ * 2d polynomial bases are 1, x, y, xy, x^2y, xy^2, x^2y^2, etc.
+ * pterms stores the power of x and y for each node.
+ *
+ * vertical_first is true meaning that we perform a bead sort-like operation
+ * on the stencil verts along y axis first, i.e. we let all stencil nodes to
+ * drop vertically first, then horizontally
+ * */
+inline std::vector<std::pair<int, int>> verts_to_pterms(
+    std::vector<std::pair<int, int>>& verts_ixy, bool vertical_first = true) {
+  std::map<int, int> ix_counts, iy_counts;
+
+  for (auto& [ix, iy] : verts_ixy) {
+    ix_counts[ix]++;  // how many verts for each ix index
+    iy_counts[iy]++;  // how many verts for each iy index
+  }
+
+  std::vector<int> ix_counts_v, iy_counts_v;
+  ix_counts_v.reserve(ix_counts.size());
+  iy_counts_v.reserve(iy_counts.size());
+
+  // Loop over the map from smaller key to larger key
+  for (auto& [_, v] : ix_counts) {
+    ix_counts_v.push_back(v);
+  }
+
+  // Loop over the map from smaller key to larger key
+  for (auto& [_, v] : iy_counts) {
+    iy_counts_v.push_back(v);
+  }
+
+  // Sort count in descending order
+  auto& counts = vertical_first ? ix_counts_v : iy_counts_v;
+  std::sort(counts.begin(), counts.end(), std::greater<>());
+
+  std::vector<std::pair<int, int>> pterms;
+  pterms.reserve(verts_ixy.size());
+  for (int m = 0; m < counts.size(); m++) {
+    for (int n = 0; n < counts[m]; n++) {
+      if (vertical_first) {
+        pterms.push_back({m, n});
+      } else {
+        pterms.push_back({n, m});
+      }
+    }
+  }
+  return pterms;
+}
+
+/**
  * @brief The structured ground grid
  *
  * The numbering of the grid vertices and cells is as follows
@@ -345,8 +397,15 @@ class GridMesh : public GDMeshBase<T, Np_1d, Grid_> {
 
   inline int get_node_vert(int node) const { return node; }
 
-  // Caution: this is a dummy function that does not return meaningful value
-  inline int get_elem_dir(int elem) const { return 0; }
+  std::vector<std::pair<int, int>> get_pterms(int elem) const {
+    std::vector<std::pair<int, int>> pterms;
+    for (int i = 0; i < Np_1d; i++) {
+      for (int j = 0; j < Np_1d; j++) {
+        pterms.push_back({i, j});
+      }
+    }
+    return pterms;
+  }
 
  private:
   int num_nodes = -1;
@@ -381,13 +440,16 @@ enum class NodeStrategy { AllowOutsideLSF, StrictlyInsideLSF };
  * - PerNode: in contrast to PerElement, we determine a push direction for each
  * vertex, so the push modification is always consistent across elements.
  * */
-// enum class PushStrategy { PerElement, PerNode };
+// enum class MapStrategy { PerElement, PerNode };
+
+enum class PushStrategy { Uniform, Spine };
 
 /**
  * @brief The Galerkin difference mesh defined on a structured
  * grid with cuts defined by a level set function
  */
-template <typename T, int Np_1d, class Grid_ = StructuredGrid2D<T>>
+template <typename T, int Np_1d, class Grid_ = StructuredGrid2D<T>,
+          PushStrategy push_strategy = PushStrategy::Uniform>
 class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
  private:
   constexpr static NodeStrategy node_strategy = NodeStrategy::AllowOutsideLSF;
@@ -571,12 +633,12 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
     // update_mesh_elem_node_mapping_spiral();
     update_elem_nodes_per_element();
 
-    // if (push_strategy == PushStrategy::PerElement) {
+    // if (map_strategy == MapStrategy::PerElement) {
     //   update_elem_nodes_per_element();
-    // } else if (push_strategy == PushStrategy::PerNode) {
+    // } else if (map_strategy == MapStrategy::PerNode) {
     //   update_elem_nodes_per_node();
     // } else {
-    //   throw std::runtime_error("Unknown push_strategy");
+    //   throw std::runtime_error("Unknown map_strategy");
     // }
   }
 
@@ -594,8 +656,45 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
     return regular_stencil_elems;
   }
 
-  inline int get_elem_dir(int elem) const {
-    return cell_dirs[elem_cells[elem]];
+  std::vector<std::pair<int, int>> get_pterms(int elem) const {
+    if constexpr (push_strategy == PushStrategy::Uniform) {
+      auto [dim, sign] = parse_push_dir(cell_dirs[elem_cells.at(elem)]);
+
+      std::vector<std::pair<int, int>> verts_ixy;
+      auto& verts = elem_verts.at(elem);
+      for (int v : verts) {
+        int ixy[2] = {std::numeric_limits<int>::lowest(),
+                      std::numeric_limits<int>::lowest()};
+        this->grid.get_vert_coords(v, ixy);
+        verts_ixy.push_back({ixy[0], ixy[1]});
+      }
+
+      return verts_to_pterms(verts_ixy, dim == 1);
+    } else if constexpr (push_strategy == PushStrategy::Spine) {
+      auto& verts = elem_verts.at(elem);
+      if (verts.size() == max_nnodes_per_element) {
+        std::vector<std::pair<int, int>> pterms;
+        for (int i = 0; i < Np_1d; i++) {
+          for (int j = 0; j < Np_1d; j++) {
+            pterms.push_back({i, j});
+          }
+        }
+        return pterms;
+      }
+
+      std::vector<std::pair<int, int>> verts_ixy;
+      for (int v : verts) {
+        int ixy[2] = {std::numeric_limits<int>::lowest(),
+                      std::numeric_limits<int>::lowest()};
+        this->grid.get_vert_coords(v, ixy);
+        verts_ixy.push_back({ixy[0], ixy[1]});
+      }
+      auto [dim, sign] = parse_push_dir(cell_dirs[elem_cells.at(elem)]);
+      return verts_to_pterms(verts_ixy, dim == 1);
+
+    } else {
+      throw std::runtime_error("Unknown push_strategy");
+    }
   }
 
  private:
@@ -825,7 +924,7 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
   // 3   | -y
   // 4   | +z
   // 5   | -z
-  int get_push_dir(std::array<T, spatial_dim> grad) {
+  int get_push_dir(std::array<T, spatial_dim> grad) const {
     double tmp = std::numeric_limits<double>::lowest();
     int dim = -1;
     for (int d = 0; d < spatial_dim; d++) {
@@ -837,14 +936,60 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
     return 2 * dim + (freal(grad[dim]) < 0.0 ? 0 : 1);
   }
 
-  std::pair<int, int> parse_push_dir(int dir) {
+  std::pair<int, int> parse_push_dir(int dir) const {
     int dim = dir / spatial_dim;
     int sign = dir % spatial_dim == 0 ? 1 : -1;
     return {dim, sign};
   }
 
+  /**
+   * The spine verts of a cell are the verts in the ground stencil that are
+   * closest to the x- and y-symmetry axis of the cell.
+   *
+   * For example, for the following Np_1d = 6 cases, ./o are all verts from the
+   * ground stencil of the shaded cell, we define o to be spine verts
+   *
+   *   .───.───o───o───.───.    .───.───o───o───.───.    .───.───o───o───.───.
+   *   │   │   │   │   │   │    │   │   │   │   │   │    │   │   │   │   │   │
+   *   .───.───o───o───.───.    .───.───o───o───.───.    .───.───o───o───.───.
+   *   │   │   │   │   │   │    │   │   │   │   │   │    │   │   │   │   │   │
+   *   o───o───o───o───o───o    .───.───o───o───.───.    .───.───o───o───.───.
+   *   │   │   │///│   │   │    │   │   │   │   │   │    │   │   │   │   │   │
+   *   o───o───o───o───o───o    o───o───o───o───o───o    .───.───o───o───.───.
+   *   │   │   │   │   │   │    │   │   │///│   │   │    │   │   │   │   │   │
+   *   .───.───o───o───.───.    o───o───o───o───o───o    o───o───o───o───o───o
+   *   │   │   │   │   │   │    │   │   │   │   │   │    │   │   │///│   │   │
+   *   .───.───o───o───.───.    .───.───o───o───.───.    o───o───o───o───o───o
+   *
+   * */
+  bool is_spine_vert(int cell, int ixy[]) {
+    int exy[2] = {-1, -1};
+    this->grid.get_cell_coords(cell, exy);
+    if (ixy[0] == exy[0] or ixy[0] == exy[0] + 1 or ixy[1] == exy[1] or
+        ixy[1] == exy[1] + 1) {
+      return true;
+    }
+    return false;
+  }
+
+  std::pair<int, int> get_spine_push_dir(int cell, int ixy[]) {
+    int exy[2] = {-1, -1};
+    this->grid.get_cell_coords(cell, exy);
+    int dim = std::numeric_limits<int>::lowest();
+    int sign = std::numeric_limits<int>::max();
+    if (ixy[0] == exy[0] or ixy[0] == exy[0] + 1) {
+      dim = 1;
+      sign = exy[1] > ixy[1] ? 1 : -1;
+    } else if (ixy[1] == exy[1] or ixy[1] == exy[1] + 1) {
+      dim = 0;
+      sign = exy[0] > ixy[0] ? 1 : -1;
+    }
+    return {dim, sign};
+  }
+
   void update_elem_nodes_per_element() {
     elem_nodes.clear();
+    elem_verts.clear();
     cell_dirs.clear();
 
     int ncells = this->grid.get_num_cells();
@@ -859,8 +1004,9 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
 
     for (int elem = 0; elem < num_elements; elem++) {
       // Initialize elem -> nodes
-      std::vector<int>& nodes = elem_nodes[elem];
-      nodes.reserve(max_nnodes_per_element);
+      std::vector<int>& e_nodes = elem_nodes[elem];
+      std::vector<int>& e_verts = elem_verts[elem];
+      e_nodes.reserve(max_nnodes_per_element);
 
       // Get ground stencils
       int verts[max_nnodes_per_element];
@@ -868,22 +1014,74 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
       this->grid.template get_cell_ground_stencil<Np_1d>(cell, verts);
 
       // Get push direction
-      auto [dim, sign] = parse_push_dir(cell_dirs[cell]);
+      int dim = std::numeric_limits<int>::lowest();
+      int sign = std::numeric_limits<int>::lowest();
+      std::tie(dim, sign) = parse_push_dir(cell_dirs[cell]);
 
-      // Add nodes
-      for (int i = 0; i < max_nnodes_per_element; i++) {
-        int ixy[2] = {-1, -1};
-        this->grid.get_vert_coords(verts[i], ixy);
-
-        if (not vert_is_valid_dof_node(ixy[0], ixy[1])) {
-          ixy[dim] += sign * Np_1d;
+      auto add_nodes_uniform = [&]() {
+        for (int i = 0; i < max_nnodes_per_element; i++) {
+          int ixy[2] = {-1, -1};
+          this->grid.get_vert_coords(verts[i], ixy);
 
           if (not vert_is_valid_dof_node(ixy[0], ixy[1])) {
-            continue;
+            ixy[dim] += sign * Np_1d;
+
+            if (not vert_is_valid_dof_node(ixy[0], ixy[1])) {
+              continue;
+            }
           }
+
+          int v = this->grid.get_coords_vert(ixy);
+
+          e_verts.push_back(v);
+          e_nodes.push_back(vert_nodes.at(v));
+        }
+      };
+
+      auto add_nodes_spine = [&]() {
+        for (int i = 0; i < max_nnodes_per_element; i++) {
+          int ixy[2] = {-1, -1};
+          this->grid.get_vert_coords(verts[i], ixy);
+
+          if (not vert_is_valid_dof_node(ixy[0], ixy[1])) {
+            // We push spine nodes along the spines, and off-spine nodes along
+            // the push direction
+            if (is_spine_vert(cell, ixy)) {
+              auto [spine_push_dim, spine_push_sign] =
+                  get_spine_push_dir(cell, ixy);
+              ixy[spine_push_dim] += spine_push_sign * Np_1d;
+            } else {
+              ixy[dim] += sign * Np_1d;
+            }
+
+            if (not vert_is_valid_dof_node(ixy[0], ixy[1])) {
+              continue;
+            }
+          }
+
+          int v = this->grid.get_coords_vert(ixy);
+
+          e_verts.push_back(v);
+          e_nodes.push_back(vert_nodes.at(v));
+        }
+      };
+
+      // Add nodes
+      if constexpr (push_strategy == PushStrategy::Uniform) {
+        add_nodes_uniform();
+      } else if constexpr (push_strategy == PushStrategy::Spine) {
+        add_nodes_spine();
+
+        // If Spine strategy returns a degenerate stencil, we discard it and
+        // fallback to the simple push strategy
+        if (e_verts.size() < max_nnodes_per_element) {
+          e_verts.clear();
+          e_nodes.clear();
+          add_nodes_uniform();
         }
 
-        nodes.push_back(vert_nodes.at(this->grid.get_coords_vert(ixy)));
+      } else {
+        throw std::runtime_error("Unknown push_strategy");
       }
     }
   }
@@ -1143,8 +1341,6 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
   // level set function values at vertices of the ground grid
   std::vector<T> lsf_dof;
 
-  // PushStrategy push_strategy;
-
   /* Below is information about the element-to-node topology, at each update to
    * the mesh, the dof nodes associated to an element may change from verts to
    * verts, as well as the elements themselves might correspond to different
@@ -1154,6 +1350,7 @@ class CutMesh final : public GDMeshBase<T, Np_1d, Grid_> {
    * and nodes are defined on the dynamic mesh itself */
 
   Map<int, std::vector<int>> elem_nodes;
+  Map<int, std::vector<int>> elem_verts;
 
   // indices of vertices that are dof nodes, i.e. vertices that have active
   // degrees of freedom
@@ -1426,8 +1623,15 @@ class FiniteCellMesh final : public GDMeshBase<T, Np_1d, Grid_> {
     return regular_stencil_elems;
   }
 
-  // Caution: this is a dummy function that does not return meaningful value
-  inline int get_elem_dir(int elem) const { return 0; }
+  std::vector<std::pair<int, int>> get_pterms(int elem) const {
+    std::vector<std::pair<int, int>> pterms;
+    for (int i = 0; i < Np_1d; i++) {
+      for (int j = 0; j < Np_1d; j++) {
+        pterms.push_back({i, j});
+      }
+    }
+    return pterms;
+  }
 
  private:
   LSFMesh lsf_mesh;

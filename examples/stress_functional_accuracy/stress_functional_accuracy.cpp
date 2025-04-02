@@ -186,9 +186,9 @@ void execute_bulk_elasticity(std::string prefix, int nxy, double ersatz_ratio) {
   using T = double;
   using Grid = StructuredGrid2D<T>;
 
-  using Mesh =
-      typename std::conditional<use_finite_cell_mesh, FiniteCellMesh<T, Np_1d>,
-                                CutMesh<T, Np_1d>>::type;
+  using Mesh = typename std::conditional<
+      use_finite_cell_mesh, FiniteCellMesh<T, Np_1d>,
+      CutMesh<T, Np_1d, Grid, PushStrategy::Spine>>::type;
   using Quadrature =
       GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER, Grid, Np_1d, Mesh>;
   using Basis = GDBasis2D<T, Mesh>;
@@ -529,9 +529,9 @@ void execute_interface_elasticity(std::string prefix, int nxy,
   using T = double;
   using Grid = StructuredGrid2D<T>;
 
-  using Mesh =
-      typename std::conditional<use_finite_cell_mesh, FiniteCellMesh<T, Np_1d>,
-                                CutMesh<T, Np_1d>>::type;
+  using Mesh = typename std::conditional<
+      use_finite_cell_mesh, FiniteCellMesh<T, Np_1d>,
+      CutMesh<T, Np_1d, Grid, PushStrategy::Spine>>::type;
   using Quadrature =
       GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER, Grid, Np_1d, Mesh>;
   using Basis = GDBasis2D<T, Mesh>;
@@ -871,6 +871,25 @@ void execute_interface_elasticity(std::string prefix, int nxy,
     secondary_stencil_vtk.write_stencils(mesh_secondary.get_elem_nodes());
   }
 
+  // debug
+  {
+    json j_primary;
+    for (int i = 0; i < mesh_primary.get_num_elements(); i++) {
+      j_primary["elem_" + std::to_string(i)] = mesh_primary.get_pterms(i);
+    }
+    write_json(std::filesystem::path(prefix) /
+                   std::filesystem::path("debug_pterms_primary.json"),
+               j_primary);
+
+    json j_secondary;
+    for (int i = 0; i < mesh_secondary.get_num_elements(); i++) {
+      j_secondary["elem_" + std::to_string(i)] = mesh_secondary.get_pterms(i);
+    }
+    write_json(std::filesystem::path(prefix) /
+                   std::filesystem::path("debug_pterms_secondary.json"),
+               j_secondary);
+  }
+
   // Evaluate norm errors
   using EnergyNormPhysics =
       LinearElasticityEnergyNormError<T, spatial_dim,
@@ -919,21 +938,22 @@ void execute_interface_elasticity(std::string prefix, int nxy,
              j);
 
   // Evaluate stress at quadratures
-  {
-    // left mesh
-    eval_bulk_stress(
-        std::filesystem::path(prefix) /
-            std::filesystem::path("quad_primary.vtk"),
-        E1, nu1, mesh_primary, physics_app->get_primary_bulk_quadrature(),
-        physics_app->get_primary_basis(), sol_primary, stress_fun_l);
-
-    // right mesh
-    eval_bulk_stress(
-        std::filesystem::path(prefix) /
-            std::filesystem::path("quad_secondary.vtk"),
-        E2, nu2, mesh_secondary, physics_app->get_secondary_bulk_quadrature(),
-        physics_app->get_secondary_basis(), sol_secondary, stress_fun_r);
-  }
+  // {
+  //   // left mesh
+  //   eval_bulk_stress(
+  //       std::filesystem::path(prefix) /
+  //           std::filesystem::path("quad_primary.vtk"),
+  //       E1, nu1, mesh_primary, physics_app->get_primary_bulk_quadrature(),
+  //       physics_app->get_primary_basis(), sol_primary, stress_fun_l);
+  //
+  //   // right mesh
+  //   eval_bulk_stress(
+  //       std::filesystem::path(prefix) /
+  //           std::filesystem::path("quad_secondary.vtk"),
+  //       E2, nu2, mesh_secondary,
+  //       physics_app->get_secondary_bulk_quadrature(),
+  //       physics_app->get_secondary_basis(), sol_secondary, stress_fun_r);
+  // }
 
   // Evaluate stress at interface
   {
@@ -959,9 +979,9 @@ void execute_mms(std::string prefix, int nxy, std::string physics,
   using T = double;
   using Grid = StructuredGrid2D<T>;
 
-  using Mesh =
-      typename std::conditional<use_finite_cell_mesh, FiniteCellMesh<T, Np_1d>,
-                                CutMesh<T, Np_1d>>::type;
+  using Mesh = typename std::conditional<
+      use_finite_cell_mesh, FiniteCellMesh<T, Np_1d>,
+      CutMesh<T, Np_1d, Grid, PushStrategy::Spine>>::type;
   using Quadrature =
       GDLSFQuadrature2D<T, Np_1d, QuadPtType::INNER, Grid, Np_1d, Mesh>;
   using Basis = GDBasis2D<T, Mesh>;

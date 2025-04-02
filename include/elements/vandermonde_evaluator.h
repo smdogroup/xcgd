@@ -141,18 +141,7 @@ class VandermondeEvaluator {
 
     Ck.resize(nnodes * nnodes);
 
-    std::vector<std::pair<int, int>> verts(nnodes, {-1, -1});
-    for (int i = 0; i < verts.size(); i++) {
-      int ixy[2] = {-1, -1};
-      mesh.get_grid().get_vert_coords(mesh.get_node_vert(nodes[i]), ixy);
-      verts[i] = {ixy[0], ixy[1]};
-    }
-
-    // Get pterms for polynomial bases
-    int dir = mesh.get_elem_dir(elem);
-    int dim = dir / spatial_dim;
-    pterms = verts_to_pterms(verts, dim == 1);
-
+    pterms = mesh.get_pterms(elem);
     std::vector<T> xpows(Np_1d), ypows(Np_1d);
 
     T xloc_min[spatial_dim], xloc_max[spatial_dim], xi_max[spatial_dim];
