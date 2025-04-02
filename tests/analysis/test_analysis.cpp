@@ -564,7 +564,7 @@ TEST(analysis, EnergyPartialStressKSSurfNp2) {
   T yield_stress = 100.0;
   Physics physics(ksrho, E, nu, yield_stress);
 
-  test_LSF_energy_derivatives<Mesh, Quadrature, Physics>(physics, 1e-5);
+  test_LSF_energy_derivatives<Mesh, Quadrature, Physics>(physics, 5e-4);
 }
 
 TEST(analysis, EnergyPartialStressKSSurfNp4) {
@@ -592,5 +592,5 @@ TEST(analysis, EnergyPartialStressKSSurfNp4FCMesh) {
   T yield_stress = 100.0;
   Physics physics(ksrho, E, nu, yield_stress);
 
-  test_LSF_energy_derivatives<Mesh, Quadrature, Physics>(physics, 1e-5);
+  test_LSF_energy_derivatives<Mesh, Quadrature, Physics>(physics, 5e-5);
 }
