@@ -273,11 +273,23 @@ class AnchorMesh final
     for (int iy = 0; iy < nxy[1] + 1; iy++) {
       int vert = this->grid.get_coords_vert(nxy[0], iy);
       bc[vert].push_back({0, D_ux});  // prescribe the x-displacement
+      bc[vert].push_back({1, 0.0});   // prescribe the y-displacement
 
       // Set void verts
       void_verts.insert(vert);
     }
   }
+
+  // // Set load on edge (D)
+  // std::set<int> get_loaded_cells() {
+  //   std::set<int> loaded_cells;
+  //   for (int iy = 0; iy < nxy[1]; iy++) {
+  //     int c = this->grid.get_coords_cell(nxy[0] - 1, iy);
+  //     loaded_cells.insert(c);
+  //   }
+  //
+  //   return loaded_cells;
+  // }
 
   int get_nvars() { return this->grid.get_num_verts(); }
   T get_domain_area() { return lxy[0] * lxy[1]; }
@@ -605,12 +617,6 @@ class TopoAnalysis {
       [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
         return A2D::Vec<T, Basis::spatial_dim>{};
       };
-  constexpr static auto load_func =
-      [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
-        A2D::Vec<T, Basis::spatial_dim> ret;
-        ret(1) = -1.0;
-        return ret;
-      };
 
   using ElasticVanilla =
       StaticElastic<T, Mesh, Quadrature, Basis, typeof(int_func)>;
@@ -654,18 +660,6 @@ class TopoAnalysis {
   using BulkInt = BulkIntegration<T, Grid::spatial_dim>;
   using BulkIntAnalysis = GalerkinAnalysis<T, Mesh, Quadrature, Basis, BulkInt>;
 
-  using LoadPhysics =
-      ElasticityExternalLoad<T, Basis::spatial_dim, typeof(load_func)>;
-  using LoadQuadratureRight =
-      GDGaussQuadrature2D<T, Np_1d, QuadPtType::SURFACE, SurfQuad::RIGHT, Mesh>;
-  using LoadAnalysisRight =
-      GalerkinAnalysis<T, Mesh, LoadQuadratureRight, Basis, LoadPhysics,
-                       from_to_grid_mesh>;
-  using LoadQuadratureTop =
-      GDGaussQuadrature2D<T, Np_1d, QuadPtType::SURFACE, SurfQuad::TOP, Mesh>;
-  using LoadAnalysisTop = GalerkinAnalysis<T, Mesh, LoadQuadratureTop, Basis,
-                                           LoadPhysics, from_to_grid_mesh>;
-
   int constexpr static spatial_dim = Basis::spatial_dim;
 
  public:
@@ -706,14 +700,13 @@ class TopoAnalysis {
         stress_ks_analysis(erode_mesh, erode_quadrature, erode_basis,
                            stress_ks),
         surf_stress(parser.get_double_option("E"),
-                    parser.get_double_option("nu"), SurfStressType::normal),
+                    parser.get_double_option("nu")),
         surf_stress_analysis(erode_mesh, erode_surf_quadrature, erode_basis,
                              surf_stress),
         surf_stress_ks(parser.get_double_option("stress_ksrho_init"),
                        parser.get_double_option("E"),
                        parser.get_double_option("nu"),
-                       parser.get_double_option("surf_yield_stress"), 1.0,
-                       SurfStressType::normal),
+                       parser.get_double_option("surf_yield_stress"), 1.0),
         surf_stress_ks_analysis(erode_mesh, erode_surf_quadrature, erode_basis,
                                 surf_stress_ks),
         bulk_int_analysis(erode_mesh, erode_quadrature, erode_basis, bulk_int),
@@ -761,6 +754,18 @@ class TopoAnalysis {
     }
     if (parser.get_bool_option("has_surf_stress_objective")) {
       foi_set.insert(FOI::surf_stress);
+      std::string surf_stress_type = parser.get_str_option("surf_stress_type");
+      if (surf_stress_type == "normal") {
+        surf_stress.set_type(SurfStressType::normal);
+        surf_stress_ks.set_type(SurfStressType::normal);
+      } else if (surf_stress_type == "tangent") {
+        surf_stress.set_type(SurfStressType::tangent);
+        surf_stress_ks.set_type(SurfStressType::tangent);
+      } else {
+        throw std::runtime_error("invalid surf_stress_type " +
+                                 surf_stress_type +
+                                 ", choices are normal and tangent");
+      }
     }
 
     if (parser.get_bool_option("has_grad_penalty_objective")) {
@@ -805,8 +810,22 @@ class TopoAnalysis {
       grid.get_vert_xloc(i, xloc);
       T x = xloc[0];
       T y = xloc[1];
-      dvs[i] = (x * x / a / a + y * y / b / b - 1.0) / t +
-               0.5;  // in [0, 1] and dvs == 0.5 is the cut boundary
+      // dvs[i] = (x * x / a / a + y * y / b / b - 1.0) / t +
+      //          0.5;  // in [0, 1] and dvs == 0.5 is the cut boundary
+      T region1 =
+          y - x - parser.get_double_option("anchor_clamped_frac") * lxy[1];
+      T region2 = y - 0.5 * lxy[1];
+      T region3 = x - 0.9;
+      dvs[i] = hard_max<T>({region1, region2, region3});
+    }
+
+    // This is a (conservative) maximum possible magnitude of the
+    // signed-distance function
+    T l_max = 0.6;
+
+    // scale dv values so they're in [0, 1]
+    for (int i = 0; i < nverts; i++) {
+      dvs[i] = (dvs[i] + l_max) / 2.0 / l_max;
     }
 
     return dvs;
@@ -1089,6 +1108,15 @@ class TopoAnalysis {
     VandermondeCondLogger::enable();
 
     try {
+      auto load_func = [](const A2D::Vec<T, Basis::spatial_dim>& xloc) {
+        A2D::Vec<T, Basis::spatial_dim> ret;
+        ret(1) = -1.0;
+        return ret;
+      };
+
+      using LoadPhysics =
+          ElasticityExternalLoad<T, Basis::spatial_dim, typeof(load_func)>;
+
       LoadPhysics load_physics(load_func);
       std::set<int> load_elements;
       auto& elastic_mesh = elastic->get_mesh();
@@ -1103,12 +1131,25 @@ class TopoAnalysis {
 
       bool load_top = parser.get_bool_option("load_top");
       if (load_top) {
+        using LoadQuadratureTop =
+            GDGaussQuadrature2D<T, Np_1d, QuadPtType::SURFACE, SurfQuad::TOP,
+                                Mesh>;
+        using LoadAnalysisTop =
+            GalerkinAnalysis<T, Mesh, LoadQuadratureTop, Basis, LoadPhysics,
+                             from_to_grid_mesh>;
+
         LoadQuadratureTop load_quadrature(elastic_mesh, load_elements);
         LoadAnalysisTop load_analysis(elastic_mesh, load_quadrature,
                                       elastic->get_basis(), load_physics);
         sol = elastic->solve(bc_dof, bc_vals,
                              std::tuple<LoadAnalysisTop>(load_analysis), chol);
       } else {
+        using LoadQuadratureRight =
+            GDGaussQuadrature2D<T, Np_1d, QuadPtType::SURFACE, SurfQuad::RIGHT,
+                                Mesh>;
+        using LoadAnalysisRight =
+            GalerkinAnalysis<T, Mesh, LoadQuadratureRight, Basis, LoadPhysics,
+                             from_to_grid_mesh>;
         LoadQuadratureRight load_quadrature(elastic_mesh, load_elements);
         LoadAnalysisRight load_analysis(elastic_mesh, load_quadrature,
                                         elastic->get_basis(), load_physics);
@@ -1214,7 +1255,7 @@ class TopoAnalysis {
 
       surf_ks_energy = surf_stress_ks_analysis.energy(nullptr, sol.data());
 
-      surf_ks_stress_ratio = max_surf_stress_ratio +
+      surf_ks_stress_ratio = max_surf_stress_ratio * max_surf_stress_ratio +
                              log(surf_ks_energy) / surf_stress_ks.get_ksrho();
     }
 

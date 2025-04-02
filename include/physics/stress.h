@@ -388,7 +388,8 @@ class LinearElasticity2DSurfStressAggregation final
     }
 
     return weight * cq *
-           exp(ksrho * (stress / yield_stress - max_stress_ratio));
+           exp(ksrho * (stress * stress / yield_stress / yield_stress -
+                        max_stress_ratio * max_stress_ratio));
   }
 
   void residual(T weight, T _, A2D::Vec<T, spatial_dim>& __,
@@ -439,10 +440,11 @@ class LinearElasticity2DSurfStressAggregation final
         A2D::SymIsotropic(mu, lambda, E_obj, S_obj),
         A2D::MatVecMult(S_obj, nrm, Sn_obj),
         A2D::VecDot(left, Sn_obj, stress_obj),
-        A2D::Eval(
-            weight * cq *
-                exp(ksrho * (stress_obj / yield_stress - max_stress_ratio)),
-            output_obj));
+        A2D::Eval(weight * cq *
+                      exp(ksrho * (stress_obj * stress_obj / yield_stress /
+                                       yield_stress -
+                                   max_stress_ratio * max_stress_ratio)),
+                  output_obj));
     output_obj.bvalue() = 1.0;
     stack.reverse();
   }
@@ -496,10 +498,11 @@ class LinearElasticity2DSurfStressAggregation final
         A2D::SymIsotropic(mu, lambda, E_obj, S_obj),
         A2D::MatVecMult(S_obj, nrm_normalized_obj, Sn_obj),
         A2D::VecDot(left_obj, Sn_obj, stress_obj),
-        A2D::Eval(
-            weight * cq_obj *
-                exp(ksrho * (stress_obj / yield_stress - max_stress_ratio)),
-            output_obj));
+        A2D::Eval(weight * cq_obj *
+                      exp(ksrho * (stress_obj * stress_obj / yield_stress /
+                                       yield_stress -
+                                   max_stress_ratio * max_stress_ratio)),
+                  output_obj));
     output_obj.bvalue() = 1.0;
     stack.reverse();
   }
