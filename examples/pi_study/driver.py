@@ -3,14 +3,21 @@ import numpy as np
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 
+import scienceplots
+
+# # Get ggplot colors
+colors = plt.style.library["ggplot"]["axes.prop_cycle"].by_key()["color"]
+
+plt.style.use(["science"])
+
 if __name__ == "__main__":
 
     q = [1, 2, 3, 4, 5]
     n = np.logspace(np.log10(10), np.log10(3000), 30).astype(int)
     # n = np.logspace(np.log10(10), np.log10(1000), 20).astype(int)
 
-    fig, axs = plt.subplots(ncols=3, figsize=(15, 5), constrained_layout=True)
-    for q_ in q:
+    fig, axs = plt.subplots(ncols=2, figsize=(7.2, 3.6), constrained_layout=True)
+    for index, q_ in enumerate(q):
         h_native_list = []
         h_algoim_list = []
 
@@ -51,6 +58,11 @@ if __name__ == "__main__":
             "-o",
             label="q=%d" % q_,
             alpha=0.5,
+            lw=1.0,
+            markeredgewidth=1.0,
+            markersize=6.0,
+            markeredgecolor="black",
+            color=colors[index],
         )
         axs[1].loglog(
             np.array(h_algoim_list) ** 2,
@@ -58,30 +70,34 @@ if __name__ == "__main__":
             "-o",
             label="q=%d" % q_,
             alpha=0.5,
+            lw=1.0,
+            markeredgewidth=1.0,
+            markersize=6.0,
+            markeredgecolor="black",
+            color=colors[index],
         )
 
-        axs[2].semilogx(
-            n_list,
-            np.array(nquads_algoim_list) / np.array(nquads_native_list),
-            "-o",
-            label="q=%d" % q_,
-            alpha=0.5,
-        )
+        # axs[2].semilogx(
+        #     n_list,
+        #     np.array(nquads_algoim_list) / np.array(nquads_native_list),
+        #     "-o",
+        #     label="q=%d" % q_,
+        #     alpha=0.5,
+        # )
 
-    axs[0].set_title("Gaussian quadratures")
-    axs[1].set_title("Saye's quadratures")
-    axs[2].set_title("Adaptivity")
+    axs[0].set_title("Gaussian Quadratures")
+    axs[1].set_title("High-order Cut Quadratures")
+    # axs[2].set_title("Adaptivity")
 
     for ax in axs[:2]:
         ax.grid()
         ax.legend()
-        ax.set_xlabel(r"$h^2$")
-        ax.set_ylabel(r"$|\pi - \pi_{exact}|$")
+        ax.set_xlabel(r"Mesh Size $h$")
+        ax.set_ylabel(r"Numerical Integration Error $|\pi_h - \pi|$")
 
-    axs[2].grid()
-    axs[2].legend()
-    axs[2].set_xlabel("n")
-    axs[2].set_ylabel(r"$\dfrac{\mathrm{num~Saye's~quads}}{\mathrm{num~Gauss~quads}}$")
+    # axs[2].grid()
+    # axs[2].legend()
+    # axs[2].set_xlabel("n")
+    # axs[2].set_ylabel(r"$\dfrac{\mathrm{num~Saye's~quads}}{\mathrm{num~Gauss~quads}}$")
 
     fig.savefig("pi_study.pdf")
-    plt.show()
