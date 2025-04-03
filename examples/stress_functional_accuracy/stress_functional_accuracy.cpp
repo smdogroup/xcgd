@@ -1142,7 +1142,7 @@ void execute_mms(std::string prefix, int nxy, std::string physics,
   PoissonBCs poisson_bcs(nitsche_eta, poisson_exact_fun);
 
   ElasticityBulk elasticity_bulk(E, nu, elasticity_intf_fun);
-  ElasticityBCs elasticity_bcs(nitsche_eta, elasticity_exact_fun);
+  ElasticityBCs elasticity_bcs(nitsche_eta, E, nu, elasticity_exact_fun);
 
   PoissonApp<T, Mesh, Quadrature, Basis, typeof(poisson_source_fun)>
       poisson_app(*mesh, quadrature, basis, poisson_source_fun);

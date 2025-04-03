@@ -316,7 +316,9 @@ void test_linear_elasticity_cut_dirichlet(
   };
   using Physics =
       LinearElasticityCutDirichlet<T, Basis::spatial_dim, dim, typeof(bc_fun)>;
-  Physics physics(1.23, bc_fun);
+  double eta = 1.23;
+  T E = 1e2, nu = 0.3;
+  Physics physics(1.23, E, nu, bc_fun);
   test_physics_fd(tuple, physics, h, tol);
 }
 
@@ -362,8 +364,6 @@ TEST(physics, PoissonCutDirichletEigM) {
 
 TEST(physics, LinearElasticityCutDirichlet) {
   test_linear_elasticity_cut_dirichlet<2>(create_gd_lsf_surf_basis());
-  test_linear_elasticity_cut_dirichlet<3>(create_gd_lsf_surf_basis());
-  test_linear_elasticity_cut_dirichlet<4>(create_gd_lsf_surf_basis());
 }
 
 TEST(physics, ElasticityExternalLoad) {

@@ -229,7 +229,7 @@ template <typename T, int spatial_dim_, int dim, class BCFunc>
 class LinearElasticityCutDirichlet final
     : public PhysicsBase<T, spatial_dim_, 0, dim> {
  private:
-  static_assert(spatial_dim_ == 2,
+  static_assert(spatial_dim_ == 2 and dim == 2,
                 "This is only implemented for 2d problems for now");
   using PhysicsBase_s = PhysicsBase<T, spatial_dim_, 0, dim>;
 
@@ -243,8 +243,11 @@ class LinearElasticityCutDirichlet final
    * @param bc_func functor with the following signature:
    *        A2D::Vec<T, dof_per_node> bc_func(A2D::Vec<T, spatial_dim> xloc)
    */
-  LinearElasticityCutDirichlet(double eta, const BCFunc& bc_func)
-      : eta(eta), bc_func(bc_func) {}
+  LinearElasticityCutDirichlet(double eta, T E, T nu, const BCFunc& bc_func)
+      : eta(eta),
+        mu(0.5 * E / (1.0 + nu)),
+        lambda(E * nu / ((1.0 + nu) * (1.0 - nu))),
+        bc_func(bc_func) {}
 
   T energy(T weight, T _, A2D::Vec<T, spatial_dim>& xloc,
            A2D::Vec<T, spatial_dim>& nrm_ref,
@@ -253,6 +256,8 @@ class LinearElasticityCutDirichlet final
            A2D::Mat<T, dof_per_node, spatial_dim>& grad) const {
     A2D::Vec<T, spatial_dim> tan_ref, nrm;
     A2D::Vec<T, dim> g(bc_func(xloc));
+
+    A2D::SymMat<T, spatial_dim> E, S;
 
     A2D::Mat<T, spatial_dim, spatial_dim> rot;
     rot(0, 1) = -1.0;
@@ -269,8 +274,11 @@ class LinearElasticityCutDirichlet final
     A2D::MatVecMult(JTJ, tan_ref, JTJdt);
     A2D::VecDot(tan_ref, JTJdt, scale2);
 
-    A2D::Vec<T, dof_per_node> ngrad;  // ∂u/∂n
-    A2D::MatVecMult(grad, nrm, ngrad);
+    A2D::Vec<T, dof_per_node> ngrad;  // stress * n
+
+    A2D::MatGreenStrain<A2D::GreenStrainType::LINEAR>(grad, E);
+    A2D::SymIsotropic(mu, lambda, E, S);
+    A2D::MatVecMult(S, nrm, ngrad);
 
     T ngradu = 0.0, uu = 0.0, ngradg = 0.0, ug = 0.0;
     A2D::VecDot(ngrad, u, ngradu);
@@ -300,6 +308,7 @@ class LinearElasticityCutDirichlet final
     // Create quantites
     A2D::ADObj<T> scale2_obj, output_obj, ngradu_obj, uu_obj, ngradg_obj,
         ug_obj;
+    A2D::ADObj<A2D::SymMat<T, spatial_dim>> E_obj, S_obj;
     A2D::ADObj<A2D::Vec<T, dof_per_node>> ngrad_obj;
     A2D::ADObj<A2D::Mat<T, spatial_dim, spatial_dim>> J_obj(J), JTJ_obj;
     A2D::ADObj<A2D::Vec<T, spatial_dim>> JTJdt_obj;
@@ -314,7 +323,9 @@ class LinearElasticityCutDirichlet final
                                                                    JTJ_obj),
         A2D::MatVecMult(JTJ_obj, tan_ref, JTJdt_obj),
         A2D::VecDot(tan_ref, JTJdt_obj, scale2_obj),
-        A2D::MatVecMult(grad_obj, nrm, ngrad_obj),
+        A2D::MatGreenStrain<A2D::GreenStrainType::LINEAR>(grad_obj, E_obj),
+        A2D::SymIsotropic(mu, lambda, E_obj, S_obj),
+        A2D::MatVecMult(S_obj, nrm, ngrad_obj),
         A2D::VecDot(ngrad_obj, u_obj, ngradu_obj),
         A2D::VecDot(u_obj, u_obj, uu_obj),
         A2D::VecDot(ngrad_obj, g, ngradg_obj), A2D::VecDot(u_obj, g, ug_obj),
@@ -348,6 +359,7 @@ class LinearElasticityCutDirichlet final
     // Create quantites
     A2D::Vec<T, dof_per_node> ub;
     A2D::Mat<T, dof_per_node, spatial_dim> bgrad;
+    A2D::A2DObj<A2D::SymMat<T, spatial_dim>> E_obj, S_obj;
     A2D::A2DObj<T> scale2_obj, output_obj, ngradu_obj, uu_obj, ngradg_obj,
         ug_obj;
     A2D::A2DObj<A2D::Vec<T, dof_per_node>> ngrad_obj;
@@ -364,7 +376,9 @@ class LinearElasticityCutDirichlet final
                                                                    JTJ_obj),
         A2D::MatVecMult(JTJ_obj, tan_ref, JTJdt_obj),
         A2D::VecDot(tan_ref, JTJdt_obj, scale2_obj),
-        A2D::MatVecMult(grad_obj, nrm, ngrad_obj),
+        A2D::MatGreenStrain<A2D::GreenStrainType::LINEAR>(grad_obj, E_obj),
+        A2D::SymIsotropic(mu, lambda, E_obj, S_obj),
+        A2D::MatVecMult(S_obj, nrm, ngrad_obj),
         A2D::VecDot(ngrad_obj, u_obj, ngradu_obj),
         A2D::VecDot(u_obj, u_obj, uu_obj),
         A2D::VecDot(ngrad_obj, g, ngradg_obj), A2D::VecDot(u_obj, g, ug_obj),
@@ -399,6 +413,7 @@ class LinearElasticityCutDirichlet final
     A2D::Mat<T, dof_per_node, spatial_dim> bgrad, pgrad, hgrad;
     A2D::A2DObj<T> scale2_obj, output_obj, ngradu_obj, uu_obj, ngradg_obj,
         ug_obj;
+    A2D::A2DObj<A2D::SymMat<T, spatial_dim>> E_obj, S_obj;
     A2D::A2DObj<A2D::Vec<T, dof_per_node>> ngrad_obj;
     A2D::A2DObj<A2D::Mat<T, spatial_dim, spatial_dim>> J_obj(J), JTJ_obj;
     A2D::A2DObj<A2D::Vec<T, spatial_dim>> JTJdt_obj;
@@ -413,7 +428,9 @@ class LinearElasticityCutDirichlet final
                                                                    JTJ_obj),
         A2D::MatVecMult(JTJ_obj, tan_ref, JTJdt_obj),
         A2D::VecDot(tan_ref, JTJdt_obj, scale2_obj),
-        A2D::MatVecMult(grad_obj, nrm, ngrad_obj),
+        A2D::MatGreenStrain<A2D::GreenStrainType::LINEAR>(grad_obj, E_obj),
+        A2D::SymIsotropic(mu, lambda, E_obj, S_obj),
+        A2D::MatVecMult(S_obj, nrm, ngrad_obj),
         A2D::VecDot(ngrad_obj, u_obj, ngradu_obj),
         A2D::VecDot(u_obj, u_obj, uu_obj),
         A2D::VecDot(ngrad_obj, g, ngradg_obj), A2D::VecDot(u_obj, g, ug_obj),
@@ -450,6 +467,7 @@ class LinearElasticityCutDirichlet final
 
  private:
   double eta;             // A sufficiently largeN itsche parameter
+  T mu, lambda;           // Lame parameters
   const BCFunc& bc_func;  // the Dirichlet boundary value evaluator
 };
 
