@@ -1245,13 +1245,13 @@ void execute_mms(std::string prefix, int nxy, std::string physics,
     ToVTK<T, Mesh> vtk(*mesh, std::filesystem::path(prefix) /
                                   std::filesystem::path("cut.vtk"));
     vtk.write_mesh();
-    vtk.write_sol("u", sol.data());
     vtk.write_sol("lsf", mesh->get_lsf_nodes().data());
 
     FieldToVTKNew<T, spatial_dim> quad_vtk(std::filesystem::path(prefix) /
                                            std::filesystem::path("quad.vtk"));
 
     if (physics == "poisson") {
+      vtk.write_sol("u", sol.data());
       std::vector<T> xloc_samples =
           poisson_val_norm_analysis.interpolate_energy(sol.data()).first;
       quad_vtk.add_mesh(xloc_samples);
@@ -1273,6 +1273,7 @@ void execute_mms(std::string prefix, int nxy, std::string physics,
       quad_vtk.add_sol("energy_norm", energy_norm_samples);
       quad_vtk.write_sol("energy_norm");
     } else {
+      vtk.write_vec("u", sol.data());
       std::vector<T> xloc_samples =
           elasticity_stress_norm_analysis.interpolate_energy(sol.data()).first;
       quad_vtk.add_mesh(xloc_samples);
