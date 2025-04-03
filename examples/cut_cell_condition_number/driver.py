@@ -4,13 +4,17 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 from scipy.io import mmread
 from os import path
-import niceplots
 import os
 import json
 import matplotlib.patches as patches
 import argparse
 
-plt.style.use(niceplots.get_style())
+import scienceplots
+
+# # Get ggplot colors
+colors = plt.style.library["ggplot"]["axes.prop_cycle"].by_key()["color"]
+
+plt.style.use(["science"])
 
 
 def plot_mesh(prefix, Np_1d: int, nxy: int, use_finite_cell_mesh: bool, cell: int):
@@ -139,8 +143,9 @@ def plot_mesh(prefix, Np_1d: int, nxy: int, use_finite_cell_mesh: bool, cell: in
         labels,
         ncol=2,
         loc="upper center",
-        bbox_to_anchor=(0.5, 1.0),
+        bbox_to_anchor=(0.5, 1.03),
         bbox_transform=fig.transFigure,
+        fontsize=15,
     )
     l.get_frame().set_edgecolor("none")
     l.get_frame().set_facecolor("none")
@@ -152,6 +157,7 @@ def plot_mesh(prefix, Np_1d: int, nxy: int, use_finite_cell_mesh: bool, cell: in
 
 
 def sweep(
+    index,
     run_name,
     ax,
     Np_1d=2,
@@ -215,15 +221,27 @@ def sweep(
             np.linalg.cond(mmread(path.join(prefix, "stiffness_matrix.mtx")).todense())
         )
 
-    ax.loglog(delta, cond, "-o", label=("p=%d" % p), clip_on=False, zorder=100)
+    ax.loglog(
+        delta,
+        cond,
+        "-o",
+        label=("p=%d" % p),
+        clip_on=False,
+        zorder=100,
+        lw=1.0,
+        markeredgewidth=1.0,
+        markersize=6.0,
+        markeredgecolor="black",
+        color=colors[index],
+    )
 
     return
 
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
-    p.add_argument("--mesh", nargs="*", default=["fc", "cut"], choices=["fc", "cut"])
-    p.add_argument("--Np_1d", nargs="*", default=[2, 4, 6], choices=[2, 4, 6])
+    p.add_argument("--mesh", nargs="*", default=["fc", "cut"], type=str)
+    p.add_argument("--Np_1d", nargs="*", default=[2, 4, 6], type=int)
     p.add_argument(
         "--ersatz",
         nargs="*",
@@ -240,9 +258,10 @@ if __name__ == "__main__":
             if ersatz == "nitsche":
                 run_name += f"_{args.nitsche_eta:.0e}"
 
-            fig, ax = plt.subplots()
-            for Np_1d in args.Np_1d:
+            fig, ax = plt.subplots(figsize=(4.8, 3.2))
+            for index, Np_1d in enumerate(args.Np_1d):
                 sweep(
+                    index=index,
                     run_name=run_name,
                     ax=ax,
                     Np_1d=Np_1d,
@@ -255,8 +274,8 @@ if __name__ == "__main__":
                     ersatz=ersatz,
                 )
 
-            ax.set_xlabel(r"$dh$")
-            ax.set_ylabel(r"condition number: $\kappa(K)$")
+            ax.set_xlabel(r"Cut-cell Ratio $\alpha$")
+            ax.set_ylabel(r"Condition Number $\kappa(K)$")
 
             ax.invert_xaxis()
             ax.legend()
