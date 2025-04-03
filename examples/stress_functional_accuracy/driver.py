@@ -9,6 +9,13 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import os
 
+import scienceplots
+
+# # Get ggplot colors
+colors = plt.style.library["ggplot"]["axes.prop_cycle"].by_key()["color"]
+
+plt.style.use(["science"])
+
 from typing import List
 
 
@@ -42,7 +49,7 @@ def execute(prefix, cmd):
 
 
 def annotate_slope(
-    ax, pt0, pt1, slide=0.15, scale=0.7, hoffset=0.0, voffset=-0.1, voffset_text=-0.35
+    ax, pt0, pt1, slide=0.05, scale=0.9, hoffset=0.0, voffset=-0.1, voffset_text=-0.35
 ):
     """
     Annotate the slope on a log-log plot
@@ -84,7 +91,7 @@ def annotate_slope(
         edgecolor="black",
         facecolor="gray",
         zorder=100,
-        lw=1,
+        lw=0.5,
     )
 
     # Add the triangle patch to the plot
@@ -241,13 +248,13 @@ def plot_elasticity_interface(df, voffset, voffset_text):
     fig, axs = plt.subplots(
         ncols=2,
         nrows=2,
-        figsize=(12.8, 9.6),
+        figsize=(10.6, 8.0),
         constrained_layout=True,
     )
 
     axs = axs.flatten()
 
-    for Np_1d, sub_df in df.groupby("Np_1d"):
+    for i, (Np_1d, sub_df) in enumerate(df.groupby("Np_1d")):
         for key, ax in zip(
             [
                 "stress_norm_primary",
@@ -262,14 +269,19 @@ def plot_elasticity_interface(df, voffset, voffset_text):
             y = sub_df[key]
             slope, _ = np.polyfit(np.log10(x), np.log10(y), deg=1)
             label = f"$p={Np_1d - 1}, \Delta:{slope:.2f}$"
-            ax.loglog(x, y, "-o", label=label)
-            x0, x1 = x.iloc[-2:]
-            y0, y1 = y.iloc[-2:]
-            annotate_slope(
-                ax, (x0, y0), (x1, y1), voffset=voffset, voffset_text=voffset_text
-            )
 
-    for ylabel, title, ax in zip(
+            ax.loglog(
+                x,
+                y,
+                "-o",
+                label=label,
+                lw=1.0,
+                markeredgewidth=1.0,
+                markersize=6.0,
+                markeredgecolor="black",
+                color=colors[i],
+            )
+    for ylabel, title, key, ax in zip(
         [
             r"$\left[\int_{\text{primary mesh},h}  \text{tr}((\mathbf{S} - \mathbf{S}_h)^T(\mathbf{S} - \mathbf{S}_h)) d\Omega\right]^{1/2}$",
             r"$\left[\int_{\text{secondary mesh},h}  \text{tr}((\mathbf{S} - \mathbf{S}_h)^T(\mathbf{S} - \mathbf{S}_h)) d\Omega\right]^{1/2}$",
@@ -282,9 +294,33 @@ def plot_elasticity_interface(df, voffset, voffset_text):
             "Stress Error On Interface from the Primary Mesh",
             "Stress Error On Interface from the Secondary Mesh",
         ],
+        [
+            "stress_norm_primary",
+            "stress_norm_secondary",
+            "stress_norm_primary_interface",
+            "stress_norm_secondary_interface",
+        ],
         axs,
     ):
-        ax.grid(which="both")
+
+        ymin, ymax = ax.get_ylim()
+        v_off = -np.log10(ymax / ymin) * 0.02
+        v_off_txt = -np.log10(ymax / ymin) * 0.035
+
+        for Np_1d, sub_df in df.groupby("Np_1d"):
+            x = sub_df["h"]
+            y = sub_df[key]
+            x0, x1 = x.iloc[-2:]
+            y0, y1 = y.iloc[-2:]
+            annotate_slope(
+                ax,
+                (x0, y0),
+                (x1, y1),
+                voffset=v_off * voffset,
+                voffset_text=v_off_txt * voffset_text,
+            )
+
+        ax.set_ylim(bottom=ymin * 10.0 ** (v_off_txt * 1.05))
         ax.legend()
         ax.set_xlabel(r"$h$")
         ax.set_ylabel(ylabel)
@@ -297,26 +333,48 @@ def plot_elasticity(df, voffset, voffset_text):
     fig, ax = plt.subplots(
         ncols=1,
         nrows=1,
-        figsize=(6.4, 4.8),
+        figsize=(5.3, 4.0),
         constrained_layout=True,
     )
 
-    for Np_1d, sub_df in df.groupby("Np_1d"):
+    for i, (Np_1d, sub_df) in enumerate(df.groupby("Np_1d")):
         # Get averaged slope
         x = sub_df["h"]
         y = sub_df["stress_norm"]
         slope, _ = np.polyfit(np.log10(x), np.log10(y), deg=1)
         label = f"$p={Np_1d - 1}, \Delta:{slope:.2f}$"
-        ax.loglog(x, y, "-o", label=label)
+        ax.loglog(
+            x,
+            y,
+            "-o",
+            label=label,
+            lw=1.0,
+            markeredgewidth=1.0,
+            markersize=6.0,
+            markeredgecolor="black",
+            color=colors[i],
+        )
+
+    ymin, ymax = ax.get_ylim()
+    v_off = -np.log10(ymax / ymin) * 0.02
+    v_off_txt = -np.log10(ymax / ymin) * 0.035
+
+    for Np_1d, sub_df in df.groupby("Np_1d"):
+        x = sub_df["h"]
+        y = sub_df["stress_norm"]
         x0, x1 = x.iloc[-2:]
         y0, y1 = y.iloc[-2:]
         annotate_slope(
-            ax, (x0, y0), (x1, y1), voffset=voffset, voffset_text=voffset_text
+            ax,
+            (x0, y0),
+            (x1, y1),
+            voffset=v_off * voffset,
+            voffset_text=v_off_txt * voffset_text,
         )
 
         ylabel = r"$\left[\int_h  \text{tr}((\mathbf{S} - \mathbf{S}_h)^T(\mathbf{S} - \mathbf{S}_h)) d\Omega\right]^{1/2}$"
 
-        ax.grid(which="both")
+        ax.set_ylim(bottom=ymin * 10.0 ** (v_off_txt * 1.05))
         ax.legend()
         ax.set_xlabel(r"$h$")
         ax.set_ylabel(ylabel)
@@ -341,8 +399,10 @@ if __name__ == "__main__":
         "--mesh", default="cut-mesh", choices=["cut-mesh", "finite-cell-mesh"]
     )
     p.add_argument("--csv", type=str)
-    p.add_argument("--voffset", default=-0.2, type=float)
-    p.add_argument("--voffset_text", default=-0.4, type=float)
+    p.add_argument("--voffset", default=1.0, type=float, help="voffset scaler")
+    p.add_argument(
+        "--voffset_text", default=1.0, type=float, help="voffset_text scaler"
+    )
     p.add_argument("--save-vtk", action="store_true")
     p.add_argument("--use-ersatz", action="store_true")
     p.add_argument("--ersatz-ratio", default=1e-6, type=float)
@@ -381,7 +441,7 @@ if __name__ == "__main__":
     else:
         run_name = f"{args.physics}_energy_precision_{args.mesh}"
 
-    if args.physics == "elasticity" and args.use_ersatz:
+    if args.physics == "elasticity-bulk" and args.use_ersatz:
         run_name += f"_ersatz_{args.ersatz_ratio}"
 
     if args.smoke_test:
