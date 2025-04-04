@@ -279,9 +279,11 @@ if __name__ == "__main__":
 
             ax.invert_xaxis()
             ax.legend()
-            plt.savefig(
-                os.path.join(
-                    run_name,
-                    f"condition_number_study_{'fcell' if use_finite_cell_mesh else 'cut'}.pdf",
-                )
+
+            name = os.path.join(
+                run_name,
+                f"condition_number_study_{'fcell' if use_finite_cell_mesh else 'cut'}",
             )
+
+            plt.savefig(name + ".pdf")
+            plt.savefig(name + ".svg")

@@ -101,3 +101,4 @@ if __name__ == "__main__":
     # axs[2].set_ylabel(r"$\dfrac{\mathrm{num~Saye's~quads}}{\mathrm{num~Gauss~quads}}$")
 
     fig.savefig("pi_study.pdf")
+    fig.savefig("pi_study.svg")

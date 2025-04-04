@@ -478,3 +478,4 @@ if __name__ == "__main__":
         fig, _ = plot_elasticity(df, args.voffset, args.voffset_text)
 
     fig.savefig(os.path.join(run_name, f"{run_name}.pdf"))
+    fig.savefig(os.path.join(run_name, f"{run_name}.svg"))
