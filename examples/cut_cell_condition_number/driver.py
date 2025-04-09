@@ -152,6 +152,7 @@ def plot_mesh(prefix, Np_1d: int, nxy: int, use_finite_cell_mesh: bool, cell: in
 
     # plt.show()
     fig.savefig(os.path.join(prefix, f"mesh_stencil.pdf"))
+    fig.savefig(os.path.join(prefix, f"mesh_stencil.svg"))
 
     plt.close()
 

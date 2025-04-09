@@ -501,7 +501,8 @@ void execute_accuracy_study(std::string prefix, ProbInstance instance,
     physics_bcs = std::make_shared<PhysicsBCs>(nitsche_eta, poisson_bc_fun);
   } else {
     physics_bulk = std::make_shared<PhysicsBulk>(E, nu, elasticity_int_fun);
-    physics_bcs = std::make_shared<PhysicsBCs>(nitsche_eta, elasticity_bc_fun);
+    physics_bcs =
+        std::make_shared<PhysicsBCs>(nitsche_eta, E, nu, elasticity_bc_fun);
   }
 
   QuadratureBulk quadrature_bulk(*mesh_bulk);
