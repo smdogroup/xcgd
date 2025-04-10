@@ -106,6 +106,15 @@ void write_vtk(std::string vtkpath, PhysicsType physics_type,
                const MeshBulk& mesh_bulk, const MeshBCs& mesh_bcs,
                const std::vector<T>& sol, const std::vector<T>& exact_sol,
                const std::vector<T>& source, bool save_stencils) {
+  // Grid solution
+  {
+    auto grid_mesh = mesh_bulk.get_lsf_mesh();
+    ToVTK<T, typeof(grid_mesh)> grid_vtk(grid_mesh, vtkpath + ".grid.vtk");
+    grid_vtk.write_mesh();
+
+    grid_vtk.write_sol("lsf", mesh_bulk.get_lsf_dof().data());
+  }
+
   ToVTK<T, MeshBulk> vtk(mesh_bulk, vtkpath);
   vtk.write_mesh();
 
