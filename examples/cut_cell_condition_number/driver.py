@@ -250,6 +250,8 @@ if __name__ == "__main__":
         choices=["none", "direct", "nitsche"],
     )
     p.add_argument("--nitsche-eta", default=1e5, type=float)
+    p.add_argument("--ymin", default=None, type=float)
+    p.add_argument("--ymax", default=None, type=float)
 
     args = p.parse_args()
 
@@ -280,6 +282,11 @@ if __name__ == "__main__":
 
             ax.invert_xaxis()
             ax.legend()
+
+            if args.ymax:
+                ax.set_ylim(top=args.ymax)
+            if args.ymin:
+                ax.set_ylim(bottom=args.ymin)
 
             name = os.path.join(
                 run_name,
