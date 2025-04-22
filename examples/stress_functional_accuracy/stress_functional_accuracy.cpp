@@ -8,6 +8,7 @@
 #include "physics/stress.h"
 #include "utils/argparser.h"
 #include "utils/json.h"
+#include "utils/timer.h"
 #include "utils/vtk.h"
 
 #define PI 3.14159265358979323846
@@ -183,6 +184,8 @@ void eval_interface_stress(std::string vtk_path, T E, T nu, Mesh& mesh,
 
 template <int Np_1d, bool use_finite_cell_mesh, bool use_ersatz = false>
 void execute_bulk_elasticity(std::string prefix, int nxy, double ersatz_ratio) {
+  StopWatch main_watch;
+
   using T = double;
   using Grid = StructuredGrid2D<T>;
 
@@ -361,9 +364,11 @@ void execute_bulk_elasticity(std::string prefix, int nxy, double ersatz_ratio) {
   LoadAnalysisRight load_analysis_right(mesh, load_quadrature_right, basis,
                                         load_physics_right);
 
+  StopWatch sol_watch;
   std::vector<T> sol = physics_app->solve(
       dof_bcs, dof_vals,
       std::make_tuple(load_analysis_top, load_analysis_right));
+  double sol_time = sol_watch.lap();
 
   // Grid vtk
   {
@@ -394,7 +399,11 @@ void execute_bulk_elasticity(std::string prefix, int nxy, double ersatz_ratio) {
   EnergyNormAnalysis stress_norm_analysis(mesh, quadrature, basis,
                                           stress_norm_physics);
 
+  double total_time = main_watch.lap();
+
   json j = {
+      {"total_time", total_time},
+      {"sol_time", sol_time},
       {"stress_norm", sqrt(stress_norm_analysis.energy(nullptr, sol.data()))}};
   write_json(std::filesystem::path(prefix) / std::filesystem::path("sol.json"),
              j);
@@ -526,6 +535,8 @@ void execute_bulk_elasticity(std::string prefix, int nxy, double ersatz_ratio) {
 template <int Np_1d, bool use_finite_cell_mesh>
 void execute_interface_elasticity(std::string prefix, int nxy,
                                   double nitsche_eta) {
+  StopWatch main_watch;
+
   using T = double;
   using Grid = StructuredGrid2D<T>;
 
@@ -789,7 +800,9 @@ void execute_interface_elasticity(std::string prefix, int nxy,
     }
   }
 
+  StopWatch sol_watch;
   std::vector<T> sol = physics_app->solve(dof_bcs, dof_vals);
+  double sol_time = sol_watch.lap();
 
   // Split sol
   auto& mesh_secondary = physics_app->get_secondary_mesh();
@@ -923,7 +936,11 @@ void execute_interface_elasticity(std::string prefix, int nxy,
       physics_app->get_interface_quadrature(),
       physics_app->get_secondary_basis(), stress_norm_physics_r);
 
-  json j = {{"stress_norm_primary",
+  double total_time = main_watch.lap();
+
+  json j = {{"total_time", total_time},
+            {"sol_time", sol_time},
+            {"stress_norm_primary",
              sqrt(stress_norm_analysis_l.energy(nullptr, sol_primary.data()))},
             {"stress_norm_secondary", sqrt(stress_norm_analysis_r.energy(
                                           nullptr, sol_secondary.data()))},
@@ -976,6 +993,8 @@ void execute_interface_elasticity(std::string prefix, int nxy,
 template <int Np_1d, bool use_finite_cell_mesh>
 void execute_mms(std::string prefix, int nxy, std::string physics,
                  std::string instance, double nitsche_eta, bool save_vtk) {
+  StopWatch main_watch;
+
   using T = double;
   using Grid = StructuredGrid2D<T>;
 
@@ -1159,6 +1178,7 @@ void execute_mms(std::string prefix, int nxy, std::string physics,
 
   // Solve
   std::vector<T> sol;
+  StopWatch sol_watch;
 
   if (instance == "square") {
     if (physics == "elasticity-mms") {
@@ -1188,6 +1208,8 @@ void execute_mms(std::string prefix, int nxy, std::string physics,
       sol = elasticity_nitsche_app.solve();
     }
   }
+
+  double sol_time = sol_watch.lap();
 
   // Evaluate norm errors
   using PoissonEnergyNormPhysics =
@@ -1223,17 +1245,23 @@ void execute_mms(std::string prefix, int nxy, std::string physics,
   ElasticityEnergyNormAnalysis elasticity_stress_norm_analysis(
       *mesh, quadrature, basis, elasticity_stress_norm_physics);
 
+  double total_time = main_watch.lap();
+
   json j;
 
   if (physics == "poisson") {
-    j = {{"val_norm",
+    j = {{"total_time", total_time},
+         {"sol_time", sol_time},
+         {"val_norm",
           sqrt(poisson_val_norm_analysis.energy(nullptr, sol.data()))},
          {"stress_norm",
           sqrt(poisson_stress_norm_analysis.energy(nullptr, sol.data()))},
          {"energy_norm",
           sqrt(poisson_energy_norm_analysis.energy(nullptr, sol.data()))}};
   } else {
-    j = {{"stress_norm",
+    j = {{"total_time", total_time},
+         {"sol_time", sol_time},
+         {"stress_norm",
           sqrt(elasticity_stress_norm_analysis.energy(nullptr, sol.data()))}};
   }
 

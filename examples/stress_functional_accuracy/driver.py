@@ -129,6 +129,8 @@ def run_experiments(
     df_data = {
         "Np_1d": [],
         "h": [],
+        "total_time": [],
+        "sol_time": [],
     }
 
     if physics == "poisson":
@@ -185,6 +187,8 @@ def run_experiments(
 
             df_data["Np_1d"].append(Np_1d)
             df_data["h"].append(1.0 / nxy)
+            df_data["total_time"].append(j["total_time"])
+            df_data["sol_time"].append(j["sol_time"])
 
             if physics == "poisson":
                 df_data["val_norm"].append(j["val_norm"])
@@ -329,7 +333,7 @@ def plot_elasticity_interface(df, voffset, voffset_text):
     return fig, axs
 
 
-def plot_elasticity(df, voffset, voffset_text):
+def plot_elasticity(df, what, voffset, voffset_text):
     fig, ax = plt.subplots(
         ncols=1,
         nrows=1,
@@ -340,7 +344,10 @@ def plot_elasticity(df, voffset, voffset_text):
     for i, (Np_1d, sub_df) in enumerate(df.groupby("Np_1d")):
         # Get averaged slope
         x = sub_df["h"]
-        y = sub_df["stress_norm"]
+        if what == "stress":
+            y = sub_df["stress_norm"]
+        else:
+            y = sub_df[what]
         slope, _ = np.polyfit(np.log10(x), np.log10(y), deg=1)
         label = f"$p={Np_1d - 1}, \Delta:{slope:.2f}$"
         ax.loglog(
@@ -398,6 +405,9 @@ if __name__ == "__main__":
     p.add_argument(
         "--mesh", default="cut-mesh", choices=["cut-mesh", "finite-cell-mesh"]
     )
+    p.add_argument(
+        "--what", default="stress", choices=["stress", "total_time", "sol_time"]
+    )
     p.add_argument("--csv", type=str)
     p.add_argument("--voffset", default=1.0, type=float, help="voffset scaler")
     p.add_argument(
@@ -413,6 +423,10 @@ if __name__ == "__main__":
     p.add_argument("--nxy-max", type=int, default=128)
     p.add_argument("--nxy-num", type=int, default=13)
     args = p.parse_args()
+
+    # TODO: finish others
+    if args.what != "stress":
+        assert args.physics == "elasticity-bulk", "others are not yet implemented"
 
     # Sanity checks
     if args.physics == "elasticity-mms" and args.instance == "square":
@@ -475,7 +489,11 @@ if __name__ == "__main__":
     elif args.physics == "elasticity-interface":
         fig, _ = plot_elasticity_interface(df, args.voffset, args.voffset_text)
     else:
-        fig, _ = plot_elasticity(df, args.voffset, args.voffset_text)
+        fig, _ = plot_elasticity(df, args.what, args.voffset, args.voffset_text)
 
-    fig.savefig(os.path.join(run_name, f"{run_name}.pdf"))
-    fig.savefig(os.path.join(run_name, f"{run_name}.svg"))
+    fig_name = run_name
+    if args.what != "stress":
+        fig_name = args.what + "_" + fig_name
+
+    fig.savefig(os.path.join(run_name, f"{fig_name}.pdf"))
+    fig.savefig(os.path.join(run_name, f"{fig_name}.svg"))
