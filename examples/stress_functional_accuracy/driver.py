@@ -341,11 +341,29 @@ def plot_elasticity(df, what, voffset, voffset_text):
         constrained_layout=True,
     )
 
+    if what == "stress_time":
+        xlabel = r"CPU time"
+    else:
+        xlabel = r"$h$"
+
+    if what == "stress" or what == "stress_time":
+        ylabel = r"$\left[\int_h  \text{tr}((\mathbf{S} - \mathbf{S}_h)^T(\mathbf{S} - \mathbf{S}_h)) d\Omega\right]^{1/2}$"
+    elif what == "roi":
+        ylabel = r"ROI: $\dfrac{1}{\text{CPU time} \cdot \text{error norm}}$"
+    else:
+        ylabel = r"CPU time"
+
     for i, (Np_1d, sub_df) in enumerate(df.groupby("Np_1d")):
         # Get averaged slope
-        x = sub_df["h"]
-        if what == "stress":
+        if what == "stress_time":
+            x = sub_df["total_time"]
+        else:
+            x = sub_df["h"]
+
+        if what == "stress" or what == "stress_time":
             y = sub_df["stress_norm"]
+        elif what == "roi":
+            y = 1.0 / sub_df["stress_norm"] / sub_df["total_time"]
         else:
             y = sub_df[what]
         slope, _ = np.polyfit(np.log10(x), np.log10(y), deg=1)
@@ -366,9 +384,19 @@ def plot_elasticity(df, what, voffset, voffset_text):
     v_off = -np.log10(ymax / ymin) * 0.02
     v_off_txt = -np.log10(ymax / ymin) * 0.035
 
+    # Annotate the slopes
     for Np_1d, sub_df in df.groupby("Np_1d"):
-        x = sub_df["h"]
-        y = sub_df["stress_norm"]
+        if what == "stress_time":
+            x = sub_df["total_time"]
+        else:
+            x = sub_df["h"]
+
+        if what == "stress" or what == "stress_time":
+            y = sub_df["stress_norm"]
+        elif what == "roi":
+            y = 1.0 / sub_df["stress_norm"] / sub_df["total_time"]
+        else:
+            y = sub_df[what]
         x0, x1 = x.iloc[-2:]
         y0, y1 = y.iloc[-2:]
         annotate_slope(
@@ -378,13 +406,11 @@ def plot_elasticity(df, what, voffset, voffset_text):
             voffset=v_off * voffset,
             voffset_text=v_off_txt * voffset_text,
         )
-
-        ylabel = r"$\left[\int_h  \text{tr}((\mathbf{S} - \mathbf{S}_h)^T(\mathbf{S} - \mathbf{S}_h)) d\Omega\right]^{1/2}$"
-
         ax.set_ylim(bottom=ymin * 10.0 ** (v_off_txt * 1.05))
-        ax.legend()
-        ax.set_xlabel(r"$h$")
-        ax.set_ylabel(ylabel)
+
+    ax.legend()
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
 
     return fig, ax
 
@@ -406,7 +432,9 @@ if __name__ == "__main__":
         "--mesh", default="cut-mesh", choices=["cut-mesh", "finite-cell-mesh"]
     )
     p.add_argument(
-        "--what", default="stress", choices=["stress", "total_time", "sol_time"]
+        "--what",
+        default="stress",
+        choices=["stress", "total_time", "roi", "stress_time"],
     )
     p.add_argument("--csv", type=str)
     p.add_argument("--voffset", default=1.0, type=float, help="voffset scaler")
