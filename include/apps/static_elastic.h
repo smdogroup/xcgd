@@ -5,6 +5,7 @@
 #include "nitsche.h"
 #include "physics/linear_elasticity.h"
 #include "sparse_utils/sparse_utils.h"
+#include "utils/timer.h"
 #include "utils/vtk.h"
 
 #ifndef XCGD_STATIC_ELASTIC_H
@@ -69,10 +70,19 @@ class StaticElastic final {
   std::vector<T> solve(
       const std::vector<int>& bc_dof, const std::vector<T>& bc_vals,
       std::shared_ptr<SparseUtils::SparseCholesky<T>>* chol_out = nullptr) {
+    sol_times.clear();
+
     int ndof = Physics::dof_per_node * mesh.get_num_nodes();
 
     // Compute Jacobian matrix
-    BSRMat* jac_bsr = jacobian();
+    BSRMat* jac_bsr = nullptr;
+
+    {
+      auto recorder = [&](double t) { sol_times["jacobian_time"] = t; };
+      ScopedTimer st(recorder);
+      jac_bsr = jacobian();
+    }
+
     jac_bsr->zero_rows(bc_dof.size(), bc_dof.data());
     CSCMat* jac_csc = SparseUtils::bsr_to_csc(jac_bsr);
     jac_csc->zero_columns(bc_dof.size(), bc_dof.data());
@@ -81,7 +91,12 @@ class StaticElastic final {
     rhs = std::vector<T>(ndof, 0.0);
     std::vector<T> t1(ndof, 0.0), t2(ndof, 0.0);
 
-    analysis.residual(nullptr, t1.data(), rhs.data());
+    {
+      auto recorder = [&](double t) { sol_times["residual_time"] = t; };
+      ScopedTimer st(recorder);
+      analysis.residual(nullptr, t1.data(), rhs.data());
+    }
+
     for (int i = 0; i < rhs.size(); i++) {
       rhs[i] *= -1.0;
     }
@@ -106,9 +121,20 @@ class StaticElastic final {
     SparseUtils::CholOrderingType order = SparseUtils::CholOrderingType::ND;
     std::shared_ptr<SparseUtils::SparseCholesky<T>> chol =
         std::make_shared<SparseUtils::SparseCholesky<T>>(jac_csc);
-    chol->factor();
+
+    {
+      auto recorder = [&](double t) { sol_times["chol_factor_time"] = t; };
+      ScopedTimer st(recorder);
+      chol->factor();
+    }
+
     std::vector<T> sol = t2;
-    chol->solve(sol.data());
+
+    {
+      auto recorder = [&](double t) { sol_times["chol_solve_time"] = t; };
+      ScopedTimer st(recorder);
+      chol->solve(sol.data());
+    }
 
     if (chol_out) {
       *chol_out = chol;
@@ -141,10 +167,17 @@ class StaticElastic final {
       const std::vector<int>& bc_dof, const std::vector<T>& bc_vals,
       const std::tuple<LoadAnalyses...>& load_analyses,
       std::shared_ptr<SparseUtils::SparseCholesky<T>>* chol_out = nullptr) {
+    sol_times.clear();
+
     int ndof = Physics::dof_per_node * mesh.get_num_nodes();
 
     // Compute Jacobian matrix
-    BSRMat* jac_bsr = jacobian();
+    BSRMat* jac_bsr;
+    {
+      auto recorder = [&](double t) { sol_times["jacobian_time"] = t; };
+      ScopedTimer st(recorder);
+      jac_bsr = jacobian();
+    }
     jac_bsr->zero_rows(bc_dof.size(), bc_dof.data());
     CSCMat* jac_csc = SparseUtils::bsr_to_csc(jac_bsr);
     jac_csc->zero_columns(bc_dof.size(), bc_dof.data());
@@ -155,11 +188,15 @@ class StaticElastic final {
 
     // Add external load contributions to the right-hand size
     // FIXME: call analysis.residual() here??
-    std::apply(
-        [&t1, this](auto&&... load_analysis) mutable {
-          (load_analysis.residual(nullptr, t1.data(), this->rhs.data()), ...);
-        },
-        load_analyses);
+    {
+      auto recorder = [&](double t) { sol_times["residual_time"] = t; };
+      ScopedTimer st(recorder);
+      std::apply(
+          [&t1, this](auto&&... load_analysis) mutable {
+            (load_analysis.residual(nullptr, t1.data(), this->rhs.data()), ...);
+          },
+          load_analyses);
+    }
     for (int i = 0; i < rhs.size(); i++) {
       rhs[i] *= -1.0;
     }
@@ -185,10 +222,19 @@ class StaticElastic final {
     SparseUtils::CholOrderingType order = SparseUtils::CholOrderingType::ND;
     std::shared_ptr<SparseUtils::SparseCholesky<T>> chol =
         std::make_shared<SparseUtils::SparseCholesky<T>>(jac_csc);
-    chol->factor();
+    {
+      auto recorder = [&](double t) { sol_times["chol_factor_time"] = t; };
+      ScopedTimer st(recorder);
+      chol->factor();
+    }
+
     std::vector<T> sol = t2;
 
-    chol->solve(sol.data());
+    {
+      auto recorder = [&](double t) { sol_times["chol_solve_time"] = t; };
+      ScopedTimer st(recorder);
+      chol->solve(sol.data());
+    }
 
     if (chol_out) {
       *chol_out = chol;
@@ -223,6 +269,8 @@ class StaticElastic final {
   Basis& get_basis() { return basis; }
   Analysis& get_analysis() { return analysis; }
 
+  std::map<std::string, double>& get_sol_times() { return sol_times; }
+
  private:
   Mesh& mesh;
   Quadrature& quadrature;
@@ -232,6 +280,9 @@ class StaticElastic final {
   Analysis analysis;
 
   std::vector<T> rhs;
+
+  StopWatch watch;
+  std::map<std::string, double> sol_times;
 };
 
 // App class for the elastic problem using a main mesh and a complement
@@ -364,10 +415,17 @@ class StaticElasticErsatz final {
   std::vector<T> solve(
       const std::vector<int>& bc_dof, const std::vector<T>& bc_vals,
       std::shared_ptr<SparseUtils::SparseCholesky<T>>* chol_out = nullptr) {
+    sol_times.clear();
+
     int ndof = Physics::dof_per_node * grid.get_num_verts();
 
     // Compute Jacobian matrix
-    BSRMat* jac_bsr = jacobian();
+    BSRMat* jac_bsr = nullptr;
+    {
+      auto recorder = [&](double t) { sol_times["jacobian_time"] = t; };
+      ScopedTimer st(recorder);
+      jac_bsr = jacobian();
+    }
     jac_bsr->zero_rows(bc_dof.size(), bc_dof.data());
     CSCMat* jac_csc = SparseUtils::bsr_to_csc(jac_bsr);
     jac_csc->zero_columns(bc_dof.size(), bc_dof.data());
@@ -376,8 +434,12 @@ class StaticElasticErsatz final {
     rhs = std::vector<T>(ndof, 0.0);
     std::vector<T> t1(ndof, 0.0), t2(ndof, 0.0);
 
-    analysis_l.residual(nullptr, t1.data(), rhs.data());
-    analysis_r.residual(nullptr, t1.data(), rhs.data());
+    {
+      auto recorder = [&](double t) { sol_times["residual_time"] = t; };
+      ScopedTimer st(recorder);
+      analysis_l.residual(nullptr, t1.data(), rhs.data());
+      analysis_r.residual(nullptr, t1.data(), rhs.data());
+    }
     for (int i = 0; i < rhs.size(); i++) {
       rhs[i] *= -1.0;
     }
@@ -402,9 +464,19 @@ class StaticElasticErsatz final {
     SparseUtils::CholOrderingType order = SparseUtils::CholOrderingType::ND;
     std::shared_ptr<SparseUtils::SparseCholesky<T>> chol =
         std::make_shared<SparseUtils::SparseCholesky<T>>(jac_csc);
-    chol->factor();
+    {
+      auto recorder = [&](double t) { sol_times["chol_factor_time"] = t; };
+      ScopedTimer st(recorder);
+      chol->factor();
+    }
+
     std::vector<T> sol = t2;
-    chol->solve(sol.data());
+
+    {
+      auto recorder = [&](double t) { sol_times["chol_solve_time"] = t; };
+      ScopedTimer st(recorder);
+      chol->solve(sol.data());
+    }
 
     if (chol_out) {
       *chol_out = chol;
@@ -437,10 +509,17 @@ class StaticElasticErsatz final {
       const std::vector<int>& bc_dof, const std::vector<T>& bc_vals,
       const std::tuple<LoadAnalyses...>& load_analyses,
       std::shared_ptr<SparseUtils::SparseCholesky<T>>* chol_out = nullptr) {
+    sol_times.clear();
+
     int ndof = Physics::dof_per_node * grid.get_num_verts();
 
     // Compute Jacobian matrix
-    BSRMat* jac_bsr = jacobian();
+    BSRMat* jac_bsr = nullptr;
+    {
+      auto recorder = [&](double t) { sol_times["jacobian_time"] = t; };
+      ScopedTimer st(recorder);
+      jac_bsr = jacobian();
+    }
     jac_bsr->zero_rows(bc_dof.size(), bc_dof.data());
     CSCMat* jac_csc = SparseUtils::bsr_to_csc(jac_bsr);
     jac_csc->zero_columns(bc_dof.size(), bc_dof.data());
@@ -457,8 +536,12 @@ class StaticElasticErsatz final {
         load_analyses);
 
     // Add internal load contributions to the right-hand size
-    analysis_l.residual(nullptr, t1.data(), rhs.data());
-    analysis_r.residual(nullptr, t1.data(), rhs.data());
+    {
+      auto recorder = [&](double t) { sol_times["residual_time"] = t; };
+      ScopedTimer st(recorder);
+      analysis_l.residual(nullptr, t1.data(), rhs.data());
+      analysis_r.residual(nullptr, t1.data(), rhs.data());
+    }
     for (int i = 0; i < rhs.size(); i++) {
       rhs[i] *= -1.0;
     }
@@ -485,10 +568,18 @@ class StaticElasticErsatz final {
 
     std::shared_ptr<SparseUtils::SparseCholesky<T>> chol =
         std::make_shared<SparseUtils::SparseCholesky<T>>(jac_csc);
-    chol->factor();
+    {
+      auto recorder = [&](double t) { sol_times["chol_factor_time"] = t; };
+      ScopedTimer st(recorder);
+      chol->factor();
+    }
     std::vector<T> sol = t2;
 
-    chol->solve(sol.data());
+    {
+      auto recorder = [&](double t) { sol_times["chol_solve_time"] = t; };
+      ScopedTimer st(recorder);
+      chol->solve(sol.data());
+    }
 
     if (chol_out) {
       *chol_out = chol;
@@ -528,6 +619,8 @@ class StaticElasticErsatz final {
   Analysis& get_analysis() { return analysis_l; }
   Analysis& get_analysis_ersatz() { return analysis_r; }
 
+  std::map<std::string, double>& get_sol_times() { return sol_times; }
+
  private:
   const Grid& grid;
   Mesh &mesh_l, mesh_r;
@@ -538,6 +631,8 @@ class StaticElasticErsatz final {
   Analysis analysis_l, analysis_r;
 
   std::vector<T> rhs;
+  StopWatch watch;
+  std::map<std::string, double> sol_times;
 };
 
 template <typename T, class Mesh, class Quadrature, class Basis, class IntFunc>

@@ -400,10 +400,15 @@ void execute_bulk_elasticity(std::string prefix, int nxy, double ersatz_ratio) {
                                           stress_norm_physics);
 
   double total_time = main_watch.lap();
+  auto sol_times = physics_app->get_sol_times();
 
   json j = {
       {"total_time", total_time},
       {"sol_time", sol_time},
+      {"jacobian_time", sol_times.at("jacobian_time")},
+      {"residual_time", sol_times.at("residual_time")},
+      {"chol_factor_time", sol_times.at("chol_factor_time")},
+      {"chol_solve_time", sol_times.at("chol_solve_time")},
       {"stress_norm", sqrt(stress_norm_analysis.energy(nullptr, sol.data()))}};
   write_json(std::filesystem::path(prefix) / std::filesystem::path("sol.json"),
              j);

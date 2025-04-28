@@ -31,4 +31,25 @@ class StopWatch {
   std::chrono::time_point<std::chrono::steady_clock> t_start;
 };
 
+template <class Functor>
+class ScopedTimer {
+ public:
+  ScopedTimer(const Functor& recorder) : recorder_(recorder) {
+    t_start = std::chrono::steady_clock::now();
+  };
+
+  ~ScopedTimer() {
+    auto now = std::chrono::steady_clock::now();
+    double t_elapse =
+        1e-9 *
+        std::chrono::duration_cast<std::chrono::nanoseconds>(now - t_start)
+            .count();  // in s
+    recorder_(t_elapse);
+  }
+
+ private:
+  const Functor& recorder_;
+  std::chrono::time_point<std::chrono::steady_clock> t_start;
+};
+
 #endif  // XCGD_UTILS_H
