@@ -8,6 +8,7 @@
 #include "interface_analysis.h"
 #include "sparse_utils/sparse_utils.h"
 #include "utils/linalg.h"
+#include "utils/timer.h"
 
 template <typename T, class Mesh, class Quadrature, class Basis,
           class PhysicsBulk, class PhysicsBCs>
@@ -40,10 +41,15 @@ class NitscheBCsApp final {
         analysis_bcs(mesh, quadrature_bcs, basis, physics_bcs) {}
 
   std::vector<T> solve() {
+    sol_times.clear();
+    StopWatch watch;
+
     int nnodes = mesh.get_num_nodes();
     int nelems = mesh.get_num_elements();
 
     int ndof = nnodes * dof_per_node;
+
+    double t_jacobian_begin = watch.lap();
 
     // Set up the Jacobian matrix for Poisson's problem with Nitsche's boundary
     // conditions
@@ -64,8 +70,13 @@ class NitscheBCsApp final {
                           false);  // Add bcs contribution
     CSCMat* jac_csc = SparseUtils::bsr_to_csc(jac_bsr);
 
+    double t_jacobian_end = watch.lap();
+    sol_times["jacobian_time"] = t_jacobian_end - t_jacobian_begin;
+
     // Set up the right hand side
     std::vector<T> rhs(ndof, 0.0);
+
+    double t_res_begin = watch.lap();
 
     analysis_bulk.residual(nullptr, zeros.data(), rhs.data());
     analysis_bcs.residual(nullptr, zeros.data(), rhs.data());
@@ -73,13 +84,32 @@ class NitscheBCsApp final {
       rhs[i] *= -1.0;
     }
 
+    double t_res_end = watch.lap();
+    sol_times["residual_time"] = t_res_end - t_res_begin;
+
     // Solve
     SparseUtils::CholOrderingType order = SparseUtils::CholOrderingType::ND;
-    SparseUtils::SparseCholesky<T>* chol =
-        new SparseUtils::SparseCholesky<T>(jac_csc);
-    chol->factor();
+
+    SparseUtils::SparseCholesky<T>* chol = nullptr;
+
+    {
+      auto recorder = [&](double t) { sol_times["chol_init_time"] = t; };
+      ScopedTimer st(recorder);
+      chol = new SparseUtils::SparseCholesky<T>(jac_csc);
+    }
+
+    {
+      auto recorder = [&](double t) { sol_times["chol_factor_time"] = t; };
+      ScopedTimer st(recorder);
+      chol->factor();
+    }
+
     std::vector<T> sol = rhs;
-    chol->solve(sol.data());
+    {
+      auto recorder = [&](double t) { sol_times["chol_solve_time"] = t; };
+      ScopedTimer st(recorder);
+      chol->solve(sol.data());
+    }
 
     if (jac_bsr) delete jac_bsr;
     if (jac_csc) delete jac_csc;
@@ -87,6 +117,8 @@ class NitscheBCsApp final {
 
     return sol;
   }
+
+  std::map<std::string, double>& get_sol_times() { return sol_times; }
 
  private:
   Mesh& mesh;
@@ -99,6 +131,7 @@ class NitscheBCsApp final {
   PhysicsBCs& physics_bcs;
   AnalysisBulk analysis_bulk;
   AnalysisBCs analysis_bcs;
+  std::map<std::string, double> sol_times;
 };
 
 /*
@@ -246,23 +279,37 @@ class NitscheTwoSidedApp final {
   std::vector<T> solve(
       const std::vector<int>& bc_dof, const std::vector<T>& bc_vals,
       std::shared_ptr<SparseUtils::SparseCholesky<T>>* chol_out = nullptr) {
+    sol_times.clear();
+
     int ndof = dof_per_node * (mesh_m.get_num_nodes() + mesh_s.get_num_nodes());
     int node_offset = mesh_m.get_num_nodes();
 
     // Compute Jacobian matrix
-    BSRMat* jac_bsr = jacobian();
-    jac_bsr->zero_rows(bc_dof.size(), bc_dof.data());
-    CSCMat* jac_csc = SparseUtils::bsr_to_csc(jac_bsr);
-    jac_csc->zero_columns(bc_dof.size(), bc_dof.data());
+    BSRMat* jac_bsr = nullptr;
+    CSCMat* jac_csc = nullptr;
+
+    {
+      auto recorder = [&](double t) { sol_times["jacobian_time"] = t; };
+      ScopedTimer st(recorder);
+      jac_bsr = jacobian();
+      jac_bsr->zero_rows(bc_dof.size(), bc_dof.data());
+      jac_csc = SparseUtils::bsr_to_csc(jac_bsr);
+      jac_csc->zero_columns(bc_dof.size(), bc_dof.data());
+    }
 
     // Set right hand side (Dirichlet bcs and load)
     rhs = std::vector<T>(ndof, 0.0);
     std::vector<T> t1(ndof, 0.0), t2(ndof, 0.0);
 
     // Add external load contributions to the right-hand size
-    analysis_bulk_m.residual(nullptr, t1.data(), rhs.data());
-    analysis_bulk_s.residual(nullptr, t1.data(), rhs.data(), node_offset);
-    analysis_interface.residual(nullptr, t1.data(), rhs.data());
+    {
+      auto recorder = [&](double t) { sol_times["residual_time"] = t; };
+      ScopedTimer st(recorder);
+      analysis_bulk_m.residual(nullptr, t1.data(), rhs.data());
+      analysis_bulk_s.residual(nullptr, t1.data(), rhs.data(), node_offset);
+      analysis_interface.residual(nullptr, t1.data(), rhs.data());
+    }
+
     for (int i = 0; i < rhs.size(); i++) {
       rhs[i] *= -1.0;
     }
@@ -286,12 +333,26 @@ class NitscheTwoSidedApp final {
 
     // Factorize Jacobian matrix
     SparseUtils::CholOrderingType order = SparseUtils::CholOrderingType::ND;
-    std::shared_ptr<SparseUtils::SparseCholesky<T>> chol =
-        std::make_shared<SparseUtils::SparseCholesky<T>>(jac_csc);
-    chol->factor();
+    std::shared_ptr<SparseUtils::SparseCholesky<T>> chol = nullptr;
+
+    {
+      auto recorder = [&](double t) { sol_times["chol_init_time"] = t; };
+      ScopedTimer st(recorder);
+      chol = std::make_shared<SparseUtils::SparseCholesky<T>>(jac_csc);
+    }
+
+    {
+      auto recorder = [&](double t) { sol_times["chol_factor_time"] = t; };
+      ScopedTimer st(recorder);
+      chol->factor();
+    }
     std::vector<T> sol = t2;
 
-    chol->solve(sol.data());
+    {
+      auto recorder = [&](double t) { sol_times["chol_solve_time"] = t; };
+      ScopedTimer st(recorder);
+      chol->solve(sol.data());
+    }
 
     if (chol_out) {
       *chol_out = chol;
@@ -324,57 +385,85 @@ class NitscheTwoSidedApp final {
       const std::vector<int>& bc_dof, const std::vector<T>& bc_vals,
       const std::tuple<LoadAnalyses...>& load_analyses,
       std::shared_ptr<SparseUtils::SparseCholesky<T>>* chol_out = nullptr) {
+    sol_times.clear();
+
     int ndof = dof_per_node * (mesh_m.get_num_nodes() + mesh_s.get_num_nodes());
     int node_offset = mesh_m.get_num_nodes();
 
     // Compute Jacobian matrix
-    BSRMat* jac_bsr = jacobian();
-    jac_bsr->zero_rows(bc_dof.size(), bc_dof.data());
-    CSCMat* jac_csc = SparseUtils::bsr_to_csc(jac_bsr);
-    jac_csc->zero_columns(bc_dof.size(), bc_dof.data());
+    BSRMat* jac_bsr = nullptr;
+    CSCMat* jac_csc = nullptr;
+    {
+      auto recorder = [&](double t) { sol_times["jacobian_time"] = t; };
+      ScopedTimer st(recorder);
+      jac_bsr = jacobian();
+      jac_bsr->zero_rows(bc_dof.size(), bc_dof.data());
+      jac_csc = SparseUtils::bsr_to_csc(jac_bsr);
+      jac_csc->zero_columns(bc_dof.size(), bc_dof.data());
+    }
 
     // Set right hand side (Dirichlet bcs and load)
     rhs = std::vector<T>(ndof, 0.0);
     std::vector<T> t1(ndof, 0.0), t2(ndof, 0.0);
 
     // Add external load contributions to the right-hand size
-    analysis_bulk_m.residual(nullptr, t1.data(), rhs.data());
-    analysis_bulk_s.residual(nullptr, t1.data(), rhs.data(), node_offset);
-    analysis_interface.residual(nullptr, t1.data(), rhs.data());
-    std::apply(
-        [&t1, this](auto&&... load_analysis) mutable {
-          (load_analysis.residual(nullptr, t1.data(), this->rhs.data()), ...);
-        },
-        load_analyses);
-    for (int i = 0; i < rhs.size(); i++) {
-      rhs[i] *= -1.0;
-    }
+    {
+      auto recorder = [&](double t) { sol_times["residual_time"] = t; };
+      ScopedTimer st(recorder);
+      analysis_bulk_m.residual(nullptr, t1.data(), rhs.data());
+      analysis_bulk_s.residual(nullptr, t1.data(), rhs.data(), node_offset);
+      analysis_interface.residual(nullptr, t1.data(), rhs.data());
 
-    for (int i = 0; i < bc_dof.size(); i++) {
-      rhs[bc_dof[i]] = bc_vals[i];
-    }
+      std::apply(
+          [&t1, this](auto&&... load_analysis) mutable {
+            (load_analysis.residual(nullptr, t1.data(), this->rhs.data()), ...);
+          },
+          load_analyses);
 
-    for (int i = 0; i < bc_dof.size(); i++) {
-      t1[bc_dof[i]] = bc_vals[i];
-    }
+      for (int i = 0; i < rhs.size(); i++) {
+        rhs[i] *= -1.0;
+      }
 
-    jac_bsr->axpy(t1.data(), t2.data());
-    for (int i = 0; i < bc_dof.size(); i++) {
-      t2[bc_dof[i]] = 0.0;
-    }
+      for (int i = 0; i < bc_dof.size(); i++) {
+        rhs[bc_dof[i]] = bc_vals[i];
+      }
 
-    for (int i = 0; i < rhs.size(); i++) {
-      t2[i] = rhs[i] - t2[i];
+      for (int i = 0; i < bc_dof.size(); i++) {
+        t1[bc_dof[i]] = bc_vals[i];
+      }
+
+      jac_bsr->axpy(t1.data(), t2.data());
+      for (int i = 0; i < bc_dof.size(); i++) {
+        t2[bc_dof[i]] = 0.0;
+      }
+
+      for (int i = 0; i < rhs.size(); i++) {
+        t2[i] = rhs[i] - t2[i];
+      }
     }
 
     // Factorize Jacobian matrix
     SparseUtils::CholOrderingType order = SparseUtils::CholOrderingType::ND;
-    std::shared_ptr<SparseUtils::SparseCholesky<T>> chol =
-        std::make_shared<SparseUtils::SparseCholesky<T>>(jac_csc);
-    chol->factor();
+    std::shared_ptr<SparseUtils::SparseCholesky<T>> chol = nullptr;
+
+    {
+      auto recorder = [&](double t) { sol_times["chol_init_time"] = t; };
+      ScopedTimer st(recorder);
+      chol = std::make_shared<SparseUtils::SparseCholesky<T>>(jac_csc);
+    }
+
+    {
+      auto recorder = [&](double t) { sol_times["chol_factor_time"] = t; };
+      ScopedTimer st(recorder);
+      chol->factor();
+    }
     std::vector<T> sol = t2;
 
-    chol->solve(sol.data());
+    {
+      auto recorder = [&](double t) { sol_times["chol_solve_time"] = t; };
+      ScopedTimer st(recorder);
+      chol->solve(sol.data());
+    }
 
     if (chol_out) {
       *chol_out = chol;
@@ -420,6 +509,8 @@ class NitscheTwoSidedApp final {
   AnalysisBulk& get_secondary_bulk_analysis() { return analysis_bulk_s; }
   AnalysisInterface& get_interface_analysis() { return analysis_interface; }
 
+  std::map<std::string, double>& get_sol_times() { return sol_times; }
+
  private:
   // essential assets for analyses
   const Grid& grid;
@@ -444,4 +535,5 @@ class NitscheTwoSidedApp final {
   AnalysisInterface analysis_interface;
 
   std::vector<T> rhs;
+  std::map<std::string, double> sol_times;
 };

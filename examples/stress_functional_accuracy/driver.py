@@ -134,6 +134,7 @@ def run_experiments(
         "sol_time": [],
         "jacobian_time": [],
         "residual_time": [],
+        "chol_init_time": [],
         "chol_factor_time": [],
         "chol_solve_time": [],
     }
@@ -196,6 +197,7 @@ def run_experiments(
             df_data["sol_time"].append(j["sol_time"])
             df_data["jacobian_time"].append(j["jacobian_time"])
             df_data["residual_time"].append(j["residual_time"])
+            df_data["chol_init_time"].append(j["chol_init_time"])
             df_data["chol_factor_time"].append(j["chol_factor_time"])
             df_data["chol_solve_time"].append(j["chol_solve_time"])
 
@@ -259,10 +261,7 @@ def plot_poisson(df, voffset, voffset_text):
 
 
 def plot_elasticity_interface(df, what, voffset, voffset_text):
-    if what == "cpu_time":
-        return plot_cpu_time(df, voffset, voffset_text)
-    elif what == "cpu_time_breakdown":
-        return plot_cpu_time_breakdown(df)
+    assert what != "cpu_time" and what != "cpu_time_breakdown"
 
     fig, axs = plt.subplots(
         ncols=2,
@@ -303,9 +302,17 @@ def plot_elasticity_interface(df, what, voffset, voffset_text):
             ],
             axs,
         ):
+            if what == "stress_time":
+                x = sub_df["total_time"]
+            else:
+                x = sub_df["h"]
+
+            if what == "roi":
+                y = 1.0 / sub_df[key] / sub_df["total_time"]
+            else:
+                y = sub_df[key]
+
             # Get averaged slope
-            x = sub_df["h"]
-            y = sub_df[key]
             slope, _ = np.polyfit(np.log10(x), np.log10(y), deg=1)
             label = f"$p={Np_1d - 1}, \Delta:{slope:.2f}$"
 
@@ -320,6 +327,7 @@ def plot_elasticity_interface(df, what, voffset, voffset_text):
                 markeredgecolor="black",
                 color=colors[i],
             )
+
     for ylabel, title, key, ax in zip(
         ylabels,
         [
@@ -342,8 +350,16 @@ def plot_elasticity_interface(df, what, voffset, voffset_text):
         v_off_txt = -np.log10(ymax / ymin) * 0.035
 
         for Np_1d, sub_df in df.groupby("Np_1d"):
-            x = sub_df["h"]
-            y = sub_df[key]
+            if what == "stress_time":
+                x = sub_df["total_time"]
+            else:
+                x = sub_df["h"]
+
+            if what == "roi":
+                y = 1.0 / sub_df[key] / sub_df["total_time"]
+            else:
+                y = sub_df[key]
+
             x0, x1 = x.iloc[-2:]
             y0, y1 = y.iloc[-2:]
             annotate_slope(
@@ -425,36 +441,44 @@ def plot_cpu_time_breakdown(df):
         constrained_layout=True,
     )
 
-    # Derived column
-    df["other"] = df["total_time"] - df["jacobian_time"] - df["chol_factor_time"]
+    yname_label_map = {
+        "jacobian_time": "Jacobian assembly",
+        "chol_factor_time": "Cholesky factorization",
+        "chol_init_time": "Cholesky initialization",
+        "residual_time": "Residual assembly",
+        "chol_solve_time": "Cholesky solve",
+        "other": "Other",
+    }
 
-    bar_width = 0.1
+    # Derived column
+    df["other"] = df["sol_time"]
+    for yname in yname_label_map.keys():
+        if yname != "other":
+            df["other"] -= df[yname]
+
     for i, (Np_1d, sub_df) in enumerate(df.groupby("Np_1d")):
 
-        bottom = 0.0
-        for j, (y, label) in enumerate(
-            zip(
-                [
-                    "jacobian_time",
-                    "chol_factor_time",
-                    "other",
-                ],
-                ["Jacobian assembly", "Cholesky factorization", "Other"],
-            )
-        ):
+        # Determine the bar width
+        bar_width = (
+            0.8
+            * (np.log10(max(sub_df["h"])) - np.log10(min(sub_df["h"])))
+            / len(sub_df["h"])
+            / len(yname_label_map)
+        ) * np.log(10)
+
+        for j, (yname, label) in enumerate(yname_label_map.items()):
             axs[i].bar(
-                sub_df["h"],
-                sub_df[y],
+                sub_df["h"]
+                + (j - (len(yname_label_map) - 1) / 2) * bar_width * sub_df["h"],
+                sub_df[yname],
                 bar_width
                 * sub_df["h"],  # transformation from linear space to log space
-                label=label,
+                label=label if i == 0 else None,
                 facecolor=colors[j],
                 edgecolor="black",
                 linewidth=0.5,
                 alpha=1.0,
-                bottom=bottom,
             )
-            bottom += sub_df[y]
 
         axs[i].set_xscale("log")
         axs[i].set_yscale("log")
@@ -473,27 +497,31 @@ def plot_cpu_time_breakdown(df):
             axis="x", which="major", direction="out", length=3, labelbottom=True
         )
 
-        # axs[i].get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
-        axs[i].legend()
+        # Remove the ticks from top, if any
+        axs[i].tick_params(top=False)
+
         axs[i].set_xlabel(r"$h$")
         axs[i].set_ylabel(r"CPU time (s)")
         axs[i].set_title(f"$p={Np_1d - 1}$")
+
+    fig.legend(
+        loc="upper center",
+        ncols=6,
+        bbox_to_anchor=(0.5, 1.07),
+        bbox_transform=fig.transFigure,
+    )
 
     return fig, axs
 
 
 def plot_elasticity(df, what, voffset, voffset_text):
-    if what == "cpu_time":
-        return plot_cpu_time(df, voffset, voffset_text)
-    elif what == "cpu_time_breakdown":
-        return plot_cpu_time_breakdown(df)
-
     fig, ax = plt.subplots(
         ncols=1,
         nrows=1,
         figsize=(5.3, 4.0),
         constrained_layout=True,
     )
+    assert what != "cpu_time" and what != "cpu_time_breakdown"
 
     if what == "stress_time":
         xlabel = r"CPU time (s)"
@@ -506,7 +534,6 @@ def plot_elasticity(df, what, voffset, voffset_text):
         ylabel = r"$\left[\int_h  \text{tr}((\mathbf{S} - \mathbf{S}_h)^T(\mathbf{S} - \mathbf{S}_h)) d\Omega\right]^{1/2}$"
 
     for i, (Np_1d, sub_df) in enumerate(df.groupby("Np_1d")):
-        # Get averaged slope
         if what == "stress_time":
             x = sub_df["total_time"]
         else:
@@ -517,8 +544,10 @@ def plot_elasticity(df, what, voffset, voffset_text):
         else:
             y = sub_df["stress_norm"]
 
+        # Get averaged slope
         slope, _ = np.polyfit(np.log10(x), np.log10(y), deg=1)
         label = f"$p={Np_1d - 1}, \Delta:{slope:.2f}$"
+
         ax.loglog(
             x,
             y,
@@ -583,7 +612,8 @@ if __name__ == "__main__":
     )
     p.add_argument(
         "--what",
-        default="stress",
+        nargs="*",
+        default=["stress", "cpu_time", "roi", "stress_time", "cpu_time_breakdown"],
         choices=["stress", "cpu_time", "roi", "stress_time", "cpu_time_breakdown"],
     )
     p.add_argument("--csv", type=str)
@@ -601,10 +631,6 @@ if __name__ == "__main__":
     p.add_argument("--nxy-max", type=int, default=128)
     p.add_argument("--nxy-num", type=int, default=13)
     args = p.parse_args()
-
-    # TODO: finish others
-    if args.what != "stress":
-        assert args.physics == "elasticity-bulk", "others are not yet implemented"
 
     # Sanity checks
     if args.physics == "elasticity-mms" and args.instance == "square":
@@ -662,18 +688,24 @@ if __name__ == "__main__":
         df = pd.read_csv(args.csv)
     print(df)
 
-    if args.physics == "poisson":
-        fig, _ = plot_poisson(df, args.voffset, args.voffset_text)
-    elif args.physics == "elasticity-interface":
-        fig, _ = plot_elasticity_interface(
-            df, args.what, args.voffset, args.voffset_text
-        )
-    else:
-        fig, _ = plot_elasticity(df, args.what, args.voffset, args.voffset_text)
+    for what in args.what:
+        if what == "cpu_time":
+            fig, _ = plot_cpu_time(df, args.voffset, args.voffset_text)
+        elif what == "cpu_time_breakdown":
+            fig, _ = plot_cpu_time_breakdown(df)
+        else:
+            if args.physics == "poisson":
+                fig, _ = plot_poisson(df, args.voffset, args.voffset_text)
+            elif args.physics == "elasticity-interface":
+                fig, _ = plot_elasticity_interface(
+                    df, what, args.voffset, args.voffset_text
+                )
+            else:
+                fig, _ = plot_elasticity(df, what, args.voffset, args.voffset_text)
 
-    fig_name = run_name
-    if args.what != "stress":
-        fig_name = args.what + "_" + fig_name
+        fig_name = run_name
+        if what != "stress":
+            fig_name = what + "_" + fig_name
 
-    fig.savefig(os.path.join(run_name, f"{fig_name}.pdf"))
-    fig.savefig(os.path.join(run_name, f"{fig_name}.svg"))
+        fig.savefig(os.path.join(run_name, f"{fig_name}.pdf"))
+        fig.savefig(os.path.join(run_name, f"{fig_name}.svg"))

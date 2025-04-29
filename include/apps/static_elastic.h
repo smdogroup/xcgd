@@ -76,16 +76,17 @@ class StaticElastic final {
 
     // Compute Jacobian matrix
     BSRMat* jac_bsr = nullptr;
+    CSCMat* jac_csc = nullptr;
 
     {
       auto recorder = [&](double t) { sol_times["jacobian_time"] = t; };
       ScopedTimer st(recorder);
       jac_bsr = jacobian();
-    }
 
-    jac_bsr->zero_rows(bc_dof.size(), bc_dof.data());
-    CSCMat* jac_csc = SparseUtils::bsr_to_csc(jac_bsr);
-    jac_csc->zero_columns(bc_dof.size(), bc_dof.data());
+      jac_bsr->zero_rows(bc_dof.size(), bc_dof.data());
+      jac_csc = SparseUtils::bsr_to_csc(jac_bsr);
+      jac_csc->zero_columns(bc_dof.size(), bc_dof.data());
+    }
 
     // Set right hand side (Dirichlet bcs and load)
     rhs = std::vector<T>(ndof, 0.0);
@@ -95,32 +96,37 @@ class StaticElastic final {
       auto recorder = [&](double t) { sol_times["residual_time"] = t; };
       ScopedTimer st(recorder);
       analysis.residual(nullptr, t1.data(), rhs.data());
-    }
 
-    for (int i = 0; i < rhs.size(); i++) {
-      rhs[i] *= -1.0;
-    }
-    for (int i = 0; i < bc_dof.size(); i++) {
-      rhs[bc_dof[i]] = bc_vals[i];
-    }
+      for (int i = 0; i < rhs.size(); i++) {
+        rhs[i] *= -1.0;
+      }
+      for (int i = 0; i < bc_dof.size(); i++) {
+        rhs[bc_dof[i]] = bc_vals[i];
+      }
 
-    for (int i = 0; i < bc_dof.size(); i++) {
-      t1[bc_dof[i]] = bc_vals[i];
-    }
+      for (int i = 0; i < bc_dof.size(); i++) {
+        t1[bc_dof[i]] = bc_vals[i];
+      }
 
-    jac_bsr->axpy(t1.data(), t2.data());
-    for (int i = 0; i < bc_dof.size(); i++) {
-      t2[bc_dof[i]] = 0.0;
-    }
+      jac_bsr->axpy(t1.data(), t2.data());
+      for (int i = 0; i < bc_dof.size(); i++) {
+        t2[bc_dof[i]] = 0.0;
+      }
 
-    for (int i = 0; i < rhs.size(); i++) {
-      t2[i] = rhs[i] - t2[i];
+      for (int i = 0; i < rhs.size(); i++) {
+        t2[i] = rhs[i] - t2[i];
+      }
     }
 
     // Factorize Jacobian matrix
     SparseUtils::CholOrderingType order = SparseUtils::CholOrderingType::ND;
-    std::shared_ptr<SparseUtils::SparseCholesky<T>> chol =
-        std::make_shared<SparseUtils::SparseCholesky<T>>(jac_csc);
+    std::shared_ptr<SparseUtils::SparseCholesky<T>> chol = nullptr;
+
+    {
+      auto recorder = [&](double t) { sol_times["chol_init_time"] = t; };
+      ScopedTimer st(recorder);
+      chol = std::make_shared<SparseUtils::SparseCholesky<T>>(jac_csc);
+    }
 
     {
       auto recorder = [&](double t) { sol_times["chol_factor_time"] = t; };
@@ -172,56 +178,66 @@ class StaticElastic final {
     int ndof = Physics::dof_per_node * mesh.get_num_nodes();
 
     // Compute Jacobian matrix
-    BSRMat* jac_bsr;
+    BSRMat* jac_bsr = nullptr;
+    CSCMat* jac_csc = nullptr;
+
     {
       auto recorder = [&](double t) { sol_times["jacobian_time"] = t; };
       ScopedTimer st(recorder);
       jac_bsr = jacobian();
+      jac_bsr->zero_rows(bc_dof.size(), bc_dof.data());
+      jac_csc = SparseUtils::bsr_to_csc(jac_bsr);
+      jac_csc->zero_columns(bc_dof.size(), bc_dof.data());
     }
-    jac_bsr->zero_rows(bc_dof.size(), bc_dof.data());
-    CSCMat* jac_csc = SparseUtils::bsr_to_csc(jac_bsr);
-    jac_csc->zero_columns(bc_dof.size(), bc_dof.data());
 
     // Set right hand side (Dirichlet bcs and load)
     rhs = std::vector<T>(ndof, 0.0);
     std::vector<T> t1(ndof, 0.0), t2(ndof, 0.0);
 
-    // Add external load contributions to the right-hand size
-    // FIXME: call analysis.residual() here??
     {
       auto recorder = [&](double t) { sol_times["residual_time"] = t; };
       ScopedTimer st(recorder);
+
+      // Add external load contributions to the right-hand size
+      // FIXME: call analysis.residual() here??
       std::apply(
           [&t1, this](auto&&... load_analysis) mutable {
             (load_analysis.residual(nullptr, t1.data(), this->rhs.data()), ...);
           },
           load_analyses);
-    }
-    for (int i = 0; i < rhs.size(); i++) {
-      rhs[i] *= -1.0;
-    }
 
-    for (int i = 0; i < bc_dof.size(); i++) {
-      rhs[bc_dof[i]] = bc_vals[i];
-    }
+      for (int i = 0; i < rhs.size(); i++) {
+        rhs[i] *= -1.0;
+      }
 
-    for (int i = 0; i < bc_dof.size(); i++) {
-      t1[bc_dof[i]] = bc_vals[i];
-    }
+      for (int i = 0; i < bc_dof.size(); i++) {
+        rhs[bc_dof[i]] = bc_vals[i];
+      }
 
-    jac_bsr->axpy(t1.data(), t2.data());
-    for (int i = 0; i < bc_dof.size(); i++) {
-      t2[bc_dof[i]] = 0.0;
-    }
+      for (int i = 0; i < bc_dof.size(); i++) {
+        t1[bc_dof[i]] = bc_vals[i];
+      }
 
-    for (int i = 0; i < rhs.size(); i++) {
-      t2[i] = rhs[i] - t2[i];
+      jac_bsr->axpy(t1.data(), t2.data());
+      for (int i = 0; i < bc_dof.size(); i++) {
+        t2[bc_dof[i]] = 0.0;
+      }
+
+      for (int i = 0; i < rhs.size(); i++) {
+        t2[i] = rhs[i] - t2[i];
+      }
     }
 
     // Factorize Jacobian matrix
     SparseUtils::CholOrderingType order = SparseUtils::CholOrderingType::ND;
-    std::shared_ptr<SparseUtils::SparseCholesky<T>> chol =
-        std::make_shared<SparseUtils::SparseCholesky<T>>(jac_csc);
+    std::shared_ptr<SparseUtils::SparseCholesky<T>> chol = nullptr;
+
+    {
+      auto recorder = [&](double t) { sol_times["chol_init_time"] = t; };
+      ScopedTimer st(recorder);
+      chol = std::make_shared<SparseUtils::SparseCholesky<T>>(jac_csc);
+    }
+
     {
       auto recorder = [&](double t) { sol_times["chol_factor_time"] = t; };
       ScopedTimer st(recorder);
@@ -421,14 +437,15 @@ class StaticElasticErsatz final {
 
     // Compute Jacobian matrix
     BSRMat* jac_bsr = nullptr;
+    CSCMat* jac_csc = nullptr;
     {
       auto recorder = [&](double t) { sol_times["jacobian_time"] = t; };
       ScopedTimer st(recorder);
       jac_bsr = jacobian();
+      jac_bsr->zero_rows(bc_dof.size(), bc_dof.data());
+      jac_csc = SparseUtils::bsr_to_csc(jac_bsr);
+      jac_csc->zero_columns(bc_dof.size(), bc_dof.data());
     }
-    jac_bsr->zero_rows(bc_dof.size(), bc_dof.data());
-    CSCMat* jac_csc = SparseUtils::bsr_to_csc(jac_bsr);
-    jac_csc->zero_columns(bc_dof.size(), bc_dof.data());
 
     // Set right hand side (Dirichlet bcs and load)
     rhs = std::vector<T>(ndof, 0.0);
@@ -439,31 +456,38 @@ class StaticElasticErsatz final {
       ScopedTimer st(recorder);
       analysis_l.residual(nullptr, t1.data(), rhs.data());
       analysis_r.residual(nullptr, t1.data(), rhs.data());
-    }
-    for (int i = 0; i < rhs.size(); i++) {
-      rhs[i] *= -1.0;
-    }
-    for (int i = 0; i < bc_dof.size(); i++) {
-      rhs[bc_dof[i]] = bc_vals[i];
-    }
 
-    for (int i = 0; i < bc_dof.size(); i++) {
-      t1[bc_dof[i]] = bc_vals[i];
-    }
+      for (int i = 0; i < rhs.size(); i++) {
+        rhs[i] *= -1.0;
+      }
+      for (int i = 0; i < bc_dof.size(); i++) {
+        rhs[bc_dof[i]] = bc_vals[i];
+      }
 
-    jac_bsr->axpy(t1.data(), t2.data());
-    for (int i = 0; i < bc_dof.size(); i++) {
-      t2[bc_dof[i]] = 0.0;
-    }
+      for (int i = 0; i < bc_dof.size(); i++) {
+        t1[bc_dof[i]] = bc_vals[i];
+      }
 
-    for (int i = 0; i < rhs.size(); i++) {
-      t2[i] = rhs[i] - t2[i];
+      jac_bsr->axpy(t1.data(), t2.data());
+      for (int i = 0; i < bc_dof.size(); i++) {
+        t2[bc_dof[i]] = 0.0;
+      }
+
+      for (int i = 0; i < rhs.size(); i++) {
+        t2[i] = rhs[i] - t2[i];
+      }
     }
 
     // Factorize Jacobian matrix
     SparseUtils::CholOrderingType order = SparseUtils::CholOrderingType::ND;
-    std::shared_ptr<SparseUtils::SparseCholesky<T>> chol =
-        std::make_shared<SparseUtils::SparseCholesky<T>>(jac_csc);
+    std::shared_ptr<SparseUtils::SparseCholesky<T>> chol = nullptr;
+
+    {
+      auto recorder = [&](double t) { sol_times["chol_init_time"] = t; };
+      ScopedTimer st(recorder);
+      chol = std::make_shared<SparseUtils::SparseCholesky<T>>(jac_csc);
+    }
+
     {
       auto recorder = [&](double t) { sol_times["chol_factor_time"] = t; };
       ScopedTimer st(recorder);
@@ -515,59 +539,67 @@ class StaticElasticErsatz final {
 
     // Compute Jacobian matrix
     BSRMat* jac_bsr = nullptr;
+    CSCMat* jac_csc = nullptr;
     {
       auto recorder = [&](double t) { sol_times["jacobian_time"] = t; };
       ScopedTimer st(recorder);
       jac_bsr = jacobian();
+      jac_bsr->zero_rows(bc_dof.size(), bc_dof.data());
+      jac_csc = SparseUtils::bsr_to_csc(jac_bsr);
+      jac_csc->zero_columns(bc_dof.size(), bc_dof.data());
     }
-    jac_bsr->zero_rows(bc_dof.size(), bc_dof.data());
-    CSCMat* jac_csc = SparseUtils::bsr_to_csc(jac_bsr);
-    jac_csc->zero_columns(bc_dof.size(), bc_dof.data());
 
     // Set right hand side (Dirichlet bcs and load)
     rhs = std::vector<T>(ndof, 0.0);
     std::vector<T> t1(ndof, 0.0), t2(ndof, 0.0);
 
-    // Add external load contributions to the right-hand size
-    std::apply(
-        [&t1, this](auto&&... load_analysis) mutable {
-          (load_analysis.residual(nullptr, t1.data(), this->rhs.data()), ...);
-        },
-        load_analyses);
-
     // Add internal load contributions to the right-hand size
     {
       auto recorder = [&](double t) { sol_times["residual_time"] = t; };
       ScopedTimer st(recorder);
+
+      // Add external load contributions to the right-hand size
+      std::apply(
+          [&t1, this](auto&&... load_analysis) mutable {
+            (load_analysis.residual(nullptr, t1.data(), this->rhs.data()), ...);
+          },
+          load_analyses);
+
       analysis_l.residual(nullptr, t1.data(), rhs.data());
       analysis_r.residual(nullptr, t1.data(), rhs.data());
-    }
-    for (int i = 0; i < rhs.size(); i++) {
-      rhs[i] *= -1.0;
-    }
 
-    for (int i = 0; i < bc_dof.size(); i++) {
-      rhs[bc_dof[i]] = bc_vals[i];
-    }
+      for (int i = 0; i < rhs.size(); i++) {
+        rhs[i] *= -1.0;
+      }
 
-    for (int i = 0; i < bc_dof.size(); i++) {
-      t1[bc_dof[i]] = bc_vals[i];
-    }
+      for (int i = 0; i < bc_dof.size(); i++) {
+        rhs[bc_dof[i]] = bc_vals[i];
+      }
 
-    jac_bsr->axpy(t1.data(), t2.data());
-    for (int i = 0; i < bc_dof.size(); i++) {
-      t2[bc_dof[i]] = 0.0;
-    }
+      for (int i = 0; i < bc_dof.size(); i++) {
+        t1[bc_dof[i]] = bc_vals[i];
+      }
 
-    for (int i = 0; i < rhs.size(); i++) {
-      t2[i] = rhs[i] - t2[i];
+      jac_bsr->axpy(t1.data(), t2.data());
+      for (int i = 0; i < bc_dof.size(); i++) {
+        t2[bc_dof[i]] = 0.0;
+      }
+
+      for (int i = 0; i < rhs.size(); i++) {
+        t2[i] = rhs[i] - t2[i];
+      }
     }
 
     // Factorize Jacobian matrix
     SparseUtils::CholOrderingType order = SparseUtils::CholOrderingType::ND;
+    std::shared_ptr<SparseUtils::SparseCholesky<T>> chol = nullptr;
 
-    std::shared_ptr<SparseUtils::SparseCholesky<T>> chol =
-        std::make_shared<SparseUtils::SparseCholesky<T>>(jac_csc);
+    {
+      auto recorder = [&](double t) { sol_times["chol_init_time"] = t; };
+      ScopedTimer st(recorder);
+      chol = std::make_shared<SparseUtils::SparseCholesky<T>>(jac_csc);
+    }
+
     {
       auto recorder = [&](double t) { sol_times["chol_factor_time"] = t; };
       ScopedTimer st(recorder);

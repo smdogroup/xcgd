@@ -370,20 +370,6 @@ void execute_bulk_elasticity(std::string prefix, int nxy, double ersatz_ratio) {
       std::make_tuple(load_analysis_top, load_analysis_right));
   double sol_time = sol_watch.lap();
 
-  // Grid vtk
-  {
-    using GMesh = GridMesh<T, Np_1d, Grid>;
-    GMesh gmesh(grid);
-    ToVTK<T, GMesh> grid_vtk((gmesh), std::filesystem::path(prefix) /
-                                          std::filesystem::path("grid.vtk"));
-    grid_vtk.write_mesh();
-    grid_vtk.write_sol("lsf", mesh.get_lsf_dof().data());
-
-    if (use_ersatz) {
-      grid_vtk.write_vec("sol", sol.data());
-    }
-  }
-
   if (use_ersatz) {
     sol = grid_dof_to_cut_dof<T, spatial_dim, Mesh>(mesh, sol);
   }
@@ -407,11 +393,26 @@ void execute_bulk_elasticity(std::string prefix, int nxy, double ersatz_ratio) {
       {"sol_time", sol_time},
       {"jacobian_time", sol_times.at("jacobian_time")},
       {"residual_time", sol_times.at("residual_time")},
+      {"chol_init_time", sol_times.at("chol_init_time")},
       {"chol_factor_time", sol_times.at("chol_factor_time")},
       {"chol_solve_time", sol_times.at("chol_solve_time")},
       {"stress_norm", sqrt(stress_norm_analysis.energy(nullptr, sol.data()))}};
   write_json(std::filesystem::path(prefix) / std::filesystem::path("sol.json"),
              j);
+
+  // Grid vtk
+  {
+    using GMesh = GridMesh<T, Np_1d, Grid>;
+    GMesh gmesh(grid);
+    ToVTK<T, GMesh> grid_vtk((gmesh), std::filesystem::path(prefix) /
+                                          std::filesystem::path("grid.vtk"));
+    grid_vtk.write_mesh();
+    grid_vtk.write_sol("lsf", mesh.get_lsf_dof().data());
+
+    if (use_ersatz) {
+      grid_vtk.write_vec("sol", sol.data());
+    }
+  }
 
   // Cut vtk
   {
@@ -942,9 +943,15 @@ void execute_interface_elasticity(std::string prefix, int nxy,
       physics_app->get_secondary_basis(), stress_norm_physics_r);
 
   double total_time = main_watch.lap();
+  auto sol_times = physics_app->get_sol_times();
 
   json j = {{"total_time", total_time},
             {"sol_time", sol_time},
+            {"jacobian_time", sol_times.at("jacobian_time")},
+            {"residual_time", sol_times.at("residual_time")},
+            {"chol_init_time", sol_times.at("chol_init_time")},
+            {"chol_factor_time", sol_times.at("chol_factor_time")},
+            {"chol_solve_time", sol_times.at("chol_solve_time")},
             {"stress_norm_primary",
              sqrt(stress_norm_analysis_l.energy(nullptr, sol_primary.data()))},
             {"stress_norm_secondary", sqrt(stress_norm_analysis_r.energy(
@@ -1184,6 +1191,7 @@ void execute_mms(std::string prefix, int nxy, std::string physics,
   // Solve
   std::vector<T> sol;
   StopWatch sol_watch;
+  std::map<std::string, double> sol_times;
 
   if (instance == "square") {
     if (physics == "elasticity-mms") {
@@ -1206,11 +1214,14 @@ void execute_mms(std::string prefix, int nxy, std::string physics,
     }
 
     sol = poisson_app.solve(dof_bcs, dof_vals);
+    sol_times = poisson_app.get_sol_times();
   } else {
     if (physics == "poisson") {
       sol = poisson_nitsche_app.solve();
+      sol_times = poisson_nitsche_app.get_sol_times();
     } else {
       sol = elasticity_nitsche_app.solve();
+      sol_times = elasticity_nitsche_app.get_sol_times();
     }
   }
 
@@ -1257,6 +1268,11 @@ void execute_mms(std::string prefix, int nxy, std::string physics,
   if (physics == "poisson") {
     j = {{"total_time", total_time},
          {"sol_time", sol_time},
+         {"jacobian_time", sol_times.at("jacobian_time")},
+         {"residual_time", sol_times.at("residual_time")},
+         {"chol_init_time", sol_times.at("chol_init_time")},
+         {"chol_factor_time", sol_times.at("chol_factor_time")},
+         {"chol_solve_time", sol_times.at("chol_solve_time")},
          {"val_norm",
           sqrt(poisson_val_norm_analysis.energy(nullptr, sol.data()))},
          {"stress_norm",
@@ -1266,6 +1282,11 @@ void execute_mms(std::string prefix, int nxy, std::string physics,
   } else {
     j = {{"total_time", total_time},
          {"sol_time", sol_time},
+         {"jacobian_time", sol_times.at("jacobian_time")},
+         {"residual_time", sol_times.at("residual_time")},
+         {"chol_init_time", sol_times.at("chol_init_time")},
+         {"chol_factor_time", sol_times.at("chol_factor_time")},
+         {"chol_solve_time", sol_times.at("chol_solve_time")},
          {"stress_norm",
           sqrt(elasticity_stress_norm_analysis.energy(nullptr, sol.data()))}};
   }

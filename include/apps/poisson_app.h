@@ -2,6 +2,7 @@
 #include "physics/poisson.h"
 #include "sparse_utils/sparse_utils.h"
 #include "utils/misc.h"
+#include "utils/timer.h"
 
 #pragma once
 
@@ -60,44 +61,72 @@ class PoissonApp final {
 
   std::vector<T> solve(const std::vector<int>& bc_dof,
                        const std::vector<T>& bc_vals) {
+    sol_times.clear();
     int ndof = Physics::dof_per_node * mesh.get_num_nodes();
 
     // Compute Jacobian matrix
-    BSRMat* jac_bsr = jacobian(bc_dof);
-    CSCMat* jac_csc = SparseUtils::bsr_to_csc(jac_bsr);
-    jac_csc->zero_columns(bc_dof.size(), bc_dof.data());
+    BSRMat* jac_bsr = nullptr;
+    CSCMat* jac_csc = nullptr;
+
+    {
+      auto recorder = [&](double t) { sol_times["jacobian_time"] = t; };
+      ScopedTimer st(recorder);
+      jac_bsr = jacobian(bc_dof);
+      jac_csc = SparseUtils::bsr_to_csc(jac_bsr);
+      jac_csc->zero_columns(bc_dof.size(), bc_dof.data());
+    }
 
     // Set the right hand side
     std::vector<T> rhs(ndof, 0.0), t1(ndof, 0.0), t2(ndof, 0.0);
 
-    analysis.residual(nullptr, t1.data(), rhs.data());
-    for (int i = 0; i < rhs.size(); i++) {
-      rhs[i] *= -1.0;
-    }
-    for (int i = 0; i < bc_dof.size(); i++) {
-      rhs[bc_dof[i]] = bc_vals[i];
-    }
+    {
+      auto recorder = [&](double t) { sol_times["residual_time"] = t; };
+      ScopedTimer st(recorder);
+      analysis.residual(nullptr, t1.data(), rhs.data());
+      for (int i = 0; i < rhs.size(); i++) {
+        rhs[i] *= -1.0;
+      }
+      for (int i = 0; i < bc_dof.size(); i++) {
+        rhs[bc_dof[i]] = bc_vals[i];
+      }
 
-    for (int i = 0; i < bc_dof.size(); i++) {
-      t1[bc_dof[i]] = bc_vals[i];
-    }
+      for (int i = 0; i < bc_dof.size(); i++) {
+        t1[bc_dof[i]] = bc_vals[i];
+      }
 
-    jac_bsr->axpy(t1.data(), t2.data());
-    for (int i = 0; i < bc_dof.size(); i++) {
-      t2[bc_dof[i]] = 0.0;
-    }
+      jac_bsr->axpy(t1.data(), t2.data());
+      for (int i = 0; i < bc_dof.size(); i++) {
+        t2[bc_dof[i]] = 0.0;
+      }
 
-    for (int i = 0; i < rhs.size(); i++) {
-      t2[i] = rhs[i] - t2[i];
+      for (int i = 0; i < rhs.size(); i++) {
+        t2[i] = rhs[i] - t2[i];
+      }
     }
 
     // Factorize Jacobian matrix
     SparseUtils::CholOrderingType order = SparseUtils::CholOrderingType::ND;
-    SparseUtils::SparseCholesky<T>* chol =
-        new SparseUtils::SparseCholesky<T>(jac_csc);
-    chol->factor();
+    SparseUtils::SparseCholesky<T>* chol = nullptr;
+
+    {
+      auto recorder = [&](double t) { sol_times["chol_init_time"] = t; };
+      ScopedTimer st(recorder);
+      chol = new SparseUtils::SparseCholesky<T>(jac_csc);
+    }
+
+    {
+      auto recorder = [&](double t) { sol_times["chol_factor_time"] = t; };
+      ScopedTimer st(recorder);
+      chol->factor();
+    }
+
     std::vector<T> sol = t2;
-    chol->solve(sol.data());
+
+    {
+      auto recorder = [&](double t) { sol_times["chol_solve_time"] = t; };
+      ScopedTimer st(recorder);
+      chol->solve(sol.data());
+    }
 
 #ifdef XCGD_DEBUG_MODE
     // Write Jacobian matrix to a file
@@ -128,6 +157,7 @@ class PoissonApp final {
   Quadrature& get_quadrature() { return quadrature; }
   Basis& get_basis() { return basis; }
   Analysis& get_analysis() { return analysis; }
+  std::map<std::string, double>& get_sol_times() { return sol_times; }
 
  private:
   Mesh& mesh;
@@ -136,4 +166,5 @@ class PoissonApp final {
 
   Physics physics;
   Analysis analysis;
+  std::map<std::string, double> sol_times;
 };
