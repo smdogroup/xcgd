@@ -5,7 +5,6 @@ from time import time
 import subprocess
 from os.path import join
 import json
-import matplotlib.ticker
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import os
@@ -371,24 +370,25 @@ def plot_elasticity_interface(df, what, voffset, voffset_text):
                 voffset_text=v_off_txt * voffset_text,
             )
 
-        # Remove all existing ticks
-        ax.tick_params(axis="x", which="both", length=0, labelbottom=False)
+        if what != "stress_time":
+            # Remove all existing ticks
+            ax.tick_params(axis="x", which="both", length=0, labelbottom=False)
 
-        # Set new ticks with explicit positions and labels
-        ax.set_xticks(df["h"].drop_duplicates())
-        ax.set_xticklabels(
-            df["h"].drop_duplicates().apply(lambda x: f"{x:.1e}"),
-            rotation=45,
-            ha="right",
-        )
+            # Set new ticks with explicit positions and labels
+            ax.set_xticks(df["h"].drop_duplicates())
+            ax.set_xticklabels(
+                df["h"].drop_duplicates().apply(lambda x: f"{x:.1e}"),
+                rotation=45,
+                ha="right",
+            )
 
-        # Add ticks
-        ax.tick_params(
-            axis="x", which="major", direction="in", length=3, labelbottom=True
-        )
+            # Add ticks
+            ax.tick_params(
+                axis="x", which="major", direction="in", length=3, labelbottom=True
+            )
 
         ax.legend()
-        ax.set_xlabel(r"$h$")
+        ax.set_xlabel(xlabel)
         ax.set_ylabel(ylabel)
         ax.set_title(title)
 
@@ -473,9 +473,9 @@ def plot_cpu_time_breakdown(df):
 
     yname_label_map = {
         "jacobian_time": "Jacobian assembly",
-        "chol_factor_time": "Cholesky factorization",
-        "chol_init_time": "Cholesky initialization",
         "residual_time": "Residual assembly",
+        "chol_init_time": "Cholesky initialization",
+        "chol_factor_time": "Cholesky factorization",
         "chol_solve_time": "Cholesky solve",
         "other": "Other",
     }
@@ -617,6 +617,23 @@ def plot_elasticity(df, what, voffset, voffset_text):
             voffset_text=v_off_txt * voffset_text,
         )
 
+    if what != "stress_time":
+        # Remove all existing ticks
+        ax.tick_params(axis="x", which="both", length=0, labelbottom=False)
+
+        # Set new ticks with explicit positions and labels
+        ax.set_xticks(df["h"].drop_duplicates())
+        ax.set_xticklabels(
+            df["h"].drop_duplicates().apply(lambda x: f"{x:.1e}"),
+            rotation=45,
+            ha="right",
+        )
+
+        # Add ticks
+        ax.tick_params(
+            axis="x", which="major", direction="in", length=3, labelbottom=True
+        )
+
     ax.legend()
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
@@ -698,7 +715,14 @@ if __name__ == "__main__":
     if not os.path.isdir(run_name):
         os.mkdir(run_name)
 
-    if args.csv is None:
+    csv_try = os.path.join(run_name, f"{run_name}.csv")
+    if args.csv:
+        csv_try = args.csv
+
+    if os.path.isfile(csv_try):
+        df = pd.read_csv(csv_try)
+
+    else:
         df = run_experiments(
             run_name,
             args.mesh,
@@ -714,8 +738,6 @@ if __name__ == "__main__":
             args.nxy_max,
             args.nxy_num,
         )
-    else:
-        df = pd.read_csv(args.csv)
     print(df)
 
     for what in args.what:
