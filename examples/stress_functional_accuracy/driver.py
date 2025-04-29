@@ -348,6 +348,7 @@ def plot_elasticity_interface(df, what, voffset, voffset_text):
         ymin, ymax = ax.get_ylim()
         v_off = -np.log10(ymax / ymin) * 0.02
         v_off_txt = -np.log10(ymax / ymin) * 0.035
+        ax.set_ylim(bottom=ymin * 10.0 ** (v_off_txt * 1.05))
 
         for Np_1d, sub_df in df.groupby("Np_1d"):
             if what == "stress_time":
@@ -370,7 +371,22 @@ def plot_elasticity_interface(df, what, voffset, voffset_text):
                 voffset_text=v_off_txt * voffset_text,
             )
 
-        ax.set_ylim(bottom=ymin * 10.0 ** (v_off_txt * 1.05))
+        # Remove all existing ticks
+        ax.tick_params(axis="x", which="both", length=0, labelbottom=False)
+
+        # Set new ticks with explicit positions and labels
+        ax.set_xticks(df["h"].drop_duplicates())
+        ax.set_xticklabels(
+            df["h"].drop_duplicates().apply(lambda x: f"{x:.1e}"),
+            rotation=45,
+            ha="right",
+        )
+
+        # Add ticks
+        ax.tick_params(
+            axis="x", which="major", direction="in", length=3, labelbottom=True
+        )
+
         ax.legend()
         ax.set_xlabel(r"$h$")
         ax.set_ylabel(ylabel)
@@ -409,6 +425,7 @@ def plot_cpu_time(df, voffset, voffset_text):
     ymin, ymax = ax.get_ylim()
     v_off = -np.log10(ymax / ymin) * 0.02
     v_off_txt = -np.log10(ymax / ymin) * 0.035
+    ax.set_ylim(bottom=ymin * 10.0 ** (v_off_txt * 1.05))
 
     # Annotate the slopes
     for Np_1d, sub_df in df.groupby("Np_1d"):
@@ -423,7 +440,20 @@ def plot_cpu_time(df, voffset, voffset_text):
             voffset=v_off * voffset,
             voffset_text=v_off_txt * voffset_text,
         )
-        ax.set_ylim(bottom=ymin * 10.0 ** (v_off_txt * 1.05))
+
+    # Remove all existing ticks
+    ax.tick_params(axis="x", which="both", length=0, labelbottom=False)
+
+    # Set new ticks with explicit positions and labels
+    ax.set_xticks(df["h"].drop_duplicates())
+    ax.set_xticklabels(
+        df["h"].drop_duplicates().apply(lambda x: f"{x:.1e}"),
+        rotation=45,
+        ha="right",
+    )
+
+    # Add ticks
+    ax.tick_params(axis="x", which="major", direction="in", length=3, labelbottom=True)
 
     ax.legend()
     ax.set_xlabel(xlabel)
@@ -563,6 +593,7 @@ def plot_elasticity(df, what, voffset, voffset_text):
     ymin, ymax = ax.get_ylim()
     v_off = -np.log10(ymax / ymin) * 0.02
     v_off_txt = -np.log10(ymax / ymin) * 0.035
+    ax.set_ylim(bottom=ymin * 10.0 ** (v_off_txt * 1.05))
 
     # Annotate the slopes
     for Np_1d, sub_df in df.groupby("Np_1d"):
@@ -585,7 +616,6 @@ def plot_elasticity(df, what, voffset, voffset_text):
             voffset=v_off * voffset,
             voffset_text=v_off_txt * voffset_text,
         )
-        ax.set_ylim(bottom=ymin * 10.0 ** (v_off_txt * 1.05))
 
     ax.legend()
     ax.set_xlabel(xlabel)
