@@ -108,6 +108,83 @@ def annotate_slope(
     return
 
 
+def annotate_averaged_slope(ax, x, y, voffset):
+    """
+    annotate the averaged slope on a log-log plot given a list of x and y values.
+    """
+    slope, _ = np.polyfit(np.log10(x), np.log10(y), deg=1)
+
+    xc = np.sqrt(np.min(x) * np.max(x))  # find center
+    yc = np.sqrt(np.min(y) * np.max(y))
+
+    delta = 0.5 * np.log10(np.max(x) / np.min(x))
+
+    # Find voffset
+    xi = np.log10(x)
+    eta = np.log10(y)
+
+    xic = np.log10(xc)
+    etac = np.log10(yc)
+
+    voffset += np.min(eta - slope * (xi - xic) - etac)
+    yc *= 10.0**voffset
+
+    t = len(x) - 1.0
+    FRAC_LEFT = (t / 2.0 - 0.5) / (t / 2.0)
+    FRAC_RIGHT = -(t / 2.0 - 2.5) / (t / 2.0)
+
+    x0 = xc / 10.0 ** (delta * FRAC_LEFT)
+    x1 = xc * 10.0 ** (delta * FRAC_RIGHT)
+    y0 = yc / 10.0 ** (delta * FRAC_LEFT * slope)
+    y1 = yc * 10.0 ** (delta * FRAC_RIGHT * slope)
+
+    # Make sure pt0 is always the lower one
+    if y0 > y1:
+        (x0, y0), (x1, y1) = (x1, y1), (x0, y0)
+
+    # Create a right triangle using Polygon patch
+    triangle = patches.Polygon(
+        [
+            [x0, y0],
+            [x1, y0],
+            [x1, y1],
+        ],
+        closed=True,
+        # fill=False,
+        edgecolor="black",
+        facecolor="#d4d4d4",
+        zorder=100,
+        lw=0.5,
+    )
+
+    # Add the triangle patch to the plot
+    ax.add_patch(triangle)
+
+    # Annotate the slope
+    ax.annotate(
+        f"{slope:.2f}",
+        # xy=(np.sqrt(x0 * x1), y0 * 10.0**voffset_text),
+        xy=(np.sqrt(x0 * x1), y0),
+        xytext=(0, -2),  # -2 points down
+        textcoords="offset points",  # interpret xytext as offset in points
+        verticalalignment="top",
+        horizontalalignment="center",
+    )
+    return
+
+
+def expand_logy_bottom(ax, frac=0.05):
+    """
+    Expand bottom of a plot by given percent, where y is in log scale
+    """
+    ymin, ymax = ax.get_ylim()
+    t = np.log10(ymax / ymin)
+    dt = frac * t
+    ax.set_ylim(bottom=ymin * 10.0 ** (-dt))
+
+    return
+
+
 def run_experiments(
     run_name,
     mesh,
@@ -235,13 +312,9 @@ def plot_poisson(df, voffset, voffset_text):
             x = sub_df["h"]
             y = sub_df[key]
             slope, _ = np.polyfit(np.log10(x), np.log10(y), deg=1)
-            label = f"$p={Np_1d - 1}, \Delta:{slope:.2f}$"
+            label = f"$p={Np_1d - 1}$"
             ax.loglog(x, y, "-o", label=label)
-            x0, x1 = x.iloc[-2:]
-            y0, y1 = y.iloc[-2:]
-            annotate_slope(
-                ax, (x0, y0), (x1, y1), voffset=voffset, voffset_text=voffset_text
-            )
+            annotate_averaged_slope(ax, x, y, voffset)
 
     for ylabel, ax in zip(
         [
@@ -313,7 +386,7 @@ def plot_elasticity_interface(df, what, voffset, voffset_text):
 
             # Get averaged slope
             slope, _ = np.polyfit(np.log10(x), np.log10(y), deg=1)
-            label = f"$p={Np_1d - 1}, \Delta:{slope:.2f}$"
+            label = f"$p={Np_1d - 1}$"
 
             ax.loglog(
                 x,
@@ -360,15 +433,7 @@ def plot_elasticity_interface(df, what, voffset, voffset_text):
             else:
                 y = sub_df[key]
 
-            x0, x1 = x.iloc[-2:]
-            y0, y1 = y.iloc[-2:]
-            annotate_slope(
-                ax,
-                (x0, y0),
-                (x1, y1),
-                voffset=v_off * voffset,
-                voffset_text=v_off_txt * voffset_text,
-            )
+            annotate_averaged_slope(ax, x, y, v_off * voffset)
 
         if what != "stress_time":
             # Remove all existing ticks
@@ -409,7 +474,7 @@ def plot_cpu_time(df, voffset, voffset_text):
         x = sub_df["h"]
         y = sub_df["total_time"]
         slope, _ = np.polyfit(np.log10(x), np.log10(y), deg=1)
-        label = f"$p={Np_1d - 1}, \Delta:{slope:.2f}$"
+        label = f"$p={Np_1d - 1}$"
         ax.loglog(
             x,
             y,
@@ -423,23 +488,14 @@ def plot_cpu_time(df, voffset, voffset_text):
         )
 
     ymin, ymax = ax.get_ylim()
-    v_off = -np.log10(ymax / ymin) * 0.02
-    v_off_txt = -np.log10(ymax / ymin) * 0.035
-    ax.set_ylim(bottom=ymin * 10.0 ** (v_off_txt * 1.05))
+    v_off = -np.log10(ymax / ymin) * 0.03
+    expand_logy_bottom(ax, frac=voffset_text * 0.07)
 
     # Annotate the slopes
     for Np_1d, sub_df in df.groupby("Np_1d"):
         x = sub_df["h"]
         y = sub_df["total_time"]
-        x0, x1 = x.iloc[-2:]
-        y0, y1 = y.iloc[-2:]
-        annotate_slope(
-            ax,
-            (x0, y0),
-            (x1, y1),
-            voffset=v_off * voffset,
-            voffset_text=v_off_txt * voffset_text,
-        )
+        annotate_averaged_slope(ax, x, y, v_off * voffset)
 
     # Remove all existing ticks
     ax.tick_params(axis="x", which="both", length=0, labelbottom=False)
@@ -575,8 +631,7 @@ def plot_elasticity(df, what, voffset, voffset_text):
             y = sub_df["stress_norm"]
 
         # Get averaged slope
-        slope, _ = np.polyfit(np.log10(x), np.log10(y), deg=1)
-        label = f"$p={Np_1d - 1}, \Delta:{slope:.2f}$"
+        label = f"$p={Np_1d - 1}$"
 
         ax.loglog(
             x,
@@ -591,9 +646,8 @@ def plot_elasticity(df, what, voffset, voffset_text):
         )
 
     ymin, ymax = ax.get_ylim()
-    v_off = -np.log10(ymax / ymin) * 0.02
-    v_off_txt = -np.log10(ymax / ymin) * 0.035
-    ax.set_ylim(bottom=ymin * 10.0 ** (v_off_txt * 1.05))
+    v_off = -np.log10(ymax / ymin) * 0.03
+    expand_logy_bottom(ax, frac=voffset_text * 0.07)
 
     # Annotate the slopes
     for Np_1d, sub_df in df.groupby("Np_1d"):
@@ -607,15 +661,7 @@ def plot_elasticity(df, what, voffset, voffset_text):
         else:
             y = sub_df["stress_norm"]
 
-        x0, x1 = x.iloc[-2:]
-        y0, y1 = y.iloc[-2:]
-        annotate_slope(
-            ax,
-            (x0, y0),
-            (x1, y1),
-            voffset=v_off * voffset,
-            voffset_text=v_off_txt * voffset_text,
-        )
+        annotate_averaged_slope(ax, x, y, v_off * voffset)
 
     if what != "stress_time":
         # Remove all existing ticks
