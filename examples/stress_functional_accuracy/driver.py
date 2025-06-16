@@ -130,8 +130,8 @@ def annotate_averaged_slope(ax, x, y, voffset):
     yc *= 10.0**voffset
 
     t = len(x) - 1.0
-    FRAC_LEFT = (t / 2.0 - 0.5) / (t / 2.0)
-    FRAC_RIGHT = -(t / 2.0 - 2.5) / (t / 2.0)
+    FRAC_LEFT = 1.0 / (t / 2.0)
+    FRAC_RIGHT = 1.0 / (t / 2.0)
 
     x0 = xc / 10.0 ** (delta * FRAC_LEFT)
     x1 = xc * 10.0 ** (delta * FRAC_RIGHT)
